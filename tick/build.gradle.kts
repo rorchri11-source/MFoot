@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm")
+    alias(libs.plugins.kotlin.jvm)
     application
 }
 
@@ -9,7 +9,7 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
-    implementation("org.postgresql:postgresql:42.7.4")
+    implementation(libs.postgresql)
     testImplementation(kotlin("test"))
 }
 

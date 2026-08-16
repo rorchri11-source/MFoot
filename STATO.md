@@ -141,7 +141,31 @@ succedere, in ordine e una volta sola.
 variabile d'ambiente. Il giorno in cui diventasse sensato spendere ~5 €/mese, si sposta
 su un server sempre acceso — e passa da 5 minuti a 1 minuto — senza riscrivere niente.
 
-### Fase 10 — App Android (`android/`)  🟡 sistema visivo deciso
+### Fase 10 — App Android (`android/`)  🟡 gira sull'emulatore
+
+**L'app esiste e funziona.** Genera il mondo sul telefono con `WorldGenerator` e mostra
+1.128 giocatori con ricerca, filtri per ruolo e segnale di crescita. Verificata
+sull'emulatore: il filtro *Under 21* riduce a 189 giocatori, tutti con margine di crescita
+in ambra — il modello di stima regge sul campo, non solo nei test.
+
+Fatto: modulo Gradle, tema Compose derivato dal design system, lista giocatori,
+generazione locale del mondo.
+
+Da fare: **scheda giocatore** (il registro alto), creazione lega, e il collegamento a
+Supabase — al momento l'app non parla ancora col database.
+
+#### Tre trappole di configurazione, già pagate
+
+1. **Da AGP 9.0 il supporto Kotlin è integrato.** Applicare anche
+   `org.jetbrains.kotlin.android` fa fallire la configurazione con un messaggio che dice
+   solo "no error message" finché non si guarda lo stacktrace.
+2. **`google()` va anche in `pluginManagement`**, non solo in
+   `dependencyResolutionManagement`: sono due blocchi separati e il plugin Android si
+   risolve dal primo.
+3. **La Compose BOM di agosto 2026 richiede `compileSdk = 37`.** Con 36 fallisce in
+   `checkDebugAarMetadata` con quindici errori tutti uguali.
+
+
 
 Il linguaggio visivo è approvato e fissato in [`docs/DESIGN-SYSTEM.md`](docs/DESIGN-SYSTEM.md),
 con i valori già nella forma che serve a Compose. I mockup di riferimento sono in

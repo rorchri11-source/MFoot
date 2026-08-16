@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Deve combaciare con MFootColors.bg in Theme.kt. -->
+    <color name="mfoot_bg">#FF07080A</color>
+</resources>

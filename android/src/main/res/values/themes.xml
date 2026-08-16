@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Tema minimo: l'aspetto lo decide Compose (vedi MFootTheme).
+        Qui serve solo che la finestra nasca gia' del colore giusto, altrimenti
+        all'avvio si vede un lampo bianco prima che Compose disegni.
+    -->
+    <style name="Theme.MFoot" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/mfoot_bg</item>
+        <item name="android:statusBarColor">@color/mfoot_bg</item>
+        <item name="android:navigationBarColor">@color/mfoot_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
