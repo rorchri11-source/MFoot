@@ -6,6 +6,7 @@ import dev.mfoot.android.data.ApiResult
 import dev.mfoot.android.data.AuctionRepository
 import dev.mfoot.android.data.AuctionView
 import dev.mfoot.android.data.ClubUpload
+import dev.mfoot.android.data.CompetitionRepository
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.data.Session
@@ -42,6 +43,15 @@ import kotlin.random.Random
  * ogni avvio rigenerasse, due telefoni vedrebbero due leghe diverse con lo stesso nome.
  */
 class AppViewModel : ViewModel() {
+
+    /**
+     * L'ultima configurazione letta.
+     *
+     * Serve nelle schermate che escono da `Dentro` — la creazione di una competizione,
+     * per esempio — dove la lega non e' piu' nello stato ma le sue regole servono lo
+     * stesso per calcolare il calendario.
+     */
+    private var ultimaConfig: LeagueConfig? = null
 
     private val _state = MutableStateFlow<AppState>(AppState.Avvio)
     val state: StateFlow<AppState> = _state
@@ -186,6 +196,7 @@ class AppViewModel : ViewModel() {
                 }
 
                 is ApiResult.Ok -> {
+                    ultimaConfig = snapshot.value.league.config
                     val rows = withContext(Dispatchers.Default) { righe(snapshot.value) }
                     val aste = AuctionRepository.openAuctions(leagueId)
                     _state.value = AppState.Dentro(
@@ -308,6 +319,155 @@ class AppViewModel : ViewModel() {
                         avviso = "${fondazione.clubName} e' nato. " +
                             "${fondazione.draft.firstName} ${fondazione.draft.lastName} " +
                             "esce a ${creato.value.overall}, con ${creato.value.spent} punti spesi.",
+                    )
+                }
+            }
+        }
+    }
+
+    // --------------------------------------------------------------------- competizioni
+
+    /**
+     * Apre la gestione delle competizioni.
+     *
+     * Le crea l'admin, una per una: campionato, coppa, gironi piu' eliminazione, con i
+     * partecipanti e le date che decide lui. Una prima versione le faceva partire da
+     * sola alla data indicata in configurazione — comodo, e sbagliato: toglieva
+     * all'admin la cosa piu' importante che deve poter fare.
+     */
+    fun apriCompetizioni() {
+        val dentro = _state.value as? AppState.Dentro ?: return
+        val leagueId = dentro.lega.league.id
+
+        viewModelScope.launch {
+            val esistenti = CompetitionRepository.list(leagueId)
+            _state.value = AppState.Competizioni(
+                CompetitionsState(
+                    leagueId = leagueId,
+                    clubs = dentro.lega.clubs,
+                    existing = (esistenti as? ApiResult.Ok)?.value ?: emptyList(),
+                    errore = (esistenti as? ApiResult.Error)?.message,
+                ),
+            )
+        }
+    }
+
+    fun chiudiCompetizioni() = ricarica()
+
+    /** Comincia una competizione nuova, con tutti i club gia' iscritti. */
+    fun nuovaCompetizione() {
+        val schermata = (_state.value as? AppState.Competizioni)?.competitions ?: return
+        aggiornaDraft(
+            CompetitionDraft(
+                name = "Campionato",
+                participants = schermata.clubs.map { it.id }.toSet(),
+            ),
+        )
+    }
+
+    fun annullaCompetizione() {
+        val schermata = (_state.value as? AppState.Competizioni)?.competitions ?: return
+        _state.value = AppState.Competizioni(schermata.copy(draft = null, errore = null))
+    }
+
+    /**
+     * Applica una modifica e **ricalcola subito il calendario**.
+     *
+     * Il ricalcolo passa da `core`, la stessa libreria che il server usa per giocare le
+     * partite: quello che l'admin vede in anteprima e' esattamente quello che verra'
+     * scritto, non una stima.
+     */
+    fun modificaCompetizione(block: (CompetitionDraft) -> CompetitionDraft) {
+        val schermata = (_state.value as? AppState.Competizioni)?.competitions ?: return
+        val draft = schermata.draft ?: return
+        aggiornaDraft(block(draft))
+    }
+
+    private fun aggiornaDraft(draft: CompetitionDraft) {
+        val schermata = (_state.value as? AppState.Competizioni)?.competitions ?: return
+        val lega = Session.leagueId ?: return
+
+        val calcolato = if (draft.participants.size < 2) {
+            draft.copy(schedule = null, errore = null)
+        } else {
+            runCatching {
+                draft.copy(
+                    schedule = CompetitionRepository.preview(
+                        participants = draft.participants.sorted(),
+                        type = draft.type,
+                        doubleRound = draft.doubleRound && draft.supportsDoubleRound,
+                        calendar = draft.calendar,
+                        config = configCorrente(),
+                        seed = lega,
+                    ),
+                    errore = null,
+                )
+            }.getOrElse { draft.copy(schedule = null, errore = it.message) }
+        }
+
+        _state.value = AppState.Competizioni(schermata.copy(draft = calcolato))
+    }
+
+    private fun configCorrente(): LeagueConfig =
+        (_state.value as? AppState.Dentro)?.lega?.league?.config
+            ?: ultimaConfig
+            ?: LeagueConfig()
+
+    fun creaCompetizione() {
+        val schermata = (_state.value as? AppState.Competizioni)?.competitions ?: return
+        val draft = schermata.draft ?: return
+        val schedule = draft.schedule ?: return
+
+        viewModelScope.launch {
+            _state.value = AppState.Competizioni(
+                schermata.copy(draft = draft.copy(busy = "Scrivo il calendario…")),
+            )
+
+            val esito = CompetitionRepository.create(
+                leagueId = schermata.leagueId,
+                name = draft.name,
+                type = draft.type,
+                doubleRound = draft.doubleRound && draft.supportsDoubleRound,
+                participants = draft.participants.sorted(),
+                calendar = draft.calendar,
+                schedule = schedule,
+            )
+
+            when (esito) {
+                is ApiResult.Error -> _state.value = AppState.Competizioni(
+                    schermata.copy(draft = draft.copy(busy = null, errore = esito.message)),
+                )
+
+                is ApiResult.Ok -> {
+                    val aggiornate = CompetitionRepository.list(schermata.leagueId)
+                    _state.value = AppState.Competizioni(
+                        schermata.copy(
+                            draft = null,
+                            existing = (aggiornate as? ApiResult.Ok)?.value ?: schermata.existing,
+                            avviso = "${draft.name}: ${schedule.fixtures.size} partite in calendario.",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun cancellaCompetizione(id: Long) {
+        val schermata = (_state.value as? AppState.Competizioni)?.competitions ?: return
+
+        viewModelScope.launch {
+            when (val esito = CompetitionRepository.delete(id)) {
+                is ApiResult.Error ->
+                    _state.value = AppState.Competizioni(schermata.copy(errore = esito.message))
+
+                is ApiResult.Ok -> {
+                    val aggiornate = CompetitionRepository.list(schermata.leagueId)
+                    _state.value = AppState.Competizioni(
+                        schermata.copy(
+                            existing = (aggiornate as? ApiResult.Ok)?.value ?: emptyList(),
+                            avviso = "Competizione cancellata.",
+                            errore = null,
+                        ),
                     )
                 }
             }

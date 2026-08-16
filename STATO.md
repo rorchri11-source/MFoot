@@ -56,7 +56,8 @@ gradlew :android:assembleDebug
 | 12 | **Club e custom** | `CustomPlayerBuilder` in `core`, `create_club` che rifà il conto lato server, schermata di fondazione |
 | 13 | **Il mondo gira** | Il tick avvia la stagione, genera il calendario e gioca le partite; `AutoLineup` schiera da solo |
 | 14 | **Le aste** | `start_auction`, prezzo pubblico e massimi segreti, schermata mercato e foglio dell'offerta |
-| 15 | **Le AI si muovono** | Si svegliano a turno, valutano sulla stima e offrono passando per `place_bid` come tutti |
+| 15 | **Le AI si muovono** | Si svegliano a turno, aprono aste e offrono passando per `place_bid` come tutti |
+| 16 | **Competizioni** | L'admin crea campionato, coppa o gironi: partecipanti, date e orari suoi, con anteprima del calendario |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -127,7 +128,7 @@ il suo overall dipende da quattro attributi invece che da sei.
 | Stipendi | ✅ |
 | Recupero stamina, col moltiplicatore del preparatore | ✅ |
 | Simulazione partite, con crescita, morale e premi | ✅ |
-| Avvio della stagione e calendario | ✅ alla data scelta dall'admin |
+| Avvio della stagione | ➖ non e' compito del tick: le competizioni le crea l'admin |
 | Risveglio AI, con offerte vere sulle aste | ✅ |
 | Verifica promesse | ❌ pianificata, non applicata |
 | Riepilogo giornaliero | ❌ pianificato, non applicato |
@@ -142,6 +143,7 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0002_create_league.sql` | `create_league`, `join_league` |
 | `supabase/migrations/0003_club.sql` | `create_club` e il conto del budget lato server |
 | `supabase/migrations/0004_auctions.sql` | `start_auction`, prezzo pubblico sulle aste |
+| `supabase/migrations/0005_competitions.sql` | `create_competition`, `delete_competition` |
 
 Le leghe create prima della migrazione `0003` non hanno i pesi dei ruoli in
 configurazione e **non possono accettare nuovi club**: per provare la fondazione va

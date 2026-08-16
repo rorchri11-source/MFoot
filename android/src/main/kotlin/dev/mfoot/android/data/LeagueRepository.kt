@@ -20,6 +20,14 @@ data class LeagueInfo(
     val status: String,
     val currentMatchDay: Int,
     val config: LeagueConfig,
+    /**
+     * Sono io l'amministratore?
+     *
+     * Decide chi vede la creazione delle competizioni. Non e' una difesa — quella la fa
+     * il database, che rifiuta la chiamata a chi non e' admin — ma nascondere un pulsante
+     * che darebbe sempre errore e' l'unico modo di non far sembrare l'app rotta.
+     */
+    val isAdmin: Boolean = false,
 )
 
 /** Un club della lega. Il proprio si riconosce da [isMine]. */
@@ -106,6 +114,7 @@ object LeagueRepository {
     private suspend fun readLeague(leagueId: Long): ApiResult<LeagueInfo> {
         val path = "/rest/v1/leagues?select=id,name,status,current_match_day,config" +
             "&id=eq.$leagueId&limit=1"
+        val admin = amIAdmin(leagueId)
 
         return SupabaseApi.get(path).then { body ->
             val row = JsonNode.parse(body)[0]
@@ -121,9 +130,21 @@ object LeagueRepository {
                         status = row["status"].str("setup"),
                         currentMatchDay = row["current_match_day"].int(0),
                         config = ConfigJson.read(row["config"]),
+                        isAdmin = admin,
                     ),
                 )
             }
+        }
+    }
+
+    private suspend fun amIAdmin(leagueId: Long): Boolean {
+        val me = Session.userId ?: return false
+        val path = "/rest/v1/league_members?select=is_admin" +
+            "&league_id=eq.$leagueId&user_id=eq.$me&limit=1"
+
+        return when (val response = SupabaseApi.get(path)) {
+            is ApiResult.Error -> false
+            is ApiResult.Ok -> JsonNode.parse(response.value)[0]["is_admin"].bool(false)
         }
     }
 

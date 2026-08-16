@@ -33,6 +33,7 @@ import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AppViewModel
 import dev.mfoot.android.app.DoorMode
 import dev.mfoot.android.ui.BidSheet
+import dev.mfoot.android.ui.CompetitionsScreen
 import dev.mfoot.android.ui.DoorScreen
 import dev.mfoot.android.ui.FoundingScreen
 import dev.mfoot.android.ui.GhostButton
@@ -83,6 +84,16 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
             is AppState.Guasto -> Guasto(current.motivo, viewModel::avvia)
 
+            is AppState.Competizioni -> CompetitionsScreen(
+                state = current.competitions,
+                onNew = viewModel::nuovaCompetizione,
+                onEdit = viewModel::modificaCompetizione,
+                onCreate = viewModel::creaCompetizione,
+                onCancelDraft = viewModel::annullaCompetizione,
+                onDelete = viewModel::cancellaCompetizione,
+                onClose = viewModel::chiudiCompetizioni,
+            )
+
             is AppState.Fondazione -> FoundingScreen(
                 state = current.founding,
                 onChange = viewModel::aggiornaFondazione,
@@ -105,6 +116,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     onFoundClub = viewModel::fondaClub,
                     onOpenBid = viewModel::apriOfferta,
                     onRefreshAuctions = { viewModel.aggiornaAste() },
+                    onCompetitions = viewModel::apriCompetizioni,
                 )
 
                 // Il foglio dell'offerta copre tutto: si sta decidendo quanto spendere, e

@@ -55,13 +55,14 @@ fun PlayerListScreen(
     onFoundClub: () -> Unit,
     onOpenBid: (dev.mfoot.android.app.AuctionRow) -> Unit,
     onRefreshAuctions: () -> Unit,
+    onCompetitions: () -> Unit,
 ) {
     Column(
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg),
     ) {
-        ListHeader(state, onQuery, onFilter, onScope, onDismissNotice, onLeave, onFoundClub)
+        ListHeader(state, onQuery, onFilter, onScope, onDismissNotice, onLeave, onFoundClub, onCompetitions)
 
         if (state.browse.scope == ListScope.ASTE) {
             AuctionList(state, onOpenBid, onRefreshAuctions)
@@ -90,6 +91,7 @@ private fun ListHeader(
     onDismissNotice: () -> Unit,
     onLeave: () -> Unit,
     onFoundClub: () -> Unit,
+    onCompetitions: () -> Unit,
 ) {
     val browse = state.browse
 
@@ -98,7 +100,7 @@ private fun ListHeader(
             .fillMaxWidth()
             .padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 14.dp),
     ) {
-        LeagueBar(state, onLeave)
+        LeagueBar(state, onLeave, onCompetitions)
 
         // Senza club non si puo' fare niente: comprare, schierare, giocare. L'invito sta
         // in cima e non in un menu, perche' e' l'unica cosa sensata da fare adesso.
@@ -194,7 +196,7 @@ private fun ListHeader(
  * valutazione va fatta a memoria.
  */
 @Composable
-private fun LeagueBar(state: AppState.Dentro, onLeave: () -> Unit) {
+private fun LeagueBar(state: AppState.Dentro, onLeave: () -> Unit, onCompetitions: () -> Unit) {
     val club = state.lega.myClub
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -216,6 +218,19 @@ private fun LeagueBar(state: AppState.Dentro, onLeave: () -> Unit) {
                 color = if (club != null) MFootColors.ink3 else MFootColors.gamble,
             )
         }
+        // Solo l'admin: la difesa vera la fa il database, ma un pulsante che darebbe
+        // sempre errore fa sembrare l'app rotta a chi non e' admin.
+        if (state.lega.league.isAdmin) {
+            Text(
+                "competizioni",
+                style = MFootType.chip,
+                color = MFootColors.elite,
+                modifier = Modifier
+                    .clickable(onClick = onCompetitions)
+                    .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+            )
+        }
+
         Text(
             "esci",
             style = MFootType.chip,

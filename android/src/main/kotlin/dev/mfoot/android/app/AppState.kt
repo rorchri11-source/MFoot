@@ -176,6 +176,9 @@ sealed interface AppState {
     /** Si sta fondando il proprio club. */
     data class Fondazione(val founding: FoundingState) : AppState
 
+    /** L'admin gestisce le competizioni della lega. */
+    data class Competizioni(val competitions: CompetitionsState) : AppState
+
     /** Qualcosa e' andato storto in modo da cui non si esce da soli. */
     data class Guasto(val motivo: String) : AppState
 }

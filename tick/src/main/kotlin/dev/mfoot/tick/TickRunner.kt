@@ -114,11 +114,6 @@ class TickRunner(
     private fun runLeague(league: LeagueRow, now: Instant): LeagueSummary {
         val state = loadTickState(league.id)
 
-        // Il campionato parte da solo alla data che l'admin ha scelto. Un pulsante
-        // "avvia la stagione" sembrerebbe piu' controllabile, ma vorrebbe dire che venti
-        // persone aspettano che una si colleghi — e quella persona e' sempre in vacanza.
-        val started = startSeasonIfDue(league, now)
-
         val today = MatchDay(league.currentMatchDay)
         val input = TickInput(
             now = now,
@@ -142,7 +137,6 @@ class TickRunner(
         var applied = 0
         var pending = 0
         val notes = plan.notes.toMutableList()
-        if (started != null) notes += started
 
         var settled: MatchDay? = null
 
@@ -324,85 +318,13 @@ class TickRunner(
         }
     }
 
-    // -------------------------------------------------------------- avvio stagione
-
-    /**
-     * Genera il calendario e apre il campionato, se e' ora.
-     *
-     * Succede una volta sola per lega: la presenza di una competizione e' la guardia.
-     * Il calendario lo costruisce `core` — le stesse tabelle di Berger e lo stesso
-     * risolutore di vincoli che girano nei test — e viene scritto qui.
-     *
-     * @return una nota da mettere nel registro, o null se non c'era niente da fare.
-     */
-    private fun startSeasonIfDue(league: LeagueRow, now: Instant): String? {
-        if (hasCompetition(league.id)) return null
-
-        val startsOn = league.config.calendar.startDate
-        if (LocalDate.ofInstant(now, ZoneOffset.UTC).isBefore(startsOn)) return null
-
-        val clubs = loadClubIds(league.id)
-        if (clubs.size < 2) {
-            return "Stagione non avviata: servono almeno due club, ce ne sono ${clubs.size}."
-        }
-
-        val competition = Competition(
-            id = CompetitionId(0),
-            name = "Campionato",
-            type = CompetitionType.GIRONE,
-            participants = clubs,
-        )
-
-        val rounds = FixtureGenerator.generate(competition, league.config.setup.worldSeed)
-        val schedule = CalendarSolver.schedule(rounds, league.config)
-        if (schedule.fixtures.isEmpty()) {
-            return "Stagione non avviata: il calendario non ha prodotto nessuna partita."
-        }
-
-        val competitionId = connection.prepareStatement(
-            "insert into competitions (league_id, name, type, config, participants) " +
-                "values (?, ?, 'GIRONE', '{}'::jsonb, ?) returning id",
-        ).use { st ->
-            st.setLong(1, league.id)
-            st.setString(2, competition.name)
-            st.setArray(3, connection.createArrayOf("bigint", clubs.map { it.value }.toTypedArray()))
-            st.executeQuery().use { rs -> rs.next(); rs.getLong(1) }
-        }
-
+    private fun squadSize(leagueId: Long, clubId: ClubId): Int =
         connection.prepareStatement(
-            """
-            insert into fixtures (league_id, competition_id, round, round_label,
-                                  home_club_id, away_club_id, match_day, kickoff)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
-            """.trimIndent(),
+            "select count(*) from contracts where league_id = ? and club_id = ? and squad = 'prima'",
         ).use { st ->
-            schedule.fixtures.forEach { fixture ->
-                st.setLong(1, league.id)
-                st.setLong(2, competitionId)
-                st.setInt(3, fixture.round)
-                st.setString(4, fixture.roundLabel)
-                st.setLong(5, fixture.home.value)
-                st.setLong(6, fixture.away.value)
-                st.setInt(7, fixture.matchDay.value)
-                st.setTimestamp(8, fixture.kickoff?.let { Timestamp.valueOf(it) })
-                st.addBatch()
-            }
-            st.executeBatch()
-        }
-
-        connection.prepareStatement(
-            "update leagues set status = 'in_corso' where id = ?",
-        ).use { st -> st.setLong(1, league.id); st.executeUpdate() }
-
-        log("Lega ${league.id}: stagione avviata, ${schedule.fixtures.size} partite in calendario.")
-        return "Stagione avviata: ${schedule.fixtures.size} partite, ${clubs.size} club." +
-            schedule.warnings.joinToString("") { " $it" }
-    }
-
-    private fun hasCompetition(leagueId: Long): Boolean =
-        connection.prepareStatement("select 1 from competitions where league_id = ? limit 1").use { st ->
             st.setLong(1, leagueId)
-            st.executeQuery().use { it.next() }
+            st.setLong(2, clubId.value)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
         }
 
     private fun loadClubIds(leagueId: Long): List<ClubId> {
@@ -598,18 +520,50 @@ class TickRunner(
         val state = loadAiState(clubId) ?: return
         val club = loadClub(clubId) ?: return
 
-        // Il tetto giornaliero e' un vincolo del server, non una speranza sul
-        // comportamento dell'AI.
-        if (!AiScheduler.hasActionsLeft(state, now, league.config.ai)) {
+        val squad = loadSquad(league.id, clubId)
+
+        /*
+         * Il mercato iniziale non e' il mercato a regime.
+         *
+         * Il tetto di azioni giornaliere esiste per proteggere l'umano: dalle notifiche,
+         * dai rilanci a raffica, da venticinque club che gli si buttano addosso sullo
+         * stesso giocatore. Nessuna di quelle cose sta succedendo mentre un club deve
+         * ancora comporre il suo primo undici in una rosa vuota — sta solo riempiendo
+         * caselle prima del fischio d'inizio.
+         *
+         * Applicare il tetto anche qui vorrebbe dire otto club AI a due acquisti al
+         * giorno: nove giorni prima che il campionato possa cominciare. La difesa contro
+         * lo sciame resta comunque intera, perche' e' l'affollamento a spegnere
+         * l'interesse, non il conteggio delle azioni.
+         */
+        val allestimento = league.inMarketPhase && squad.size < Formation.PLAYERS_ON_PITCH
+
+        if (!allestimento && !AiScheduler.hasActionsLeft(state, now, league.config.ai)) {
             saveAiState(clubId, AiScheduler.scheduleNext(state, now, league.config.setup.worldSeed))
             return
         }
 
-        val squad = loadSquad(league.id, clubId)
-        val acted = tryBid(league, state, club, squad, today)
+        // Prima si guarda cosa c'e' gia' sul mercato, poi eventualmente si apre qualcosa.
+        // L'ordine conta: un'AI che aprisse aste senza guardare quelle in corso
+        // riempirebbe il listino di doppioni sugli stessi ruoli scoperti.
+        val acted = tryBid(league, state, club, squad, today) ||
+            tryOpenAuction(league, state, club, squad)
 
         val after = if (acted) AiScheduler.recordAction(state, now) else state
-        saveAiState(clubId, AiScheduler.scheduleNext(after, now, league.config.setup.worldSeed))
+        val next = AiScheduler.scheduleNext(after, now, league.config.setup.worldSeed)
+
+        saveAiState(
+            clubId,
+            if (allestimento) {
+                // Durante l'allestimento si torna presto, ma non tutti insieme: lo
+                // scaglionamento resta, e' solo compresso. Il seed lo deriva dal club,
+                // quindi otto AI non si risvegliano mai nello stesso istante.
+                val jitter = 60L + (clubId.value * 37L) % 240L
+                next.copy(nextWakeAt = now.plusSeconds(jitter))
+            } else {
+                next
+            },
+        )
     }
 
     /**
@@ -663,6 +617,108 @@ class TickRunner(
             log("Lega ${league.id}: ${club.name} offre fino a $max sull'asta ${auction.id}.")
         }
         return ok
+    }
+
+    /**
+     * Un'AI mette all'asta uno svincolato che le serve.
+     *
+     * ## Perche' devono poterlo fare
+     *
+     * `start_auction` chiede un proprietario umano, ed e' giusto: e' la funzione che
+     * chiama l'app. Ma se solo gli umani potessero aprire aste, i club AI non
+     * comprerebbero mai nessuno — potrebbero solo rilanciare su quello che gli umani
+     * hanno gia' messo in vendita. Resterebbero con la rosa vuota, il campionato non
+     * potrebbe iniziare, e la lega sarebbe bloccata in attesa di qualcosa che non
+     * succede.
+     *
+     * Qui il tick scrive direttamente, perche' e' lui l'autorita': gli stessi controlli
+     * che la funzione fa per gli umani sono rifatti in Kotlin.
+     */
+    private fun tryOpenAuction(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+    ): Boolean {
+        // Chi ha gia' la rosa a posto non fa la spesa per abitudine.
+        if (squad.size >= league.config.setup.minSquadSize) return false
+        if (club.availableCredits < 1) return false
+
+        val aperte = countOpenAuctionsBy(club.id)
+        if (aperte >= league.config.market.maxParallelAuctionsPerClub) return false
+
+        // Un giocatore per cui esiste gia' un'asta non si rimette all'asta.
+        val giaInAsta = loadOpenAuctions(league.id)
+            .mapNotNull { (it.target as? AuctionTarget.ForPlayer)?.playerId?.value }
+            .toSet()
+
+        val candidato = loadFreeAgents(league.id, giaInAsta, limit = 40)
+            .map { it to AiManager.evaluate(state, club, squad, it, league.config, competingAi = 0) }
+            .filter { (_, appeal) -> appeal.isInterested && appeal.ceiling <= club.availableCredits }
+            .maxByOrNull { (_, appeal) -> appeal.appeal }
+            ?: return false
+
+        val (player, appeal) = candidato
+        // Base bassa: il prezzo lo deve fare l'asta, non chi la apre. Aprire gia' vicino
+        // al proprio tetto vorrebbe dire dichiarare quanto si e' disposti a spendere.
+        val base = 1.coerceAtLeast(appeal.ceiling / 5)
+
+        connection.prepareStatement(
+            """
+            insert into auctions (league_id, target_type, target_id, started_by, ends_at,
+                                  starting_price, current_price, status)
+            values (?, 'player', ?, ?, now() + make_interval(mins => ?), ?, ?, 'APERTA')
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, player.id.value)
+            st.setLong(3, club.id.value)
+            st.setInt(4, league.config.market.auctionDurationMinutes)
+            st.setInt(5, base)
+            st.setInt(6, base)
+            st.executeUpdate()
+        }
+
+        log("Lega ${league.id}: ${club.name} mette all'asta ${player.shortName}, base $base.")
+        return true
+    }
+
+    private fun countOpenAuctionsBy(clubId: ClubId): Int =
+        connection.prepareStatement(
+            "select count(*) from auctions where started_by = ? and status = 'APERTA'",
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
+        }
+
+    /**
+     * Gli svincolati piu' forti, esclusi quelli gia' in asta.
+     *
+     * Il limite non e' pigrizia: valutare milletrecento giocatori a ogni risveglio, per
+     * ogni AI, ogni cinque minuti, e' lavoro che non cambia nessuna decisione. I migliori
+     * disponibili sono dove guarda anche un umano.
+     */
+    private fun loadFreeAgents(leagueId: Long, exclude: Set<Long>, limit: Int): List<Player> {
+        val out = mutableListOf<Player>()
+        connection.prepareStatement(
+            """
+            select p.* from players p
+            left join contracts c on c.player_id = p.id
+            where p.league_id = ? and c.player_id is null and not p.is_custom
+            order by p.overall desc
+            limit ?
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setInt(2, limit + exclude.size)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val player = readPlayer(rs)
+                    if (player.id.value !in exclude) out += player
+                }
+            }
+        }
+        return out.take(limit)
     }
 
     private fun isAi(clubId: ClubId): Boolean =
@@ -949,7 +1005,11 @@ class TickRunner(
         val name: String,
         val config: LeagueConfig,
         val currentMatchDay: Int,
-    )
+        val status: String,
+    ) {
+        /** Il campionato non e' ancora cominciato: si sta ancora componendo le rose. */
+        val inMarketPhase: Boolean get() = status == "mercato"
+    }
 
     private data class TickStateRow(
         val lastProcessedAt: Instant?,
@@ -960,7 +1020,7 @@ class TickRunner(
     private fun loadActiveLeagues(): List<LeagueRow> {
         val out = mutableListOf<LeagueRow>()
         connection.prepareStatement(
-            "select id, name, current_match_day, config from leagues " +
+            "select id, name, current_match_day, config, status from leagues " +
                 "where status in ('mercato', 'in_corso')",
         ).use { st ->
             st.executeQuery().use { rs ->
@@ -977,6 +1037,7 @@ class TickRunner(
                         config = runCatching { ConfigJson.read(raw.orEmpty()) }
                             .getOrElse { LeagueConfig() },
                         currentMatchDay = rs.getInt("current_match_day"),
+                        status = rs.getString("status"),
                     )
                 }
             }
