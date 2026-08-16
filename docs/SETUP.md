@@ -29,27 +29,27 @@ rete poco comprensibile.
 Evita anche il **Transaction pooler** (porta 6543): non gestisce bene i prepared statement
 di JDBC, che il tick usa.
 
-### Da dove si ricavano i tre valori
+### Imposta i due menù così
 
-La stringa che vedi ha questa forma:
-
-```
-postgresql://postgres.abcdefghijkl:[YOUR-PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
-             └────────┬─────────┘  └──────┬─────┘ └──────────────┬────────────────────────────────┘
-                   UTENTE              PASSWORD                   HOST : PORTA / DATABASE
-```
-
-| Segreto | Come si ottiene |
+| Menù | Valore |
 |---|---|
-| `MFOOT_DB_USER` | La parte fra `://` e i due punti, es. `postgres.abcdefghijkl`. **Non** è solo `postgres`: con il pooler l'utente include il codice del progetto. |
-| `MFOOT_DB_PASSWORD` | La password scelta creando il progetto. Se non la ricordi: Project Settings → Database → *Reset database password*. |
-| `MFOOT_DB_URL` | Tutto quello che sta **dopo la chiocciola**, con davanti `jdbc:postgresql://` |
+| **Connection Method** | `Session pooler` |
+| **Type** | `JDBC` |
 
-Nell'esempio sopra `MFOOT_DB_URL` sarebbe:
+Con `Type: JDBC` Supabase produce una stringa già pronta, che contiene anche utente e
+password come parametri. Non c'è niente da ricomporre a mano — ed è il passaggio in cui è
+più facile sbagliare.
+
+La stringa ha questa forma:
 
 ```
-jdbc:postgresql://aws-0-eu-central-1.pooler.supabase.com:5432/postgres
+jdbc:postgresql://aws-0-eu-central-1.pooler.supabase.com:5432/postgres?user=postgres.abcdefgh&password=[YOUR-PASSWORD]
 ```
+
+**Sostituisci `[YOUR-PASSWORD]` con la password vera del database.** Se non la ricordi:
+Project Settings → Database → *Reset database password*.
+
+Se la stringa è completa così, ti serve **un solo segreto** e non tre.
 
 ---
 
@@ -57,9 +57,18 @@ jdbc:postgresql://aws-0-eu-central-1.pooler.supabase.com:5432/postgres
 
 **Settings → Secrets and variables → Actions → New repository secret.**
 
-Obbligatori: `MFOOT_DB_URL`, `MFOOT_DB_USER`, `MFOOT_DB_PASSWORD`.
+| Segreto | Quando serve |
+|---|---|
+| `MFOOT_DB_URL` | **Sempre.** La stringa JDBC del punto precedente, con la password già sostituita. |
+| `MFOOT_DB_USER` | Solo se la stringa **non** contiene `user=` — cioè se hai scelto `Type: URI` invece di `JDBC`. Con il pooler è `postgres.<codice-progetto>`, non il semplice `postgres`. |
+| `MFOOT_DB_PASSWORD` | Come sopra. |
+| `MFOOT_TELEGRAM_TOKEN` | Facoltativo, per le notifiche. |
+| `MFOOT_TELEGRAM_CHAT` | Facoltativo, per le notifiche. |
 
-Opzionali, per le notifiche Telegram: `MFOOT_TELEGRAM_TOKEN`, `MFOOT_TELEGRAM_CHAT`.
+Il tick controlla da solo la coerenza: se l'URL non porta le credenziali e mancano anche i
+segreti separati, si ferma dicendo esattamente cosa manca. E se ti sei dimenticato di
+sostituire `[YOUR-PASSWORD]`, te lo dice invece di fallire con un incomprensibile errore
+di autenticazione.
 
 > I *secrets* restano privati anche su un repository pubblico, e GitHub li oscura nei log.
 > È il motivo per cui il tick legge tutto da variabili d'ambiente e non ha nessun valore

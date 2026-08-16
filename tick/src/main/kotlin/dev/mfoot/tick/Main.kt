@@ -58,9 +58,20 @@ fun main() {
     if (exitCode != 0) kotlin.system.exitProcess(exitCode)
 }
 
+/**
+ * Apre la connessione accettando entrambe le forme.
+ *
+ * Supabase, con `Type = JDBC`, fornisce un URL che contiene gia' utente e password come
+ * parametri. Pretendere comunque i due segreti separati costringerebbe a smontare quella
+ * stringa a mano, che e' esattamente il genere di passaggio in cui si sbaglia.
+ */
 private fun connect(config: TickEnvironment): Connection {
     Class.forName("org.postgresql.Driver")
-    return DriverManager.getConnection(config.dbUrl, config.dbUser, config.dbPassword)
+    return if (config.dbUser != null && config.dbPassword != null) {
+        DriverManager.getConnection(config.dbUrl, config.dbUser, config.dbPassword)
+    } else {
+        DriverManager.getConnection(config.dbUrl)
+    }
 }
 
 internal fun log(message: String) {
@@ -75,8 +86,9 @@ internal fun log(message: String) {
  */
 data class TickEnvironment(
     val dbUrl: String,
-    val dbUser: String,
-    val dbPassword: String,
+    /** Facoltativo: serve solo se l'URL non contiene gia' le credenziali. */
+    val dbUser: String? = null,
+    val dbPassword: String? = null,
     val telegramToken: String? = null,
     val telegramChat: String? = null,
     val dryRun: Boolean = false,
@@ -86,18 +98,39 @@ data class TickEnvironment(
 
     companion object {
         fun fromEnv(getenv: (String) -> String? = System::getenv): TickEnvironment {
-            fun required(name: String): String = getenv(name)?.takeIf { it.isNotBlank() }
-                ?: error(
-                    "Variabile d'ambiente $name mancante. " +
-                        "Su GitHub va impostata in Settings > Secrets and variables > Actions.",
+            fun optional(name: String): String? = getenv(name)?.takeIf { it.isNotBlank() }
+
+            val url = optional("MFOOT_DB_URL") ?: error(
+                "Variabile d'ambiente MFOOT_DB_URL mancante. " +
+                    "Su GitHub va impostata in Settings > Secrets and variables > Actions.",
+            )
+
+            val user = optional("MFOOT_DB_USER")
+            val password = optional("MFOOT_DB_PASSWORD")
+
+            // Se l'URL non porta con se' le credenziali, devono arrivare dalle variabili.
+            // Meglio accorgersene qui che con un errore di autenticazione dentro il tick.
+            val urlHasCredentials = url.contains("user=") && url.contains("password=")
+            if (!urlHasCredentials && (user == null || password == null)) {
+                error(
+                    "L'URL del database non contiene le credenziali, quindi servono anche " +
+                        "MFOOT_DB_USER e MFOOT_DB_PASSWORD. In alternativa usa la stringa " +
+                        "'Type: JDBC' di Supabase, che le include gia'.",
                 )
+            }
+            if (urlHasCredentials && url.contains("[YOUR-PASSWORD]")) {
+                error(
+                    "Nell'URL c'e' ancora il segnaposto [YOUR-PASSWORD]: " +
+                        "va sostituito con la password vera del database.",
+                )
+            }
 
             return TickEnvironment(
-                dbUrl = required("MFOOT_DB_URL"),
-                dbUser = required("MFOOT_DB_USER"),
-                dbPassword = required("MFOOT_DB_PASSWORD"),
-                telegramToken = getenv("MFOOT_TELEGRAM_TOKEN")?.takeIf { it.isNotBlank() },
-                telegramChat = getenv("MFOOT_TELEGRAM_CHAT")?.takeIf { it.isNotBlank() },
+                dbUrl = url,
+                dbUser = user,
+                dbPassword = password,
+                telegramToken = optional("MFOOT_TELEGRAM_TOKEN"),
+                telegramChat = optional("MFOOT_TELEGRAM_CHAT"),
                 dryRun = getenv("MFOOT_DRY_RUN")?.equals("true", ignoreCase = true) ?: false,
             )
         }
