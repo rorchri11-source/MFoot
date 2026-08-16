@@ -1,5 +1,6 @@
 package dev.mfoot.android.app
 
+import dev.mfoot.android.data.AuctionView
 import dev.mfoot.android.data.ClubInfo
 import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.core.config.CustomPlayerConfig
@@ -51,9 +52,25 @@ enum class RoleFilter(val label: String) {
     }
 }
 
+/**
+ * Un'asta pronta da mostrare: le regole del mercato e il giocatore, insieme.
+ *
+ * Tenere il giocatore accanto all'asta e' cio' che permette alla schermata di dire
+ * "Cengiz Tekin, 24 anni, TRQ, 86" invece di "asta #17": un elenco di numeri non aiuta a
+ * decidere se spendere sessanta crediti.
+ */
+data class AuctionRow(
+    val auction: AuctionView,
+    val player: PlayerRow?,
+    val leaderName: String?,
+) {
+    val label: String get() = player?.player?.fullName ?: "Obiettivo #${auction.targetId}"
+}
+
 /** Cosa si sta guardando della lista: il mercato o una rosa. */
 enum class ListScope(val label: String) {
     SVINCOLATI("Svincolati"),
+    ASTE("Aste"),
     TUTTI("Tutto il mondo"),
     MIA_ROSA("La mia rosa"),
 }
@@ -126,9 +143,16 @@ sealed interface AppState {
         val lega: LeagueSnapshot,
         val rows: List<PlayerRow>,
         val browse: BrowseState = BrowseState(),
+        val auctions: List<AuctionRow> = emptyList(),
+        /** L'asta aperta a schermo pieno per fare un'offerta. */
+        val bidding: AuctionRow? = null,
         /** Un messaggio temporaneo in cima, tipo "lega creata". */
         val avviso: String? = null,
+        val errore: String? = null,
     ) : AppState {
+
+        /** Le aste su cui si e' impegnati: sono quelle che vanno tenute d'occhio. */
+        val myAuctions: List<AuctionRow> get() = auctions.filter { it.auction.hasMyBid }
 
         val visible: List<PlayerRow>
             get() = rows
@@ -137,6 +161,8 @@ sealed interface AppState {
                         ListScope.SVINCOLATI -> it.isFreeAgent
                         ListScope.TUTTI -> true
                         ListScope.MIA_ROSA -> it.club != null && it.club.isMine
+                        // La scheda aste ha una lista sua: qui non passa nessuno.
+                        ListScope.ASTE -> false
                     }
                 }
                 .filter { browse.filter.matches(it.player) }

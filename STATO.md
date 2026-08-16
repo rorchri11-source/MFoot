@@ -12,7 +12,7 @@
 mfoot/
 ├── core/          ✅ il gioco: motore, mondo, mercato, AI. Zero dipendenze di piattaforma
 ├── tick/          🟡 il battito: gira su GitHub Actions ogni 5 minuti
-├── android/       🟡 l'app: entra in lega, legge il mondo, fonda il club
+├── android/       🟡 l'app: entra in lega, fonda il club, compra all'asta
 └── supabase/      ✅ schema, RLS, funzioni transazionali
 ```
 
@@ -54,6 +54,8 @@ gradlew :android:assembleDebug
 | 10 | **Ingresso** | Crea una lega con un preset, oppure entra con un codice |
 | 11 | **Lettura** | `LeagueRepository`: lega, club, giocatori e contratti letti dal database in streaming |
 | 12 | **Club e custom** | `CustomPlayerBuilder` in `core`, `create_club` che rifà il conto lato server, schermata di fondazione |
+| 13 | **Il mondo gira** | Il tick avvia la stagione, genera il calendario e gioca le partite; `AutoLineup` schiera da solo |
+| 14 | **Le aste** | `start_auction`, prezzo pubblico e massimi segreti, schermata mercato e foglio dell'offerta |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -107,14 +109,12 @@ il suo overall dipende da quattro attributi invece che da sei.
 
 1. **Il risveglio delle AI.** `AiManager` decide gia'; manca il codice che porta le sue
    decisioni sul database. Senza, i club AI non comprano e non trattano mai.
-2. **Le aste dall'app.** `place_bid` è scritta, testata e atomica; manca la schermata.
-   Senza, nessuno può comprare nessuno e le rose restano vuote.
-3. **Il replay della partita.** La timeline viene salvata intera a database; manca la
+2. **Il replay della partita.** La timeline viene salvata intera a database; manca la
    schermata che la riproduce con l'orologio del telefono.
-4. **Formazione e ordini condizionali.** La tabella `lineups` esiste e si scrive già alla
+3. **Formazione e ordini condizionali.** La tabella `lineups` esiste e si scrive già alla
    fondazione del club, ma il tick usa sempre la formazione automatica: quella scelta a
    mano non viene ancora letta.
-5. **Notifiche Telegram.** Il tick le accumula in `notifications`, nessuno le consegna.
+4. **Notifiche Telegram.** Il tick le accumula in `notifications`, nessuno le consegna.
 
 ### Cosa fa e cosa non fa il tick, oggi
 
@@ -142,6 +142,7 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0001_schema.sql` | Tabelle, vista pubblica, `place_bid`, RLS |
 | `supabase/migrations/0002_create_league.sql` | `create_league`, `join_league` |
 | `supabase/migrations/0003_club.sql` | `create_club` e il conto del budget lato server |
+| `supabase/migrations/0004_auctions.sql` | `start_auction`, prezzo pubblico sulle aste |
 
 Le leghe create prima della migrazione `0003` non hanno i pesi dei ruoli in
 configurazione e **non possono accettare nuovi club**: per provare la fondazione va

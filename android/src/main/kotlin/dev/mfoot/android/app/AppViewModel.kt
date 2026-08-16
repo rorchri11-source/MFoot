@@ -3,6 +3,8 @@ package dev.mfoot.android.app
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.mfoot.android.data.ApiResult
+import dev.mfoot.android.data.AuctionRepository
+import dev.mfoot.android.data.AuctionView
 import dev.mfoot.android.data.ClubUpload
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
@@ -185,9 +187,11 @@ class AppViewModel : ViewModel() {
 
                 is ApiResult.Ok -> {
                     val rows = withContext(Dispatchers.Default) { righe(snapshot.value) }
+                    val aste = AuctionRepository.openAuctions(leagueId)
                     _state.value = AppState.Dentro(
                         lega = snapshot.value,
                         rows = rows,
+                        auctions = asteViste(aste, rows, snapshot.value),
                         browse = BrowseState(
                             // Chi ha gia' una rosa vuole vedere la sua rosa; chi non ce
                             // l'ha ancora vuole vedere cosa c'e' da prendere.
@@ -308,6 +312,135 @@ class AppViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    // ----------------------------------------------------------------------------- aste
+
+    /**
+     * Aggancia a ogni asta il giocatore e il capofila.
+     *
+     * Un elenco di "asta #17, 42 crediti" non aiuta nessuno a decidere: serve vedere chi
+     * si sta comprando e chi ce l'ha in mano adesso.
+     */
+    private fun asteViste(
+        result: ApiResult<List<AuctionView>>,
+        rows: List<PlayerRow>,
+        snapshot: LeagueSnapshot,
+    ): List<AuctionRow> {
+        val auctions = (result as? ApiResult.Ok)?.value ?: return emptyList()
+        val playerById = rows.associateBy { it.player.id.value }
+        val clubById = snapshot.clubs.associateBy { it.id }
+
+        return auctions.map { auction ->
+            AuctionRow(
+                auction = auction,
+                player = if (auction.targetType == "player") playerById[auction.targetId] else null,
+                leaderName = auction.leaderClubId?.let { clubById[it]?.shortName },
+            )
+        }
+    }
+
+    fun apriOfferta(row: AuctionRow?) {
+        val dentro = _state.value as? AppState.Dentro ?: return
+        _state.value = dentro.copy(bidding = row, errore = null)
+    }
+
+    /**
+     * Mette all'asta uno svincolato.
+     *
+     * Chiunque puo' aprire l'asta, non solo chi poi la vince: e' cosi' che il listino si
+     * muove. Chi apre non ha nessun vantaggio, se non aver deciso il momento.
+     */
+    fun mettiAllAsta(row: PlayerRow) {
+        val dentro = _state.value as? AppState.Dentro ?: return
+        val club = dentro.lega.myClub ?: run {
+            _state.value = dentro.copy(errore = "Prima devi fondare il tuo club.")
+            return
+        }
+
+        viewModelScope.launch {
+            val prezzo = 1.coerceAtLeast(row.value / 4)
+            when (val esito = AuctionRepository.startAuction(
+                leagueId = dentro.lega.league.id,
+                targetId = row.player.id.value,
+                startingPrice = prezzo,
+            )) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    // Si chiude la scheda e si passa alle aste: l'azione appena fatta
+                    // deve essere visibile, o sembra non essere successo niente.
+                    val corrente = statoCorrente() ?: return@launch
+                    _state.value = corrente.copy(
+                        browse = corrente.browse.copy(scope = ListScope.ASTE, selected = null),
+                    )
+                    aggiornaAste(
+                        avviso = "${row.player.fullName} e' all'asta, base $prezzo. " +
+                            "Chiunque puo' offrire, ${club.shortName} compreso.",
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Dichiara l'offerta massima.
+     *
+     * Non e' un rilancio: e' il proprio limite. Il sistema difende la posizione da solo
+     * alzando il prezzo quanto basta, ed e' cio' che permette di andare a dormire senza
+     * perdere l'asta per un credito.
+     */
+    fun offri(auctionId: Long, maxAmount: Int) {
+        val dentro = _state.value as? AppState.Dentro ?: return
+        val club = dentro.lega.myClub ?: return
+
+        viewModelScope.launch {
+            when (val esito = AuctionRepository.bid(auctionId, club.id, maxAmount)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    val testa = if (esito.value.youLead) "Sei in testa" else "Non basta"
+                    aggiornaAste(avviso = "$testa: prezzo a ${esito.value.currentPrice} crediti.")
+                    _state.value = statoCorrente()?.copy(bidding = null) ?: return@launch
+                }
+            }
+        }
+    }
+
+    /**
+     * Rilegge aste e crediti senza ricaricare tutto il mondo.
+     *
+     * Milletrecento giocatori non cambiano perche' qualcuno ha rilanciato: rileggerli
+     * costerebbe quattrocento kilobyte per aggiornare un numero.
+     */
+    fun aggiornaAste(avviso: String? = null) {
+        val dentro = _state.value as? AppState.Dentro ?: return
+
+        viewModelScope.launch {
+            val aste = AuctionRepository.openAuctions(dentro.lega.league.id)
+            val clubs = LeagueRepository.clubs(dentro.lega.league.id)
+            val snapshot = when (clubs) {
+                is ApiResult.Ok -> dentro.lega.copy(clubs = clubs.value)
+                is ApiResult.Error -> dentro.lega
+            }
+            val corrente = statoCorrente() ?: return@launch
+
+            _state.value = corrente.copy(
+                lega = snapshot,
+                auctions = asteViste(aste, corrente.rows, snapshot),
+                avviso = avviso ?: corrente.avviso,
+                errore = null,
+            )
+        }
+    }
+
+    private fun statoCorrente(): AppState.Dentro? = _state.value as? AppState.Dentro
+
+    fun chiudiErrore() {
+        val dentro = statoCorrente() ?: return
+        _state.value = dentro.copy(errore = null)
     }
 
     // ---------------------------------------------------------------------- navigazione

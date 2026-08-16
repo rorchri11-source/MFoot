@@ -48,7 +48,12 @@ private fun Int.onScale(): Float =
  * spendere sessanta crediti. Puo' permettersi il teatro che la lista non puo'.
  */
 @Composable
-fun PlayerDetailScreen(row: PlayerRow, onClose: () -> Unit) {
+fun PlayerDetailScreen(
+    row: PlayerRow,
+    canAuction: Boolean = false,
+    onAuction: () -> Unit = {},
+    onClose: () -> Unit,
+) {
     val player = row.player
 
     // La scheda riempie lo schermo e il piede resta ancorato in basso: lasciarla
@@ -85,7 +90,7 @@ fun PlayerDetailScreen(row: PlayerRow, onClose: () -> Unit) {
                     Stars(row)
                     Traits(row)
                 }
-                Footer(row, onClose)
+                Footer(row, canAuction, onAuction, onClose)
             }
         }
     }
@@ -439,7 +444,12 @@ private fun Traits(row: PlayerRow) {
 }
 
 @Composable
-private fun Footer(row: PlayerRow, onClose: () -> Unit) {
+private fun Footer(
+    row: PlayerRow,
+    canAuction: Boolean,
+    onAuction: () -> Unit,
+    onClose: () -> Unit,
+) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -460,14 +470,31 @@ private fun Footer(row: PlayerRow, onClose: () -> Unit) {
             Text("crediti stimati", style = MFootType.chip, color = MFootColors.ink3)
         }
 
-        Text(
-            "Chiudi",
-            style = MFootType.value,
-            color = MFootColors.bg,
-            modifier = Modifier
-                .background(MFootColors.ink, MFootShapes.pill)
-                .clickable(onClick = onClose)
-                .padding(horizontal = 20.dp, vertical = 10.dp),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // L'asta si apre da qui e non da un menu: e' la decisione che si prende
+            // guardando la scheda, e farla cercare altrove significa non farla prendere.
+            if (canAuction) {
+                Text(
+                    "Metti all'asta",
+                    style = MFootType.value,
+                    color = MFootColors.bg,
+                    modifier = Modifier
+                        .background(MFootColors.elite, MFootShapes.pill)
+                        .clickable(onClick = onAuction)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+
+            Text(
+                "Chiudi",
+                style = MFootType.value,
+                color = MFootColors.bg,
+                modifier = Modifier
+                    .background(MFootColors.ink, MFootShapes.pill)
+                    .clickable(onClick = onClose)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+            )
+        }
     }
 }

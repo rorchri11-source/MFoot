@@ -53,6 +53,8 @@ fun PlayerListScreen(
     onDismissNotice: () -> Unit,
     onLeave: () -> Unit,
     onFoundClub: () -> Unit,
+    onOpenBid: (dev.mfoot.android.app.AuctionRow) -> Unit,
+    onRefreshAuctions: () -> Unit,
 ) {
     Column(
         Modifier
@@ -60,6 +62,11 @@ fun PlayerListScreen(
             .background(MFootColors.bg),
     ) {
         ListHeader(state, onQuery, onFilter, onScope, onDismissNotice, onLeave, onFoundClub)
+
+        if (state.browse.scope == ListScope.ASTE) {
+            AuctionList(state, onOpenBid, onRefreshAuctions)
+            return@Column
+        }
 
         val visible = state.visible
         if (visible.isEmpty()) {
@@ -100,7 +107,10 @@ private fun ListHeader(
             PrimaryButton("Fonda il tuo club", onFoundClub)
         }
 
-        if (state.avviso != null) {
+        if (state.errore != null) {
+            Spacer(Modifier.height(MFootSpacing.related))
+            Notice(state.errore, MFootColors.gamble)
+        } else if (state.avviso != null) {
             Spacer(Modifier.height(MFootSpacing.related))
             Notice(
                 state.avviso,
@@ -147,20 +157,30 @@ private fun ListHeader(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        // I filtri per ruolo non hanno senso sulle aste, che sono poche e si guardano
+        // tutte: lasciarli visibili dove non fanno niente insegna a ignorarli.
+        if (browse.scope != ListScope.ASTE) {
+            Spacer(Modifier.height(8.dp))
 
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            RoleFilter.entries.forEach { filter ->
-                Chip(filter.label, filter == browse.filter) { onFilter(filter) }
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                RoleFilter.entries.forEach { filter ->
+                    Chip(filter.label, filter == browse.filter) { onFilter(filter) }
+                }
             }
         }
 
         Spacer(Modifier.height(MFootSpacing.related))
 
-        Label("${state.visible.size} giocatori · ordinati per overall")
+        Label(
+            if (browse.scope == ListScope.ASTE) {
+                "${state.auctions.size} aste aperte · ${state.myAuctions.size} con una tua offerta"
+            } else {
+                "${state.visible.size} giocatori · ordinati per overall"
+            },
+        )
     }
 
     Hairline()

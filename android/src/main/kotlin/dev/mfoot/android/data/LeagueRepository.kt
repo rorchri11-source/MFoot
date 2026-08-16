@@ -127,6 +127,14 @@ object LeagueRepository {
         }
     }
 
+    /**
+     * Solo i club.
+     *
+     * Serve dopo ogni offerta: i crediti impegnati cambiano, i giocatori no. Rileggere
+     * tutto il mondo per aggiornare un numero costerebbe quattrocento kilobyte.
+     */
+    suspend fun clubs(leagueId: Long): ApiResult<List<ClubInfo>> = readClubs(leagueId)
+
     private suspend fun readClubs(leagueId: Long): ApiResult<List<ClubInfo>> {
         val path = "/rest/v1/clubs?select=id,name,short_name,is_ai,owner_user_id,owner_name," +
             "credits,committed_credits,custom_player_id&league_id=eq.$leagueId&order=name"

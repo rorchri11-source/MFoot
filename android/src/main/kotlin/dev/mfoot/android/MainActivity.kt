@@ -32,6 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AppViewModel
 import dev.mfoot.android.app.DoorMode
+import dev.mfoot.android.ui.BidSheet
 import dev.mfoot.android.ui.DoorScreen
 import dev.mfoot.android.ui.FoundingScreen
 import dev.mfoot.android.ui.GhostButton
@@ -102,7 +103,33 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     onDismissNotice = viewModel::chiudiAvviso,
                     onLeave = viewModel::lasciaLega,
                     onFoundClub = viewModel::fondaClub,
+                    onOpenBid = viewModel::apriOfferta,
+                    onRefreshAuctions = { viewModel.aggiornaAste() },
                 )
+
+                // Il foglio dell'offerta copre tutto: si sta decidendo quanto spendere, e
+                // ogni altra cosa a schermo in quel momento e' una distrazione.
+                AnimatedVisibility(
+                    visible = current.bidding != null,
+                    enter = slideInVertically(
+                        animationSpec = tween(MFootMotion.normal, easing = MFootMotion.easing),
+                        initialOffsetY = { it / 3 },
+                    ) + fadeIn(tween(MFootMotion.fast, easing = MFootMotion.easing)),
+                    exit = slideOutVertically(
+                        animationSpec = tween(MFootMotion.fast, easing = MFootMotion.easing),
+                        targetOffsetY = { it / 3 },
+                    ) + fadeOut(tween(MFootMotion.fast, easing = MFootMotion.easing)),
+                ) {
+                    current.bidding?.let { row ->
+                        BidSheet(
+                            row = row,
+                            available = current.lega.myClub?.available ?: 0,
+                            minimumRaise = current.lega.league.config.market.minimumRaise,
+                            onBid = { viewModel.offri(row.auction.id, it) },
+                            onClose = { viewModel.apriOfferta(null) },
+                        )
+                    }
+                }
 
                 // La scheda entra dal basso sopra la lista: cosi' si capisce che si sta
                 // guardando un dettaglio e non si e' cambiata schermata.
@@ -118,7 +145,16 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     ) + fadeOut(tween(MFootMotion.fast, easing = MFootMotion.easing)),
                 ) {
                     current.browse.selected?.let { row ->
-                        PlayerDetailScreen(row) { viewModel.select(null) }
+                        PlayerDetailScreen(
+                            row = row,
+                            // Un giocatore sotto contratto non si batte all'asta: si
+                            // tratta col suo club. E senza un proprio club non si puo'
+                            // nemmeno aprirla.
+                            canAuction = row.isFreeAgent && current.lega.myClub != null &&
+                                current.auctions.none { it.auction.targetId == row.player.id.value },
+                            onAuction = { viewModel.mettiAllAsta(row) },
+                            onClose = { viewModel.select(null) },
+                        )
                     }
                 }
             }
@@ -127,8 +163,12 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
     BackHandler(enabled = state.canGoBack()) {
         when (val current = state) {
-            is AppState.Dentro ->
-                if (current.browse.selected != null) viewModel.select(null)
+            is AppState.Dentro -> when {
+                // L'offerta sta sopra la scheda: il tasto indietro chiude prima quella.
+                current.bidding != null -> viewModel.apriOfferta(null)
+                current.browse.selected != null -> viewModel.select(null)
+                else -> Unit
+            }
 
             is AppState.Porta ->
                 if (current.mode != DoorMode.SCELTA) viewModel.apriPorta(DoorMode.SCELTA)
@@ -140,7 +180,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
 /** C'e' un passo indietro possibile dentro l'app, o il tasto deve chiuderla? */
 private fun AppState.canGoBack(): Boolean = when (this) {
-    is AppState.Dentro -> browse.selected != null
+    is AppState.Dentro -> browse.selected != null || bidding != null
     is AppState.Porta -> mode != DoorMode.SCELTA
     else -> false
 }
