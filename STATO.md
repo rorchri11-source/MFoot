@@ -1,7 +1,7 @@
 # MFoot — stato del progetto
 
 **Aggiornato:** 2026-08-16
-**Test:** 437 verdi, 0 falliti
+**Test:** 446 verdi, 0 falliti
 **Verificato:** su emulatore Android e su Supabase, non solo nei test
 
 ---
@@ -105,15 +105,15 @@ il suo overall dipende da quattro attributi invece che da sei.
 
 ### Il prossimo blocco, in ordine di valore
 
-1. **Le partite.** Il tick le pianifica ma non le simula ancora, e soprattutto **nessuno
-   crea il calendario**: `FixtureGenerator` e `CalendarSolver` esistono e sono testati, ma
-   non c'è ancora il comando dell'admin che avvia la stagione e scrive le partite a
-   database. È il pezzo che manca perché il mondo *giri* davvero.
+1. **Il risveglio delle AI.** `AiManager` decide gia'; manca il codice che porta le sue
+   decisioni sul database. Senza, i club AI non comprano e non trattano mai.
 2. **Le aste dall'app.** `place_bid` è scritta, testata e atomica; manca la schermata.
-3. **Il risveglio delle AI.** `AiManager` decide già; manca il codice che porta le sue
-   decisioni sul database.
+   Senza, nessuno può comprare nessuno e le rose restano vuote.
+3. **Il replay della partita.** La timeline viene salvata intera a database; manca la
+   schermata che la riproduce con l'orologio del telefono.
 4. **Formazione e ordini condizionali.** La tabella `lineups` esiste e si scrive già alla
-   fondazione del club.
+   fondazione del club, ma il tick usa sempre la formazione automatica: quella scelta a
+   mano non viene ancora letta.
 5. **Notifiche Telegram.** Il tick le accumula in `notifications`, nessuno le consegna.
 
 ### Cosa fa e cosa non fa il tick, oggi
@@ -127,7 +127,8 @@ il suo overall dipende da quattro attributi invece che da sei.
 | Entrate ricorrenti | ✅ |
 | Stipendi | ✅ |
 | Recupero stamina, col moltiplicatore del preparatore | ✅ |
-| Simulazione partite | ❌ pianificata, non applicata |
+| Simulazione partite, con crescita, morale e premi | ✅ |
+| Avvio della stagione e calendario | ✅ alla data scelta dall'admin |
 | Risveglio AI | ❌ pianificato, non applicato |
 | Verifica promesse | ❌ pianificata, non applicata |
 | Riepilogo giornaliero | ❌ pianificato, non applicato |

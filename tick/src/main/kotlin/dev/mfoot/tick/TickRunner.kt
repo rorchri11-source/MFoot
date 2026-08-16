@@ -1,7 +1,17 @@
 package dev.mfoot.tick
 
+import dev.mfoot.core.calendar.CalendarSolver
+import dev.mfoot.core.calendar.Competition
+import dev.mfoot.core.calendar.CompetitionType
+import dev.mfoot.core.calendar.Fixture
+import dev.mfoot.core.calendar.FixtureGenerator
 import dev.mfoot.core.config.ConfigJson
 import dev.mfoot.core.config.LeagueConfig
+import dev.mfoot.core.growth.GrowthContext
+import dev.mfoot.core.growth.GrowthEngine
+import dev.mfoot.core.growth.MoraleEngine
+import dev.mfoot.core.growth.TeamOutcome
+import dev.mfoot.core.json.JsonNode
 import dev.mfoot.core.market.Auction
 import dev.mfoot.core.market.AuctionRules
 import dev.mfoot.core.market.AuctionTarget
@@ -9,18 +19,31 @@ import dev.mfoot.core.market.Bid
 import dev.mfoot.core.market.Negotiation
 import dev.mfoot.core.market.OfferStatus
 import dev.mfoot.core.market.OfferTerms
+import dev.mfoot.core.match.AutoLineup
+import dev.mfoot.core.match.Formation
+import dev.mfoot.core.match.MatchEngine
+import dev.mfoot.core.match.MatchResult
+import dev.mfoot.core.match.TeamSetup
+import dev.mfoot.core.model.Attr
+import dev.mfoot.core.model.Attributes
 import dev.mfoot.core.model.ClubId
+import dev.mfoot.core.model.CompetitionId
 import dev.mfoot.core.model.Contract
 import dev.mfoot.core.model.Loan
 import dev.mfoot.core.model.MatchDay
+import dev.mfoot.core.model.Player
 import dev.mfoot.core.model.PlayerId
+import dev.mfoot.core.model.Position
 import dev.mfoot.core.model.StaffId
+import dev.mfoot.core.model.Trait
 import dev.mfoot.core.tick.TickEffect
 import dev.mfoot.core.tick.TickInput
 import dev.mfoot.core.tick.WorldTick
 import java.sql.Connection
 import java.sql.Timestamp
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 data class LeagueSummary(
     val leagueId: Long,
@@ -84,6 +107,12 @@ class TickRunner(
 
     private fun runLeague(league: LeagueRow, now: Instant): LeagueSummary {
         val state = loadTickState(league.id)
+
+        // Il campionato parte da solo alla data che l'admin ha scelto. Un pulsante
+        // "avvia la stagione" sembrerebbe piu' controllabile, ma vorrebbe dire che venti
+        // persone aspettano che una si colleghi — e quella persona e' sempre in vacanza.
+        val started = startSeasonIfDue(league, now)
+
         val today = MatchDay(league.currentMatchDay)
         val input = TickInput(
             now = now,
@@ -97,6 +126,7 @@ class TickRunner(
             openNegotiations = loadOpenNegotiations(league.id),
             activeContracts = loadExpiringContracts(league.id, today),
             activeLoans = loadExpiringLoans(league.id, today),
+            pendingFixtures = loadPendingFixtures(league.id),
             settledMatchDays = state.settledMatchDays,
             lastDigestAt = state.lastDigestAt,
         )
@@ -105,6 +135,7 @@ class TickRunner(
         var applied = 0
         var pending = 0
         val notes = plan.notes.toMutableList()
+        if (started != null) notes += started
 
         var settled: MatchDay? = null
 
@@ -113,6 +144,17 @@ class TickRunner(
                 is TickEffect.ChiudiAsta -> {
                     closeAuction(league, effect.auctionId)
                     applied++
+                }
+
+                is TickEffect.SimulaPartita -> {
+                    if (playMatch(league, effect.fixture)) {
+                        applied++
+                    } else {
+                        // La partita resta da giocare: al prossimo giro ci si riprova.
+                        // Meglio un rinvio che un risultato inventato con nove uomini.
+                        pending++
+                        notes += "Partita ${effect.fixture.id} rinviata: rosa insufficiente."
+                    }
                 }
 
                 is TickEffect.ScadiContratto -> {
@@ -156,12 +198,16 @@ class TickRunner(
             }
         }
 
-        if (pending > 0) {
-            notes += "Da implementare: " + plan.effects
-                .filter { it is TickEffect.SimulaPartita || it is TickEffect.SvegliaAi ||
-                    it is TickEffect.VerificaPromesse || it is TickEffect.InviaRiepilogo }
-                .groupingBy { it::class.simpleName }.eachCount()
-                .entries.joinToString(", ") { "${it.key} x${it.value}" }
+        val daScrivere = plan.effects
+            .filter {
+                it is TickEffect.SvegliaAi || it is TickEffect.VerificaPromesse ||
+                    it is TickEffect.InviaRiepilogo
+            }
+            .groupingBy { it::class.simpleName }.eachCount()
+
+        if (daScrivere.isNotEmpty()) {
+            notes += "Da implementare: " +
+                daScrivere.entries.joinToString(", ") { "${it.key} x${it.value}" }
         }
 
         saveTickState(league.id, plan.processedUpTo, notes.joinToString(" | "), settled)
@@ -263,6 +309,254 @@ class TickRunner(
             st.setLong(1, club.value)
             st.setLong(2, staffId.value)
             st.executeUpdate()
+        }
+    }
+
+    // -------------------------------------------------------------- avvio stagione
+
+    /**
+     * Genera il calendario e apre il campionato, se e' ora.
+     *
+     * Succede una volta sola per lega: la presenza di una competizione e' la guardia.
+     * Il calendario lo costruisce `core` — le stesse tabelle di Berger e lo stesso
+     * risolutore di vincoli che girano nei test — e viene scritto qui.
+     *
+     * @return una nota da mettere nel registro, o null se non c'era niente da fare.
+     */
+    private fun startSeasonIfDue(league: LeagueRow, now: Instant): String? {
+        if (hasCompetition(league.id)) return null
+
+        val startsOn = league.config.calendar.startDate
+        if (LocalDate.ofInstant(now, ZoneOffset.UTC).isBefore(startsOn)) return null
+
+        val clubs = loadClubIds(league.id)
+        if (clubs.size < 2) {
+            return "Stagione non avviata: servono almeno due club, ce ne sono ${clubs.size}."
+        }
+
+        val competition = Competition(
+            id = CompetitionId(0),
+            name = "Campionato",
+            type = CompetitionType.GIRONE,
+            participants = clubs,
+        )
+
+        val rounds = FixtureGenerator.generate(competition, league.config.setup.worldSeed)
+        val schedule = CalendarSolver.schedule(rounds, league.config)
+        if (schedule.fixtures.isEmpty()) {
+            return "Stagione non avviata: il calendario non ha prodotto nessuna partita."
+        }
+
+        val competitionId = connection.prepareStatement(
+            "insert into competitions (league_id, name, type, config, participants) " +
+                "values (?, ?, 'GIRONE', '{}'::jsonb, ?) returning id",
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setString(2, competition.name)
+            st.setArray(3, connection.createArrayOf("bigint", clubs.map { it.value }.toTypedArray()))
+            st.executeQuery().use { rs -> rs.next(); rs.getLong(1) }
+        }
+
+        connection.prepareStatement(
+            """
+            insert into fixtures (league_id, competition_id, round, round_label,
+                                  home_club_id, away_club_id, match_day, kickoff)
+            values (?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+        ).use { st ->
+            schedule.fixtures.forEach { fixture ->
+                st.setLong(1, league.id)
+                st.setLong(2, competitionId)
+                st.setInt(3, fixture.round)
+                st.setString(4, fixture.roundLabel)
+                st.setLong(5, fixture.home.value)
+                st.setLong(6, fixture.away.value)
+                st.setInt(7, fixture.matchDay.value)
+                st.setTimestamp(8, fixture.kickoff?.let { Timestamp.valueOf(it) })
+                st.addBatch()
+            }
+            st.executeBatch()
+        }
+
+        connection.prepareStatement(
+            "update leagues set status = 'in_corso' where id = ?",
+        ).use { st -> st.setLong(1, league.id); st.executeUpdate() }
+
+        log("Lega ${league.id}: stagione avviata, ${schedule.fixtures.size} partite in calendario.")
+        return "Stagione avviata: ${schedule.fixtures.size} partite, ${clubs.size} club." +
+            schedule.warnings.joinToString("") { " $it" }
+    }
+
+    private fun hasCompetition(leagueId: Long): Boolean =
+        connection.prepareStatement("select 1 from competitions where league_id = ? limit 1").use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { it.next() }
+        }
+
+    private fun loadClubIds(leagueId: Long): List<ClubId> {
+        val out = mutableListOf<ClubId>()
+        connection.prepareStatement("select id from clubs where league_id = ? order by id").use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> while (rs.next()) out += ClubId(rs.getLong("id")) }
+        }
+        return out
+    }
+
+    // ------------------------------------------------------------------- la partita
+
+    /**
+     * Gioca una partita e scrive tutto quello che ne consegue.
+     *
+     * ## La timeline si salva intera
+     *
+     * Il client la legge **una volta** e la riproduce con il proprio orologio: nessun
+     * polling, costo zero durante i novanta minuti, e chi apre l'app al sessantesimo
+     * salta direttamente al sessantesimo. E' la decisione che rende accettabile una
+     * griglia di cinque minuti su un backend gratuito.
+     *
+     * ## Il seed e' la partita
+     *
+     * Deriva da id della partita e seed della lega, quindi rigiocarla da' esattamente lo
+     * stesso risultato. Se una transazione fallisce a meta' e il tick ripassa, non esce
+     * un risultato diverso.
+     *
+     * @return false se la partita non si e' potuta giocare: rosa insufficiente, tipicamente.
+     */
+    private fun playMatch(league: LeagueRow, fixture: Fixture): Boolean {
+        val today = MatchDay(fixture.matchDay.value)
+        val home = buildTeam(league, fixture.home, today) ?: return false
+        val away = buildTeam(league, fixture.away, today) ?: return false
+
+        val seed = league.config.setup.worldSeed * 31L + fixture.id
+        val result = MatchEngine.simulate(home, away, league.config, seed)
+
+        connection.prepareStatement(
+            """
+            insert into match_results (fixture_id, league_id, home_goals, away_goals, seed,
+                                       timeline, player_stats, home_possession)
+            values (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?)
+            on conflict (fixture_id) do nothing
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, fixture.id)
+            st.setLong(2, league.id)
+            st.setInt(3, result.homeGoals)
+            st.setInt(4, result.awayGoals)
+            st.setLong(5, seed)
+            st.setString(6, MatchJson.timeline(result))
+            st.setString(7, MatchJson.playerStats(result))
+            st.setDouble(8, result.homePossession)
+            st.executeUpdate()
+        }
+
+        connection.prepareStatement("update fixtures set played = true where id = ?").use { st ->
+            st.setLong(1, fixture.id)
+            st.executeUpdate()
+        }
+
+        applyMatchAftermath(league, result, fixture)
+        awardPrizes(league, fixture, result)
+
+        // La giornata del gioco avanza con le partite giocate, non con l'orologio: e'
+        // l'unita' con cui si misurano contratti, stipendi e crescita.
+        connection.prepareStatement(
+            "update leagues set current_match_day = greatest(current_match_day, ?) where id = ?",
+        ).use { st ->
+            st.setInt(1, fixture.matchDay.value)
+            st.setLong(2, league.id)
+            st.executeUpdate()
+        }
+
+        log("Lega ${league.id}: ${home.name} ${result.scoreline} ${away.name}")
+        return true
+    }
+
+    /**
+     * Minuti giocati, stanchezza, crescita e morale.
+     *
+     * Si applica ai soli giocatori che sono scesi in campo. Chi e' rimasto in panchina
+     * paga comunque il morale, ma quello lo gestisce la giornata, non la partita.
+     */
+    private fun applyMatchAftermath(league: LeagueRow, result: MatchResult, fixture: Fixture) {
+        val outcomes = mapOf(
+            fixture.home to when {
+                result.homeGoals > result.awayGoals -> TeamOutcome.VITTORIA
+                result.homeGoals < result.awayGoals -> TeamOutcome.SCONFITTA
+                else -> TeamOutcome.PAREGGIO
+            },
+            fixture.away to when {
+                result.awayGoals > result.homeGoals -> TeamOutcome.VITTORIA
+                result.awayGoals < result.homeGoals -> TeamOutcome.SCONFITTA
+                else -> TeamOutcome.PAREGGIO
+            },
+        )
+
+        val update = connection.prepareStatement(
+            """
+            update players
+            set stamina = greatest(0, least(100, ?)),
+                morale = greatest(0, least(100, ?)),
+                experience = ?,
+                attributes = ?::jsonb,
+                overall = ?,
+                minutes_observed = minutes_observed + ?
+            where id = ?
+            """.trimIndent(),
+        )
+
+        update.use { st ->
+            result.stats.forEach { (playerId, stats) ->
+                if (stats.minutesPlayed <= 0) return@forEach
+                val row = loadPlayerRow(playerId) ?: return@forEach
+
+                // La stamina l'ha gia' consumata il motore durante la partita: qui si
+                // salva quello che ne resta, non si sottrae una seconda volta.
+                // La stanchezza l'ha gia' calcolata il motore minuto per minuto: qui si
+                // sottrae quella spesa, non se ne inventa dell'altra.
+                val tired = row.player.withStamina(row.player.stamina - stats.staminaSpent)
+
+                val grown = GrowthEngine.processMatch(
+                    player = tired,
+                    stats = stats,
+                    context = GrowthContext(league.config, coachStarsOf(row.clubId)),
+                ).player
+
+                val outcome = outcomes[row.clubId] ?: TeamOutcome.PAREGGIO
+                val moraled = MoraleEngine
+                    .afterMatch(grown, stats, outcome, league.config.rules)
+                    .player
+
+                st.setInt(1, moraled.stamina)
+                st.setInt(2, moraled.morale)
+                st.setDouble(3, moraled.experience)
+                st.setString(4, MatchJson.attributes(moraled))
+                st.setInt(5, moraled.overall)
+                st.setInt(6, stats.minutesPlayed)
+                st.setLong(7, playerId.value)
+                st.addBatch()
+            }
+            st.executeBatch()
+        }
+    }
+
+    /** I premi partita: vittoria e pareggio, come li ha impostati l'admin. */
+    private fun awardPrizes(league: LeagueRow, fixture: Fixture, result: MatchResult) {
+        val economy = league.config.economy
+        val (homePrize, awayPrize) = when {
+            result.homeGoals > result.awayGoals -> economy.winPrize to 0
+            result.awayGoals > result.homeGoals -> 0 to economy.winPrize
+            else -> economy.drawPrize to economy.drawPrize
+        }
+
+        connection.prepareStatement("update clubs set credits = credits + ? where id = ?").use { st ->
+            listOf(fixture.home to homePrize, fixture.away to awayPrize)
+                .filter { it.second > 0 }
+                .forEach { (club, prize) ->
+                    st.setInt(1, prize)
+                    st.setLong(2, club.value)
+                    st.addBatch()
+                }
+            st.executeBatch()
         }
     }
 
@@ -559,6 +853,148 @@ class TickRunner(
             }
             st.executeUpdate()
         }
+    }
+
+    // -------------------------------------------------------- rose e formazioni
+
+    private data class PlayerRow(val player: Player, val clubId: ClubId)
+
+    /**
+     * La squadra pronta a giocare.
+     *
+     * La formazione la sceglie [AutoLineup]: non e' il ripiego per l'AI, e' la rete che
+     * tiene in piedi il calendario. Con due partite al giorno prima o poi qualcuno si
+     * dimentica di schierare, e il campionato non puo' fermarsi perche' una persona e'
+     * andata a cena.
+     *
+     * Restituisce null se la rosa non basta: la partita resta da giocare e il tick lo
+     * segnala, invece di far uscire un risultato inventato.
+     */
+    private fun buildTeam(league: LeagueRow, clubId: ClubId, today: MatchDay): TeamSetup? {
+        val squad = loadSquad(league.id, clubId)
+        if (squad.size < Formation.PLAYERS_ON_PITCH) return null
+
+        return AutoLineup.setup(
+            clubId = clubId,
+            name = clubNameOf(clubId),
+            squad = squad,
+            today = today,
+            coachStars = coachStarsOf(clubId),
+        )
+    }
+
+    private fun loadSquad(leagueId: Long, clubId: ClubId): List<Player> {
+        val out = mutableListOf<Player>()
+        connection.prepareStatement(
+            """
+            select p.* from players p
+            join contracts c on c.player_id = p.id
+            where c.club_id = ? and p.league_id = ? and c.squad = 'prima'
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.setLong(2, leagueId)
+            st.executeQuery().use { rs -> while (rs.next()) out += readPlayer(rs) }
+        }
+        return out
+    }
+
+    private fun loadPlayerRow(playerId: PlayerId): PlayerRow? {
+        connection.prepareStatement(
+            "select p.*, c.club_id from players p " +
+                "left join contracts c on c.player_id = p.id where p.id = ?",
+        ).use { st ->
+            st.setLong(1, playerId.value)
+            st.executeQuery().use { rs ->
+                if (!rs.next()) return null
+                return PlayerRow(readPlayer(rs), ClubId(rs.getLong("club_id")))
+            }
+        }
+    }
+
+    private fun readPlayer(rs: java.sql.ResultSet): Player {
+        val attributes = JsonNode.parse(rs.getString("attributes"))
+        val values = Attr.entries.associateWith { attributes[it.name].int(40) }
+
+        return Player(
+            id = PlayerId(rs.getLong("id")),
+            firstName = rs.getString("first_name"),
+            lastName = rs.getString("last_name"),
+            nationality = rs.getString("nationality"),
+            age = rs.getInt("age"),
+            primaryPosition = Position.valueOf(rs.getString("primary_position")),
+            secondaryPositions = (rs.getArray("secondary_positions")?.array as? Array<*>)
+                ?.mapNotNull { name -> Position.entries.firstOrNull { it.name == name } }
+                ?: emptyList(),
+            attributes = Attributes.fromMap(values),
+            weakFoot = rs.getInt("weak_foot"),
+            skillStars = rs.getInt("skill_stars"),
+            potentialMin = rs.getInt("potential_min"),
+            potentialMax = rs.getInt("potential_max"),
+            traits = (rs.getArray("traits")?.array as? Array<*>)
+                ?.mapNotNull { name -> Trait.entries.firstOrNull { it.name == name } }
+                ?.toSet() ?: emptySet(),
+            stamina = rs.getInt("stamina"),
+            morale = rs.getInt("morale"),
+            form = rs.getInt("form"),
+            experience = rs.getDouble("experience"),
+            isCustom = rs.getBoolean("is_custom"),
+            injuredUntil = rs.getInt("injured_until").takeIf { !rs.wasNull() }?.let(::MatchDay),
+        )
+    }
+
+    /**
+     * Le stelle dell'allenatore.
+     *
+     * Un club senza allenatore non e' un errore: si parte cosi'. Vale come un tre
+     * stelle, cioe' la media — assumerne uno migliora, non avere nessuno non affonda.
+     */
+    private fun coachStarsOf(clubId: ClubId): Int =
+        connection.prepareStatement(
+            "select max(stars) from staff where club_id = ? and role = 'ALLENATORE'",
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs ->
+                if (rs.next()) rs.getInt(1).takeIf { !rs.wasNull() && it > 0 } ?: 3 else 3
+            }
+        }
+
+    private fun clubNameOf(clubId: ClubId): String =
+        connection.prepareStatement("select name from clubs where id = ?").use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else "Club ${clubId.value}" }
+        }
+
+    private fun loadPendingFixtures(leagueId: Long): List<Fixture> {
+        val out = mutableListOf<Fixture>()
+        connection.prepareStatement(
+            """
+            select id, competition_id, round, round_label, home_club_id, away_club_id,
+                   match_day, kickoff, tie_id, is_second_leg
+            from fixtures
+            where league_id = ? and not played and kickoff is not null
+            order by kickoff
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += Fixture(
+                        id = rs.getLong("id"),
+                        competitionId = CompetitionId(rs.getLong("competition_id")),
+                        round = rs.getInt("round"),
+                        roundLabel = rs.getString("round_label"),
+                        home = ClubId(rs.getLong("home_club_id")),
+                        away = ClubId(rs.getLong("away_club_id")),
+                        matchDay = MatchDay(rs.getInt("match_day")),
+                        kickoff = rs.getTimestamp("kickoff")?.toLocalDateTime(),
+                        tieId = rs.getString("tie_id"),
+                        isSecondLeg = rs.getBoolean("is_second_leg"),
+                    )
+                }
+            }
+        }
+        return out
     }
 
     // ---------------------------------------------------- cosa sta per scadere
