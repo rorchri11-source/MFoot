@@ -9,16 +9,23 @@ import dev.mfoot.core.model.Player
 import dev.mfoot.core.model.Staff
 import dev.mfoot.core.rng.DeterministicRandom
 import dev.mfoot.core.world.GeneratedWorld
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
- * Traduce il mondo generato in JSON per la funzione `create_league`.
+ * Traduce il mondo generato nel corpo della chiamata a `create_league`.
  *
- * Le chiavi sono corte di proposito (`fn`, `ln`, `pos`) invece che descrittive: con
- * milletrecento giocatori, nomi di campo lunghi gonfiano il caricamento di parecchie
- * decine di kilobyte per niente. Il significato sta nella funzione SQL che li rilegge,
- * non nel filo.
+ * ## Perche' si scrive testo e non oggetti
+ *
+ * Il primo tentativo costruiva un albero di `JSONObject`: milletrecento giocatori, ognuno
+ * con un oggetto annidato per i dodici attributi. Il JSON finale sono ~400 KB, ma
+ * l'albero in memoria ne occupava cinquanta volte tanti, e il sistema ha ucciso l'app per
+ * memoria esaurita a 162 MB. Scrivendo direttamente il testo si resta sui kilobyte che
+ * servono davvero.
+ *
+ * ## Perche' le chiavi sono corte
+ *
+ * `fn` invece di `firstName`. Con milletrecento righe, nomi di campo descrittivi
+ * gonfiano il caricamento di decine di kilobyte per niente. Il significato sta nella
+ * funzione SQL che li rilegge, non sul filo.
  */
 object WorldUpload {
 
@@ -28,123 +35,158 @@ object WorldUpload {
         leagueName: String,
         accessCode: String,
         nickname: String,
-    ): JSONObject = JSONObject()
-        .put("p_name", leagueName)
-        .put("p_access_code", accessCode)
-        .put("p_config", configJson(config))
-        .put("p_seed", config.setup.worldSeed)
-        .put("p_nickname", nickname)
-        .put("p_players", world.players.toJsonArray(::playerJson))
-        .put("p_staff", world.staff.toJsonArray(::staffJson))
-        .put("p_ai_clubs", aiClubsJson(config))
+    ): String {
+        val w = JsonWriter(estimatedSize(world))
 
-    /**
-     * La configurazione della lega, in JSON.
-     *
-     * Non tutta: solo le sezioni che qualcuno legge davvero dall'altra parte — la
-     * funzione SQL per i crediti iniziali e le regole d'asta, il tick per la cadenza
-     * delle entrate. Il resto vive gia' nei preset e si ricava dal nome del preset.
-     * Serializzare novanta campi che nessuno rilegge sarebbe solo peso sul filo.
-     */
-    private fun configJson(config: LeagueConfig): JSONObject = JSONObject().apply {
-        put(
-            "setup",
-            JSONObject()
-                .put("totalClubs", config.setup.totalClubs)
-                .put("aiClubs", config.setup.aiClubs)
-                .put("minSquadSize", config.setup.minSquadSize)
-                .put("maxSquadSize", config.setup.maxSquadSize)
-                .put("worldSeed", config.setup.worldSeed),
-        )
-        put(
-            "economy",
-            JSONObject()
-                .put("startingCredits", config.economy.startingCredits)
-                .put("recurringIncome", config.economy.recurringIncome)
-                .put("incomeCadence", config.economy.incomeCadence.name)
-                .put("renewalCostFraction", config.economy.renewalCostFraction)
-                .put("wagesEnabled", config.economy.wagesEnabled),
-        )
-        put(
-            "market",
-            JSONObject()
-                .put("auctionDurationMinutes", config.market.auctionDurationMinutes)
-                .put("minimumRaise", config.market.minimumRaise)
-                .put("antiSnipeEnabled", config.market.antiSnipeEnabled)
-                .put("antiSnipeSeconds", config.market.antiSnipeSeconds)
-                .put("defaultContractMatchDays", config.market.defaultContractMatchDays)
-                .put("maxParallelAuctionsPerClub", config.market.maxParallelAuctionsPerClub),
-        )
-        put(
-            "rules",
-            JSONObject()
-                .put("customMustStart", config.rules.customMustStart)
-                .put("growthMultiplier", config.rules.growthMultiplier)
-                .put("youthTeamEnabled", config.rules.youthTeamEnabled)
-                .put("youthMaxAge", config.rules.youthMaxAge),
-        )
+        w.beginObject()
+        w.field("p_name", leagueName)
+        w.field("p_access_code", accessCode)
+        w.field("p_nickname", nickname)
+        w.field("p_seed", config.setup.worldSeed)
+
+        writeConfig(w, config)
+        writePlayers(w, world.players)
+        writeStaff(w, world.staff)
+        writeAiClubs(w, config)
+
+        w.endObject()
+        return w.toString()
     }
 
-    private fun playerJson(player: Player): JSONObject = JSONObject().apply {
-        put("fn", player.firstName)
-        put("ln", player.lastName)
-        put("nat", player.nationality)
-        put("age", player.age)
-        put("pos", player.primaryPosition.name)
-        put("sec", JSONArray().also { arr -> player.secondaryPositions.forEach { arr.put(it.name) } })
-        put("attr", JSONObject().also { obj -> Attr.entries.forEach { obj.put(it.name, player.attributes[it]) } })
-        put("wf", player.weakFoot)
-        put("sk", player.skillStars)
-        // I potenziali veri partono verso il database ma non tornano mai indietro: il
-        // client legge la vista players_public, che li omette.
-        put("pmin", player.potentialMin)
-        put("pmax", player.potentialMax)
-        put("traits", JSONArray().also { arr -> player.traits.forEach { arr.put(it.name) } })
-        put("ovr", player.overall)
+    /** ~360 byte a giocatore piu' un margine: evita che lo StringBuilder si ridimensioni. */
+    private fun estimatedSize(world: GeneratedWorld): Int =
+        world.players.size * 360 + world.staff.size * 120 + 8192
+
+    private fun writePlayers(w: JsonWriter, players: List<Player>) {
+        w.arrayField("p_players")
+        players.forEach { p ->
+            w.beginObject()
+            w.field("fn", p.firstName)
+            w.field("ln", p.lastName)
+            w.field("nat", p.nationality)
+            w.field("age", p.age)
+            w.field("pos", p.primaryPosition.name)
+
+            w.arrayField("sec")
+            p.secondaryPositions.forEach { w.value(it.name) }
+            w.endArray()
+
+            w.objectField("attr")
+            Attr.entries.forEach { w.field(it.name, p.attributes[it]) }
+            w.endObject()
+
+            w.field("wf", p.weakFoot)
+            w.field("sk", p.skillStars)
+            // I potenziali veri partono verso il database ma non tornano mai indietro:
+            // il client legge la vista players_public, che li omette.
+            w.field("pmin", p.potentialMin)
+            w.field("pmax", p.potentialMax)
+
+            w.arrayField("traits")
+            p.traits.forEach { w.value(it.name) }
+            w.endArray()
+
+            w.field("ovr", p.overall)
+            w.endObject()
+        }
+        w.endArray()
     }
 
-    private fun staffJson(staff: Staff): JSONObject = JSONObject().apply {
-        put("fn", staff.firstName)
-        put("ln", staff.lastName)
-        put("nat", staff.nationality)
-        put("role", staff.role.name)
-        put("stars", staff.stars)
+    private fun writeStaff(w: JsonWriter, staff: List<Staff>) {
+        w.arrayField("p_staff")
+        staff.forEach { s ->
+            w.beginObject()
+            w.field("fn", s.firstName)
+            w.field("ln", s.lastName)
+            w.field("nat", s.nationality)
+            w.field("role", s.role.name)
+            w.field("stars", s.stars)
+            w.endObject()
+        }
+        w.endArray()
     }
 
     /**
      * I club dell'AI, con il carattere gia' generato.
      *
-     * Nascono qui e non nel database perche' la personalita' viene dal seed della lega:
+     * Nasce qui e non nel database perche' la personalita' viene dal seed della lega:
      * generandola sul telefono resta riproducibile, e il tick puo' verificarla.
      */
-    private fun aiClubsJson(config: LeagueConfig): JSONArray {
+    private fun writeAiClubs(w: JsonWriter, config: LeagueConfig) {
         val rng = DeterministicRandom(config.setup.worldSeed * 7L + 13L)
-        return JSONArray().also { array ->
-            repeat(config.setup.aiClubs) { index ->
-                val clubId = ClubId(index + 1L)
-                val personality = AiPersonalityGenerator.generate(
-                    clubId, config.setup.worldSeed, config.ai,
-                )
-                val name = clubName(rng)
-                array.put(
-                    JSONObject()
-                        .put("name", name)
-                        .put("short", shortNameOf(name))
-                        .put("personality", personalityJson(personality)),
-                )
-            }
+
+        w.arrayField("p_ai_clubs")
+        repeat(config.setup.aiClubs) { index ->
+            val personality = AiPersonalityGenerator.generate(
+                ClubId(index + 1L), config.setup.worldSeed, config.ai,
+            )
+            val name = clubName(rng)
+
+            w.beginObject()
+            w.field("name", name)
+            w.field("short", shortNameOf(name))
+            w.objectField("personality")
+            writePersonality(w, personality)
+            w.endObject()
+            w.endObject()
         }
+        w.endArray()
     }
 
-    private fun personalityJson(p: AiPersonality): JSONObject = JSONObject().apply {
-        put("marketAggression", p.marketAggression)
-        put("youthPreference", p.youthPreference)
-        put("budgetDiscipline", p.budgetDiscipline)
-        put("patience", p.patience)
-        put("activeFromHour", p.activeFromHour)
-        put("activeToHour", p.activeToHour)
-        put("checksPerDay", p.checksPerDay)
-        put("obsessions", JSONArray().also { arr -> p.obsessions.forEach { arr.put(it.name) } })
+    private fun writePersonality(w: JsonWriter, p: AiPersonality) {
+        w.field("marketAggression", p.marketAggression)
+        w.field("youthPreference", p.youthPreference)
+        w.field("budgetDiscipline", p.budgetDiscipline)
+        w.field("patience", p.patience)
+        w.field("activeFromHour", p.activeFromHour)
+        w.field("activeToHour", p.activeToHour)
+        w.field("checksPerDay", p.checksPerDay)
+        w.arrayField("obsessions")
+        p.obsessions.forEach { w.value(it.name) }
+        w.endArray()
+    }
+
+    /**
+     * La configurazione, ridotta alle sezioni che qualcuno rilegge davvero: la funzione
+     * SQL per i crediti iniziali, il tick per la cadenza delle entrate e le regole
+     * d'asta. Serializzare novanta campi che nessuno consulta sarebbe solo peso.
+     */
+    private fun writeConfig(w: JsonWriter, config: LeagueConfig) {
+        w.objectField("p_config")
+
+        w.objectField("setup")
+        w.field("totalClubs", config.setup.totalClubs)
+        w.field("aiClubs", config.setup.aiClubs)
+        w.field("minSquadSize", config.setup.minSquadSize)
+        w.field("maxSquadSize", config.setup.maxSquadSize)
+        w.field("worldSeed", config.setup.worldSeed)
+        w.endObject()
+
+        w.objectField("economy")
+        w.field("startingCredits", config.economy.startingCredits)
+        w.field("recurringIncome", config.economy.recurringIncome)
+        w.field("incomeCadence", config.economy.incomeCadence.name)
+        w.field("renewalCostFraction", config.economy.renewalCostFraction)
+        w.field("wagesEnabled", config.economy.wagesEnabled)
+        w.endObject()
+
+        w.objectField("market")
+        w.field("auctionDurationMinutes", config.market.auctionDurationMinutes)
+        w.field("minimumRaise", config.market.minimumRaise)
+        w.field("antiSnipeEnabled", config.market.antiSnipeEnabled)
+        w.field("antiSnipeSeconds", config.market.antiSnipeSeconds)
+        w.field("defaultContractMatchDays", config.market.defaultContractMatchDays)
+        w.field("maxParallelAuctionsPerClub", config.market.maxParallelAuctionsPerClub)
+        w.endObject()
+
+        w.objectField("rules")
+        w.field("customMustStart", config.rules.customMustStart)
+        w.field("growthMultiplier", config.rules.growthMultiplier)
+        w.field("youthTeamEnabled", config.rules.youthTeamEnabled)
+        w.field("youthMaxAge", config.rules.youthMaxAge)
+        w.endObject()
+
+        w.endObject()
     }
 
     // Nomi di club inventati: stessa logica dei giocatori, nessuna licenza da rispettare.

@@ -212,6 +212,9 @@ class WorldViewModel : ViewModel() {
             val payload = withContext(Dispatchers.Default) {
                 WorldUpload.buildPayload(world, config, name, accessCode, nickname)
             }
+            _state.value = _state.value.copy(
+                upload = UploadState.InCorso("Invio ${payload.length / 1024} KB…"),
+            )
 
             when (val result = SupabaseApi.createLeague(payload)) {
                 is ApiResult.Error ->

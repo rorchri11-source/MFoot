@@ -2,7 +2,6 @@ package dev.mfoot.android.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.net.HttpURLConnection
@@ -81,10 +80,15 @@ object SupabaseApi {
         }
     }
 
-    /** Crea la lega e carica il mondo in un'unica transazione lato database. */
-    suspend fun createLeague(payload: JSONObject): ApiResult<Long> =
+    /**
+     * Crea la lega e carica il mondo in un'unica transazione lato database.
+     *
+     * Il payload arriva gia' come testo: costruirlo come albero di oggetti faceva
+     * uccidere l'app dal sistema per memoria esaurita. Vedi [WorldUpload].
+     */
+    suspend fun createLeague(payload: String): ApiResult<Long> =
         withContext(Dispatchers.IO) {
-            when (val response = rpc("create_league", payload)) {
+            when (val response = request("/rest/v1/rpc/create_league", "POST", payload)) {
                 is ApiResult.Error -> response
                 is ApiResult.Ok -> {
                     val id = response.value.trim().trim('"').toLongOrNull()
@@ -99,11 +103,14 @@ object SupabaseApi {
 
     suspend fun joinLeague(accessCode: String, nickname: String): ApiResult<Long> =
         withContext(Dispatchers.IO) {
-            val payload = JSONObject()
-                .put("p_access_code", accessCode)
-                .put("p_nickname", nickname)
+            val payload = JsonWriter(256)
+                .beginObject()
+                .field("p_access_code", accessCode)
+                .field("p_nickname", nickname)
+                .endObject()
+                .toString()
 
-            when (val response = rpc("join_league", payload)) {
+            when (val response = request("/rest/v1/rpc/join_league", "POST", payload)) {
                 is ApiResult.Error -> response
                 is ApiResult.Ok -> {
                     val id = response.value.trim().trim('"').toLongOrNull()
@@ -131,9 +138,6 @@ object SupabaseApi {
                 }
             }
         }
-
-    private fun rpc(function: String, payload: JSONObject): ApiResult<String> =
-        request("/rest/v1/rpc/$function", "POST", payload.toString())
 
     /**
      * Una richiesta HTTP verso Supabase.
@@ -167,7 +171,11 @@ object SupabaseApi {
                 extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
                 if (body != null) {
                     doOutput = true
-                    outputStream.use { it.write(body.toByteArray()) }
+                    // In streaming, a blocchi: senza, HttpURLConnection accumula tutto
+                    // il corpo in memoria per calcolare Content-Length, e con un
+                    // caricamento da centinaia di kilobyte e' un'altra copia di troppo.
+                    setChunkedStreamingMode(16 * 1024)
+                    outputStream.bufferedWriter().use { it.write(body) }
                 }
             }
 
@@ -202,7 +210,3 @@ object SupabaseApi {
         return parsed?.let { "$it ($code)" } ?: "Errore $code: ${body.take(120)}"
     }
 }
-
-/** Comodita' per costruire array JSON senza cerimonie. */
-fun <T> Iterable<T>.toJsonArray(transform: (T) -> JSONObject): JSONArray =
-    JSONArray().also { array -> forEach { array.put(transform(it)) } }
