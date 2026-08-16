@@ -63,7 +63,26 @@ Misurati su migliaia di partite simulate, non stimati:
 
 ## Da fare
 
-### Fase 9 — Backend a costo zero
+### Fase 9 — Backend a costo zero  🟡 infrastruttura in piedi
+
+**L'infrastruttura è verificata e funzionante.** Il 2026-08-16 il tick ha completato il
+primo giro end-to-end su GitHub Actions: build, connessione a Supabase, esecuzione, in
+1 minuto e 17 secondi. Il cron è attivo e gira da solo ogni cinque minuti.
+
+Resta da riempire di logica: il tubo c'è, dentro passa ancora poco.
+
+#### Due lezioni pagate sul campo
+
+1. **`gradlew` va tracciato come eseguibile (100755).** Su Windows il permesso di
+   esecuzione non esiste, quindi git lo salva come 100644 e su Ubuntu la build muore con
+   *Permission denied* prima ancora di provare a connettersi. Il workflow ora fa comunque
+   un `chmod +x` come rete di sicurezza.
+2. **Lo schema SQL deve essere rieseguibile.** Postgres non ha
+   `create policy if not exists`: senza un `drop policy if exists` davanti, rilanciare lo
+   script fallisce con *42710: policy already exists*. E rilanciarlo è normale, perché la
+   prima esecuzione può interrompersi a metà.
+
+
 
 **Vincolo dell'utente: costo zero assoluto, nessuna carta di credito, nessuna macchina
 propria accesa.** L'architettura è stata scelta di conseguenza.
