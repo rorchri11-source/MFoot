@@ -44,6 +44,11 @@ jobs:
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # Rete di sicurezza: il repository viene aggiornato da Windows, dove il permesso
+      # di esecuzione non esiste. Se si perde di nuovo, qui non se ne accorge nessuno.
+      - name: Rendi eseguibile il wrapper
+        run: chmod +x ./gradlew
+
       - name: Costruisci il tick
         run: ./gradlew :tick:fatJar --no-daemon
 
