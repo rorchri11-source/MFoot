@@ -21,3 +21,7 @@ local.properties
 
 # Android
 local.properties
+
+# Dump di memoria della JVM: li lascia una build andata in OOM, pesano centinaia
+# di megabyte e non servono a nessuno dopo cinque minuti.
+*.hprof

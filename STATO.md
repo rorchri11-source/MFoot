@@ -1,8 +1,8 @@
 # MFoot — stato del progetto
 
 **Aggiornato:** 2026-08-16
-**Test:** 377 verdi, 0 falliti
-**Righe:** 6.677 di sorgente, 4.170 di test
+**Test:** 437 verdi, 0 falliti
+**Verificato:** su emulatore Android e su Supabase, non solo nei test
 
 ---
 
@@ -10,15 +10,21 @@
 
 ```
 mfoot/
-├── core/          ✅ COMPLETO — Kotlin/JVM puro, zero dipendenze di piattaforma
-├── server/        ❌ da fare — Ktor + PostgreSQL + World Tick
-└── android/       ❌ da fare — Jetpack Compose + SQLDelight + FCM
+├── core/          ✅ il gioco: motore, mondo, mercato, AI. Zero dipendenze di piattaforma
+├── tick/          🟡 il battito: gira su GitHub Actions ogni 5 minuti
+├── android/       🟡 l'app: entra in lega, legge il mondo, fonda il club
+└── supabase/      ✅ schema, RLS, funzioni transazionali
 ```
 
-**La regola d'oro:** `core` non importa niente di Android, niente di Ktor, niente di
-database, e non fa I/O. Prende oggetti e restituisce oggetti. È il motivo per cui si
-testa in venti secondi e per cui ci si può far girare diecimila stagioni di seguito
-per bilanciare il gioco.
+**La regola d'oro:** `core` non importa niente di Android, niente di database, e non fa
+I/O. Prende oggetti e restituisce oggetti. È il motivo per cui si testa in mezzo minuto e
+per cui ci si può far girare diecimila stagioni di seguito per bilanciare il gioco.
+
+**Il corollario:** tutto ciò che è una *regola* vive in `core` e viene usato identico
+dall'app e dal server. La configurazione della lega viaggia con
+[`ConfigJson`](core/src/main/kotlin/dev/mfoot/core/config/ConfigJson.kt), che scrive e
+rilegge nello stesso file, con un test di andata e ritorno. Se scrittura e lettura
+divergessero, le regole scelte dall'admin tornerebbero ai valori di serie **in silenzio**.
 
 ### Come si esegue
 
@@ -26,10 +32,8 @@ per bilanciare il gioco.
 gradlew :core:test
 ```
 
-Per vedere i numeri di bilanciamento del motore:
-
 ```bash
-gradlew :core:test --tests "*BalanceReportTest*" -i
+gradlew :android:assembleDebug
 ```
 
 ---
@@ -38,14 +42,18 @@ gradlew :core:test --tests "*BalanceReportTest*" -i
 
 | # | Fase | Contenuto |
 |---|---|---|
-| 1 | **Fondamenta** | `DeterministicRandom` (xorshift64\*), `MathX` su `StrictMath`, modelli (Player, Club, Contract, Loan, Staff, Attributes, Position, Zone, Trait), `LeagueConfig` con ~90 parametri, `ConfigValidator`, tre preset |
-| 2 | **Mondo procedurale** | `DevelopmentCurve`, `AttributeGenerator`, `NameBank` (10 nazionalità), `WorldGenerator`, `PotentialEstimator` |
+| 1 | **Fondamenta** | `DeterministicRandom` (xorshift64\*), `MathX` su `StrictMath`, modelli, `LeagueConfig` con ~110 parametri, `ConfigValidator`, tre preset |
+| 2 | **Mondo procedurale** | `DevelopmentCurve`, `AttributeGenerator`, `NameBank`, `WorldGenerator`, `PotentialEstimator` |
 | 3 | **Motore partita** | `Formation`, `Lineup`, `Tactics`, `ConditionalOrder`, `ZoneRatings`, `MatchEngine` con finestra di intervallo |
 | 4 | **Bilanciamento** | `BalanceHarness` + tarature misurate su migliaia di partite |
 | 5 | **Sistemi giocatore** | `GrowthEngine`, `StaminaEngine`, `MoraleEngine`, `ConversationEngine` con promesse |
 | 6 | **Calendario** | `FixtureGenerator` (Berger, eliminazione, gironi), `CalendarSolver`, `Standings` |
 | 7 | **Mercato** | `AuctionRules` (offerta massima, anti-snipe, blocco fondi), `NegotiationRules`, `ContractRules`, `Valuation` |
 | 8 | **AI** | `AiPersonality`, `AiScheduler` (risvegli scaglionati), `AiManager` (anti-sciame) |
+| 9 | **Sessione** | Accesso anonimo salvato su disco, rinnovo automatico, nessuna schermata di login |
+| 10 | **Ingresso** | Crea una lega con un preset, oppure entra con un codice |
+| 11 | **Lettura** | `LeagueRepository`: lega, club, giocatori e contratti letti dal database in streaming |
+| 12 | **Club e custom** | `CustomPlayerBuilder` in `core`, `create_club` che rifà il conto lato server, schermata di fondazione |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -59,153 +67,84 @@ Misurati su migliaia di partite simulate, non stimati:
 | Catenaccio vs Arrembante | 50,5% vs 46,6% | nessun assetto domina |
 | Allenatore 5⭐ vs 1⭐ | 55,5% | conta, ma meno della rosa |
 
+### Il giocatore custom, misurato
+
+Il budget non deve permettere di uscire con un titolare già pronto: il custom è un
+progetto, non un acquisto. Un test costruisce il giocatore più forte possibile in ogni
+ruolo, spendendo sempre sul punto col miglior rapporto peso/prezzo.
+
+| Costruzione | Overall |
+|---|---|
+| Tutto sugli attributi, stelle a 1 | fino a 79 |
+| Giocatore completo (stelle comprate) | sotto 72 |
+| I fuoriclasse del mondo generato | 87-93 |
+
+Con i primi scaglioni di costo usciva un **81**, cioè già dentro la fascia dei top: la
+curva è stata resa più ripida finché il numero non è tornato dove doveva.
+
+Asimmetria nota e fissata in un test: il portiere rende di più a parità di budget, perché
+il suo overall dipende da quattro attributi invece che da sei.
+
+---
+
+## Verificato sul campo, non solo nei test
+
+| Cosa | Come |
+|---|---|
+| Caricamento del mondo | 1.128 giocatori, 120 fra staff, 8 club AI sul database |
+| Row Level Security | Da non membro si vedono zero righe; dopo `join_league` compaiono tutte |
+| `ai_states` invisibile | Anche ai membri: una personalità leggibile renderebbe l'asta un esercizio di lettura |
+| `players_public` | Non contiene i potenziali veri |
+| Sessione persistente | Chiusa e riaperta l'app: si rientra senza reinserire il codice |
+| Conteggio giocatori | 1128 dopo la paginazione (prima ne arrivavano 1000) |
+| Budget del custom | 15 punti su Passaggio → 65→80, costo 4×1 + 8×3 + 3×5 = 43, overall 65→69 |
+
 ---
 
 ## Da fare
 
-### Fase 9 — Backend a costo zero  🟡 infrastruttura in piedi
+### Il prossimo blocco, in ordine di valore
 
-**L'infrastruttura è verificata e funzionante.** Il 2026-08-16 il tick ha completato il
-primo giro end-to-end su GitHub Actions: build, connessione a Supabase, esecuzione, in
-1 minuto e 17 secondi. Il cron è attivo e gira da solo ogni cinque minuti.
+1. **Le partite.** Il tick le pianifica ma non le simula ancora, e soprattutto **nessuno
+   crea il calendario**: `FixtureGenerator` e `CalendarSolver` esistono e sono testati, ma
+   non c'è ancora il comando dell'admin che avvia la stagione e scrive le partite a
+   database. È il pezzo che manca perché il mondo *giri* davvero.
+2. **Le aste dall'app.** `place_bid` è scritta, testata e atomica; manca la schermata.
+3. **Il risveglio delle AI.** `AiManager` decide già; manca il codice che porta le sue
+   decisioni sul database.
+4. **Formazione e ordini condizionali.** La tabella `lineups` esiste e si scrive già alla
+   fondazione del club.
+5. **Notifiche Telegram.** Il tick le accumula in `notifications`, nessuno le consegna.
 
-Resta da riempire di logica: il tubo c'è, dentro passa ancora poco.
+### Cosa fa e cosa non fa il tick, oggi
 
-#### Due lezioni pagate sul campo
+| Effetto | Stato |
+|---|---|
+| Chiusura aste, con fondi e contratto | ✅ |
+| Scadenza contratti (il custom si rinnova d'ufficio) | ✅ |
+| Rientro dai prestiti | ✅ |
+| Scadenza trattative | ✅ |
+| Entrate ricorrenti | ✅ |
+| Stipendi | ✅ |
+| Recupero stamina, col moltiplicatore del preparatore | ✅ |
+| Simulazione partite | ❌ pianificata, non applicata |
+| Risveglio AI | ❌ pianificato, non applicato |
+| Verifica promesse | ❌ pianificata, non applicata |
+| Riepilogo giornaliero | ❌ pianificato, non applicato |
 
-1. **`gradlew` va tracciato come eseguibile (100755).** Su Windows il permesso di
-   esecuzione non esiste, quindi git lo salva come 100644 e su Ubuntu la build muore con
-   *Permission denied* prima ancora di provare a connettersi. Il workflow ora fa comunque
-   un `chmod +x` come rete di sicurezza.
-2. **Lo schema SQL deve essere rieseguibile.** Postgres non ha
-   `create policy if not exists`: senza un `drop policy if exists` davanti, rilanciare lo
-   script fallisce con *42710: policy already exists*. E rilanciarlo è normale, perché la
-   prima esecuzione può interrompersi a metà.
+### Migrazioni SQL da eseguire
 
+Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 
+| File | Contenuto |
+|---|---|
+| `supabase/migrations/0001_schema.sql` | Tabelle, vista pubblica, `place_bid`, RLS |
+| `supabase/migrations/0002_create_league.sql` | `create_league`, `join_league` |
+| `supabase/migrations/0003_club.sql` | `create_club` e il conto del budget lato server |
 
-**Vincolo dell'utente: costo zero assoluto, nessuna carta di credito, nessuna macchina
-propria accesa.** L'architettura è stata scelta di conseguenza.
-
-| Pezzo | Chi lo fa | Costo |
-|---|---|---|
-| Database + API REST + login + realtime | **Supabase** (Postgres gestito) | gratis |
-| **World Tick** | **GitHub Actions**, cron ogni 5 minuti | gratis |
-| Notifiche | **Bot Telegram** | gratis |
-
-Il repository è **pubblico**: è la condizione per avere minuti GitHub Actions illimitati.
-Password e chiavi non stanno mai nel codice ma nei *secrets* di GitHub, che restano
-privati anche sui repo pubblici.
-
-#### Perché una griglia da 5 minuti è accettabile *per questo gioco*
-
-Non è un ripiego: dipende da due decisioni di design prese molto prima, per altri motivi.
-
-1. **Le aste usano l'offerta massima automatica.** Si dichiara il proprio limite e si va
-   via; l'asta dura un'ora e i 5 minuti spariscono dentro. Con rilanci manuali da 1
-   credito sarebbe stato insopportabile.
-2. **Le partite sono timeline pre-calcolate** che il client riproduce in locale. La
-   diretta delle 21 dipende dall'orologio del telefono, non dal server. Latenza
-   percepita: zero.
-
-Il **recupero idempotente** serve esattamente qui: se GitHub ritarda o salta
-un'esecuzione, al giro successivo il tick recupera tutto quello che sarebbe dovuto
-succedere, in ordine e una volta sola.
-
-#### Da costruire
-
-- **`WorldTick`** — l'orchestratore. Gira come programma che parte, elabora e termina
-  (non un servizio sempre acceso): simula le partite dovute, chiude le aste scadute, fa
-  scadere contratti e prestiti, distribuisce i crediti, sveglia le AI dovute, aggiorna
-  stamina/morale/crescita, verifica le promesse, manda il riepilogo.
-- **`ultimoTickElaborato`** salvato a database, con recupero idempotente al risveglio.
-- **Schema PostgreSQL** su Supabase. Le operazioni sui crediti girano in transazione con
-  lock di riga.
-- **Row Level Security** — i client scrivono solo dove possono: offerte e comandi. Lo
-  stato autorevole lo scrive il tick.
-- **Validazione immediata delle offerte** con un trigger Postgres che controlla i fondi
-  in modo atomico: l'utente ha risposta subito, senza aspettare il tick. Il calcolo di
-  chi è in testa è una funzione pura delle offerte, quindi lo può fare anche il client
-  per mostrarlo all'istante.
-- **Bot Telegram** per le notifiche, chiamato dal tick.
-
-#### Rischi accettati consapevolmente
-
-- Tutto si muove su una griglia da ~5 minuti.
-- I cron di GitHub possono essere ritardati sotto carico (il recupero idempotente lo
-  assorbe) e vengono disattivati dopo ~60 giorni di repo fermo (si riattivano con un
-  click).
-- Si dipende da due servizi gratuiti che possono cambiare condizioni.
-
-**Mitigazione:** il tick resta un normale programma JVM che parla con un Postgres via
-variabile d'ambiente. Il giorno in cui diventasse sensato spendere ~5 €/mese, si sposta
-su un server sempre acceso — e passa da 5 minuti a 1 minuto — senza riscrivere niente.
-
-### Fase 10 — App Android (`android/`)  🟡 gira sull'emulatore
-
-**L'app esiste e funziona.** Genera il mondo sul telefono con `WorldGenerator` e mostra
-1.128 giocatori con ricerca, filtri per ruolo e segnale di crescita. Verificata
-sull'emulatore: il filtro *Under 21* riduce a 189 giocatori, tutti con margine di crescita
-in ambra — il modello di stima regge sul campo, non solo nei test.
-
-Fatto: modulo Gradle, tema Compose derivato dal design system, lista giocatori,
-generazione locale del mondo.
-
-Da fare: **scheda giocatore** (il registro alto), creazione lega, e il collegamento a
-Supabase — al momento l'app non parla ancora col database.
-
-#### Tre trappole di configurazione, già pagate
-
-1. **Da AGP 9.0 il supporto Kotlin è integrato.** Applicare anche
-   `org.jetbrains.kotlin.android` fa fallire la configurazione con un messaggio che dice
-   solo "no error message" finché non si guarda lo stacktrace.
-2. **`google()` va anche in `pluginManagement`**, non solo in
-   `dependencyResolutionManagement`: sono due blocchi separati e il plugin Android si
-   risolve dal primo.
-3. **La Compose BOM di agosto 2026 richiede `compileSdk = 37`.** Con 36 fallisce in
-   `checkDebugAarMetadata` con quindici errori tutti uguali.
-
-
-
-Il linguaggio visivo è approvato e fissato in [`docs/DESIGN-SYSTEM.md`](docs/DESIGN-SYSTEM.md),
-con i valori già nella forma che serve a Compose. I mockup di riferimento sono in
-[`docs/mockups/`](docs/mockups/) e si guardano con `gradlew`-indipendente:
-
-```
-node -e "..."   # vedi .claude/launch.json, poi http://localhost:4173/system.html
-```
-
-**Il principio è due registri, una lingua.** La scheda giocatore si guarda una alla volta
-prima di spendere sessanta crediti, quindi può permettersi il teatro. La lista si scorre
-per venti minuti cercando un terzino, quindi deve stare zitta. Sbagliare registro è il modo
-più veloce per rendere l'app faticosa.
-
-Metodo: **progettare in HTML, implementare in Compose.** Iterare un mockup costa secondi,
-iterare una schermata Android costa minuti. I mockup non sono lavoro buttato: sono la
-specifica visiva, e sono ciò che l'utente approva prima che si scriva Kotlin.
-
-
-
-- Compose per tutte le schermate: creazione lega con preset, creazione club ed editor
-  maglia, creazione player custom con budget abilità, rosa e Primavera, formazione con
-  drag&drop, ordini condizionali, mercato e aste live, trattative, conversazioni,
-  classifiche, replay partita con i due livelli (ambiente + highlight).
-- SQLDelight per la cache locale: rosa e formazione consultabili anche senza linea.
-- Ricezione FCM.
-
-### Cose progettate ma non ancora scritte
-
-Sono nella spec, non nel codice:
-
-- **Asta iniziale in modalità "serata"** — le regole d'asta ci sono tutte, manca la
-  sequenza a chiamata con i turni.
-- **Scouting come spesa** — `PotentialEstimator` accetta già `scoutAccuracy`, manca il
-  meccanismo che fa spendere crediti per alzarlo.
-- **Avanzamento automatico dei tabelloni** — `nextKnockoutRound` esiste, va collegato
-  ai risultati dal World Tick.
-- **Deriva di forma dei giocatori liberi** — la versione economica del "mondo vivo".
-- **Amichevoli fra club** — le regole di crescita le gestiscono già
-  (`friendliesCountForGrowth`), manca il flusso di richiesta/accettazione.
+Le leghe create prima della migrazione `0003` non hanno i pesi dei ruoli in
+configurazione e **non possono accettare nuovi club**: per provare la fondazione va
+creata una lega nuova.
 
 ---
 
@@ -216,7 +155,7 @@ Sono nella spec, non nel codice:
 | Mondo 100% procedurale | Zero licenze, zero manutenzione dati, bilanciamento totale, settore giovanile naturale |
 | Kotlin nativo | Scelta dell'utente: migliore app Android, FCM nativo, funzionamento offline |
 | `core` Kotlin/JVM, non KMP | Server e app sono entrambi JVM. Migrazione a KMP meccanica se servirà iOS |
-| Server sempre acceso | Il mondo deve girare a telefoni spenti — requisito esplicito |
+| Backend a costo zero (Supabase + GitHub Actions) | Il mondo deve girare a telefoni spenti, ma senza pagare niente e senza lasciare acceso niente di proprio |
 | Timeline pre-calcolata | Costo zero durante il live, nessuna divergenza, replay gratuito |
 | Ordini condizionali + intervallo | Agency vera senza penalizzare chi non c'è alle 21 |
 | Tutto in giornate, non giorni | Il ritmo reale è configurabile e nessun sistema si rompe |
