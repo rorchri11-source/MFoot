@@ -12,7 +12,7 @@ enum class Attr(val label: String, val goalkeeperOnly: Boolean = false) {
     TECNICA("Tecnica"),
     PASSAGGIO("Passaggio"),
     FISICO("Fisico"),
-    VELOCITA("Velocita"),
+    VELOCITA("Velocità"),
     DIFESA("Difesa"),
     INTERCETTAZIONE("Intercettazione"),
     POSIZIONAMENTO("Posizionamento"),
