@@ -33,6 +33,7 @@ import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AppViewModel
 import dev.mfoot.android.app.DoorMode
 import dev.mfoot.android.ui.DoorScreen
+import dev.mfoot.android.ui.FoundingScreen
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.PlayerDetailScreen
 import dev.mfoot.android.ui.PlayerListScreen
@@ -81,6 +82,16 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
             is AppState.Guasto -> Guasto(current.motivo, viewModel::avvia)
 
+            is AppState.Fondazione -> FoundingScreen(
+                state = current.founding,
+                onChange = viewModel::aggiornaFondazione,
+                onRaise = viewModel::alzaAttributo,
+                onLower = viewModel::abbassaAttributo,
+                onPosition = viewModel::cambiaRuolo,
+                onConfirm = viewModel::confermaFondazione,
+                onCancel = viewModel::annullaFondazione,
+            )
+
             is AppState.Dentro -> {
                 PlayerListScreen(
                     state = current,
@@ -90,6 +101,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     onSelect = viewModel::select,
                     onDismissNotice = viewModel::chiudiAvviso,
                     onLeave = viewModel::lasciaLega,
+                    onFoundClub = viewModel::fondaClub,
                 )
 
                 // La scheda entra dal basso sopra la lista: cosi' si capisce che si sta

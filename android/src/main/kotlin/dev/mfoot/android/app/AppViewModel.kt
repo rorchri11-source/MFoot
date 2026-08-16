@@ -3,6 +3,7 @@ package dev.mfoot.android.app
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.mfoot.android.data.ApiResult
+import dev.mfoot.android.data.ClubUpload
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.data.Session
@@ -12,6 +13,9 @@ import dev.mfoot.android.data.WorldUpload
 import dev.mfoot.core.config.ConfigPresets
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.market.Valuation
+import dev.mfoot.core.model.Attr
+import dev.mfoot.core.model.Position
+import dev.mfoot.core.world.CustomPlayerBuilder
 import dev.mfoot.core.world.PotentialEstimator
 import dev.mfoot.core.world.WorldGenerator
 import kotlinx.coroutines.Dispatchers
@@ -218,6 +222,91 @@ class AppViewModel : ViewModel() {
                 value = Valuation.estimatedValue(player, estimate, config),
                 club = snapshot.clubOfPlayer[player.id.value]?.let(clubById::get),
             )
+        }
+    }
+
+    // ------------------------------------------------------------------------ fondazione
+
+    /** Apre la fondazione del club, con il progetto gia' impostato sull'eta' di partenza. */
+    fun fondaClub() {
+        val dentro = _state.value as? AppState.Dentro ?: return
+        if (dentro.lega.myClub != null) return
+
+        val config = dentro.lega.league.config.custom
+        _state.value = AppState.Fondazione(
+            FoundingState(
+                lega = dentro.lega,
+                draft = CustomPlayerBuilder.Draft(
+                    age = config.defaultAge,
+                    weakFoot = config.startingStars,
+                    skillStars = config.startingStars,
+                    nationality = dentro.lega.league.config.world.nationalities.firstOrNull() ?: "Italia",
+                ),
+            ),
+        )
+    }
+
+    fun aggiornaFondazione(block: (FoundingState) -> FoundingState) {
+        val fondazione = _state.value as? AppState.Fondazione ?: return
+        _state.value = AppState.Fondazione(block(fondazione.founding).copy(errore = null))
+    }
+
+    fun alzaAttributo(attr: Attr) = aggiornaFondazione {
+        it.copy(draft = CustomPlayerBuilder.raise(it.draft, attr, it.config))
+    }
+
+    fun abbassaAttributo(attr: Attr) = aggiornaFondazione {
+        it.copy(draft = CustomPlayerBuilder.lower(it.draft, attr, it.config))
+    }
+
+    fun cambiaRuolo(position: Position) = aggiornaFondazione {
+        it.copy(draft = CustomPlayerBuilder.withPosition(it.draft, position))
+    }
+
+    fun annullaFondazione() = ricarica()
+
+    /**
+     * Fonda il club.
+     *
+     * Il risultato lo dice il server: se l'overall che torna non e' quello mostrato a
+     * schermo, e' il server ad avere ragione, ed e' giusto che l'utente veda il numero
+     * vero invece di quello che credeva di aver costruito.
+     */
+    fun confermaFondazione() {
+        val fondazione = (_state.value as? AppState.Fondazione)?.founding ?: return
+
+        val problemi = fondazione.problems
+        if (problemi.isNotEmpty()) {
+            aggiornaFondazione { it.copy(errore = problemi.first()) }
+            return
+        }
+
+        viewModelScope.launch {
+            aggiornaFondazione { it.copy(busy = "Fondo il club…") }
+
+            val payload = ClubUpload.payload(
+                leagueId = fondazione.lega.league.id,
+                clubName = fondazione.clubName,
+                clubShort = fondazione.clubShort,
+                kitPrimary = fondazione.kitPrimary,
+                kitSecondary = fondazione.kitSecondary,
+                draft = fondazione.draft,
+            )
+
+            when (val creato = SupabaseApi.createClub(payload)) {
+                is ApiResult.Error ->
+                    aggiornaFondazione { it.copy(busy = null, errore = creato.message) }
+
+                is ApiResult.Ok -> {
+                    Session.clubId = creato.value.clubId
+                    carica(
+                        fondazione.lega.league.id,
+                        avviso = "${fondazione.clubName} e' nato. " +
+                            "${fondazione.draft.firstName} ${fondazione.draft.lastName} " +
+                            "esce a ${creato.value.overall}, con ${creato.value.spent} punti spesi.",
+                    )
+                }
+            }
         }
     }
 

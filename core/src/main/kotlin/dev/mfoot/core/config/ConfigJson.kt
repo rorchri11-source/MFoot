@@ -49,10 +49,35 @@ object ConfigJson {
         writeMarket(w, config.market)
         writeCalendar(w, config.calendar)
         writeRules(w, config.rules)
+        writeCustom(w, config.custom)
         writeWorld(w, config.world)
         writeNotifications(w, config.notifications)
         writeAi(w, config.ai)
         writeEngine(w, config.engine)
+        writeRoleWeights(w)
+    }
+
+    /**
+     * Le tabelle dei pesi per ruolo, scritte ma **mai rilette**.
+     *
+     * Non sono un'impostazione: vengono da [Position] e cambiano solo cambiando il codice.
+     * Viaggiano lo stesso perche' servono al **database**, che deve poter ricalcolare da
+     * solo l'overall e la base di partenza quando qualcuno crea il suo giocatore.
+     *
+     * Il motivo e' semplice: se il controllo del budget vivesse solo nell'app, chiunque
+     * sappia comporre una richiesta HTTP potrebbe presentarsi con un 93 il primo giorno.
+     * Il database deve poter dire di no da solo — e per dirlo gli servono questi numeri.
+     * Mandarglieli invece di riscriverli in SQL vuol dire che la verita' resta una sola,
+     * qui in `core`.
+     */
+    private fun writeRoleWeights(w: JsonWriter) {
+        w.objectField("roleWeights")
+        Position.entries.forEach { position ->
+            w.objectField(position.name)
+            position.ovrWeights.forEach { (attr, weight) -> w.field(attr.name, weight) }
+            w.endObject()
+        }
+        w.endObject()
     }
 
     private fun writeSetup(w: JsonWriter, c: SetupConfig) {
@@ -159,6 +184,30 @@ object ConfigJson {
         w.endObject()
     }
 
+    private fun writeCustom(w: JsonWriter, c: CustomPlayerConfig) {
+        w.objectField("custom")
+        w.field("baseOverall", c.baseOverall)
+        w.field("skillBudget", c.skillBudget)
+        w.field("starCost", c.starCost)
+        w.field("startingStars", c.startingStars)
+        w.arrayField("costTiers")
+        c.costTiers.forEach {
+            w.beginObject()
+            w.field("upTo", it.upTo)
+            w.field("cost", it.cost)
+            w.endObject()
+        }
+        w.endArray()
+        w.field("offRoleBase", c.offRoleBase)
+        w.field("wrongSideBase", c.wrongSideBase)
+        w.field("minAge", c.minAge)
+        w.field("maxAge", c.maxAge)
+        w.field("defaultAge", c.defaultAge)
+        w.field("potentialBonus", c.potentialBonus)
+        w.field("potentialCeiling", c.potentialCeiling)
+        w.endObject()
+    }
+
     private fun writeWorld(w: JsonWriter, c: WorldConfig) {
         w.objectField("world")
         w.objectField("tiers")
@@ -252,6 +301,7 @@ object ConfigJson {
             market = readMarket(root["market"], d.market),
             calendar = readCalendar(root["calendar"], d.calendar),
             rules = readRules(root["rules"], d.rules),
+            custom = readCustom(root["custom"], d.custom),
             world = readWorld(root["world"], d.world),
             notifications = readNotifications(root["notifications"], d.notifications),
             ai = readAi(root["ai"], d.ai),
@@ -342,6 +392,23 @@ object ConfigJson {
         moraleEnabled = n["moraleEnabled"].bool(d.moraleEnabled),
         conversationsEnabled = n["conversationsEnabled"].bool(d.conversationsEnabled),
         lowMoraleThreshold = n["lowMoraleThreshold"].int(d.lowMoraleThreshold),
+    )
+
+    private fun readCustom(n: JsonNode, d: CustomPlayerConfig) = CustomPlayerConfig(
+        baseOverall = n["baseOverall"].int(d.baseOverall),
+        skillBudget = n["skillBudget"].int(d.skillBudget),
+        starCost = n["starCost"].int(d.starCost),
+        startingStars = n["startingStars"].int(d.startingStars),
+        costTiers = n["costTiers"].listOr(d.costTiers) { tier ->
+            CostTier(upTo = tier["upTo"].int(99), cost = tier["cost"].int(1))
+        },
+        offRoleBase = n["offRoleBase"].int(d.offRoleBase),
+        wrongSideBase = n["wrongSideBase"].int(d.wrongSideBase),
+        minAge = n["minAge"].int(d.minAge),
+        maxAge = n["maxAge"].int(d.maxAge),
+        defaultAge = n["defaultAge"].int(d.defaultAge),
+        potentialBonus = n["potentialBonus"].int(d.potentialBonus),
+        potentialCeiling = n["potentialCeiling"].int(d.potentialCeiling),
     )
 
     private fun readWorld(n: JsonNode, d: WorldConfig): WorldConfig {

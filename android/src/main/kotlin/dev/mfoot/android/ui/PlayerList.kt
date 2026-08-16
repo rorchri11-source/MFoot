@@ -52,13 +52,14 @@ fun PlayerListScreen(
     onSelect: (PlayerRow) -> Unit,
     onDismissNotice: () -> Unit,
     onLeave: () -> Unit,
+    onFoundClub: () -> Unit,
 ) {
     Column(
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg),
     ) {
-        ListHeader(state, onQuery, onFilter, onScope, onDismissNotice, onLeave)
+        ListHeader(state, onQuery, onFilter, onScope, onDismissNotice, onLeave, onFoundClub)
 
         val visible = state.visible
         if (visible.isEmpty()) {
@@ -81,6 +82,7 @@ private fun ListHeader(
     onScope: (ListScope) -> Unit,
     onDismissNotice: () -> Unit,
     onLeave: () -> Unit,
+    onFoundClub: () -> Unit,
 ) {
     val browse = state.browse
 
@@ -90,6 +92,13 @@ private fun ListHeader(
             .padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 14.dp),
     ) {
         LeagueBar(state, onLeave)
+
+        // Senza club non si puo' fare niente: comprare, schierare, giocare. L'invito sta
+        // in cima e non in un menu, perche' e' l'unica cosa sensata da fare adesso.
+        if (state.lega.myClub == null) {
+            Spacer(Modifier.height(MFootSpacing.related))
+            PrimaryButton("Fonda il tuo club", onFoundClub)
+        }
 
         if (state.avviso != null) {
             Spacer(Modifier.height(MFootSpacing.related))

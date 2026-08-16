@@ -2,8 +2,11 @@ package dev.mfoot.android.app
 
 import dev.mfoot.android.data.ClubInfo
 import dev.mfoot.android.data.LeagueSnapshot
+import dev.mfoot.core.config.CustomPlayerConfig
+import dev.mfoot.core.model.Attributes
 import dev.mfoot.core.model.Player
 import dev.mfoot.core.model.Reparto
+import dev.mfoot.core.world.CustomPlayerBuilder
 
 /**
  * Un giocatore pronto da mostrare.
@@ -66,6 +69,38 @@ data class BrowseState(
 /** Quale porta si sta usando per entrare. */
 enum class DoorMode { SCELTA, CREA, ENTRA }
 
+/** I due passi della fondazione: prima la squadra, poi il giocatore che sei tu. */
+enum class FoundingStep { CLUB, GIOCATORE }
+
+/**
+ * La fondazione del proprio club.
+ *
+ * Vive nel ViewModel e non nella schermata perche' e' un lavoro lungo — si sceglie un
+ * nome, dei colori, un ruolo, poi si distribuiscono cento punti — e perdere tutto per una
+ * rotazione dello schermo sarebbe insopportabile.
+ */
+data class FoundingState(
+    val lega: LeagueSnapshot,
+    val step: FoundingStep = FoundingStep.CLUB,
+    val clubName: String = "",
+    val clubShort: String = "",
+    val kitPrimary: Long = 0xFF2BE07E,
+    val kitSecondary: Long = 0xFF07080A,
+    val draft: CustomPlayerBuilder.Draft = CustomPlayerBuilder.Draft(),
+    val busy: String? = null,
+    val errore: String? = null,
+) {
+    val config: CustomPlayerConfig get() = lega.league.config.custom
+
+    val spent: Int get() = CustomPlayerBuilder.totalCost(draft, config)
+    val remaining: Int get() = CustomPlayerBuilder.remaining(draft, config)
+    val overall: Int get() = CustomPlayerBuilder.overallOf(draft, config)
+    val attributes: Attributes get() = CustomPlayerBuilder.attributesOf(draft, config)
+    val problems: List<String> get() = CustomPlayerBuilder.problems(draft, config)
+
+    val clubReady: Boolean get() = clubName.isNotBlank()
+}
+
 /**
  * Lo stato dell'intera app.
  *
@@ -111,6 +146,9 @@ sealed interface AppState {
                         it.player.primaryPosition.short.equals(browse.query, ignoreCase = true)
                 }
     }
+
+    /** Si sta fondando il proprio club. */
+    data class Fondazione(val founding: FoundingState) : AppState
 
     /** Qualcosa e' andato storto in modo da cui non si esce da soli. */
     data class Guasto(val motivo: String) : AppState

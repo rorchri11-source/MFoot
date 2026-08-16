@@ -159,6 +159,38 @@ object SupabaseApi {
             }
         }
 
+    /**
+     * Fonda il club e il giocatore custom, in una transazione sola.
+     *
+     * Il payload porta i **punti spesi**, non gli attributi finali: e' il database a
+     * ricalcolare base, costi e overall. Mandare gli attributi gia' fatti vorrebbe dire
+     * fidarsi di chi li ha calcolati, e chi li ha calcolati e' il telefono di un
+     * giocatore.
+     */
+    suspend fun createClub(payload: String): ApiResult<ClubCreated> =
+        withContext(Dispatchers.IO) {
+            request("/rest/v1/rpc/create_club", "POST", payload).then { body ->
+                val json = runCatching { JSONObject(body) }.getOrNull()
+                    ?: return@then ApiResult.Error("Risposta inattesa: ${body.take(120)}")
+                ApiResult.Ok(
+                    ClubCreated(
+                        clubId = json.optLong("club_id"),
+                        playerId = json.optLong("player_id"),
+                        overall = json.optInt("overall"),
+                        spent = json.optInt("spent"),
+                    ),
+                )
+            }
+        }
+
+    data class ClubCreated(
+        val clubId: Long,
+        val playerId: Long,
+        /** L'overall **ricalcolato dal server**: e' quello che vale. */
+        val overall: Int,
+        val spent: Int,
+    )
+
     /** Una GET su PostgREST: percorso e filtri gia' pronti, risposta grezza. */
     suspend fun get(path: String): ApiResult<String> = withContext(Dispatchers.IO) {
         request(path, "GET")

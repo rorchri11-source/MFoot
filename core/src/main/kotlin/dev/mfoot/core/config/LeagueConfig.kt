@@ -27,6 +27,7 @@ data class LeagueConfig(
     val market: MarketConfig = MarketConfig(),
     val calendar: CalendarConfig = CalendarConfig(),
     val rules: RulesConfig = RulesConfig(),
+    val custom: CustomPlayerConfig = CustomPlayerConfig(),
     val world: WorldConfig = WorldConfig(),
     val notifications: NotificationConfig = NotificationConfig(),
     val ai: AiConfig = AiConfig(),
@@ -198,6 +199,87 @@ data class RulesConfig(
     /** Sotto questa soglia il giocatore puo' chiedere la cessione o rifiutare il rinnovo. */
     val lowMoraleThreshold: Int = 30,
 )
+
+// ------------------------------------------------------------- il giocatore che sei tu
+
+/**
+ * Uno scaglione di costo.
+ *
+ * Alzare un attributo costa di piu' man mano che sale: e' quello che impedisce di
+ * costruire un mostro monodimensionale spendendo tutto su un attributo solo.
+ */
+data class CostTier(val upTo: Int, val cost: Int)
+
+/**
+ * Le regole con cui il proprietario costruisce il suo giocatore.
+ *
+ * ## Perche' non deve venire troppo forte
+ *
+ * Il gioco vive di una tensione precisa: **hai un punto debole strutturale e devi
+ * costruirci intorno**. Se il budget permettesse di uscire con un 82 gia' pronto, quella
+ * tensione sparirebbe e resterebbe solo un giocatore in piu'.
+ *
+ * Gli scaglioni qui sotto sono **misurati**, non scelti a intuito: c'e' un test che
+ * costruisce il giocatore piu' forte possibile in ogni ruolo, spendendo sempre sul punto
+ * col miglior rapporto peso/prezzo. Con questi valori nessun ruolo supera 79, e per
+ * arrivarci bisogna lasciare piede debole e tecnica a una stella. Chi vuole un giocatore
+ * completo resta sotto il 72. In un mondo dove i migliori stanno a 91, entrambi sono
+ * ancora **da far crescere**, che e' il punto.
+ *
+ * Gli scaglioni sono la manopola vera: abbassarli rende il custom subito competitivo,
+ * alzarli lo rende un progetto a lungo termine. Come tutto il resto, li decide l'admin.
+ */
+data class CustomPlayerConfig(
+    /** Overall di partenza nel ruolo scelto, prima di spendere un solo punto. */
+    val baseOverall: Int = 65,
+
+    /** I punti che il proprietario distribuisce. */
+    val skillBudget: Int = 100,
+
+    /** Quanto costa ogni stella di piede debole o tecnica oltre la prima. */
+    val starCost: Int = 10,
+    val startingStars: Int = 1,
+
+    /**
+     * Costo di un punto attributo, per fascia.
+     *
+     * Si legge dall'alto: il primo scaglione il cui `upTo` non e' ancora stato superato
+     * decide il prezzo del prossimo punto.
+     */
+    val costTiers: List<CostTier> = listOf(
+        CostTier(upTo = 69, cost = 1),
+        CostTier(upTo = 77, cost = 3),
+        CostTier(upTo = 83, cost = 5),
+        CostTier(upTo = 99, cost = 8),
+    ),
+
+    /** Attributi che il ruolo non usa: bassi ma non ridicoli. */
+    val offRoleBase: Int = 45,
+
+    /**
+     * Attributi del mestiere sbagliato: un portiere non sa tirare, un attaccante non
+     * sa parare. Restano molto bassi, o schierare il proprio custom fuori ruolo
+     * diventerebbe una furbizia invece che una disperazione.
+     */
+    val wrongSideBase: Int = 15,
+
+    val minAge: Int = 16,
+    val maxAge: Int = 23,
+    val defaultAge: Int = 18,
+
+    /**
+     * Quanto potenziale in piu' rispetto a com'e' uscito.
+     *
+     * E' generoso di proposito. Il custom non si puo' vendere e deve giocare titolare:
+     * senza un tetto alto, l'obbligo di schierarlo sarebbe solo una tassa. Con un tetto
+     * alto diventa una scommessa su se stessi.
+     */
+    val potentialBonus: Int = 18,
+    val potentialCeiling: Int = 93,
+) {
+    /** Il massimo che si puo' spendere in stelle, se si portano entrambe a cinque. */
+    val maxStarSpend: Int get() = 2 * starCost * (5 - startingStars)
+}
 
 // ------------------------------------------------------------------------ mondo
 
