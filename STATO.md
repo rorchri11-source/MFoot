@@ -56,6 +56,7 @@ gradlew :android:assembleDebug
 | 12 | **Club e custom** | `CustomPlayerBuilder` in `core`, `create_club` che rifà il conto lato server, schermata di fondazione |
 | 13 | **Il mondo gira** | Il tick avvia la stagione, genera il calendario e gioca le partite; `AutoLineup` schiera da solo |
 | 14 | **Le aste** | `start_auction`, prezzo pubblico e massimi segreti, schermata mercato e foglio dell'offerta |
+| 15 | **Le AI si muovono** | Si svegliano a turno, valutano sulla stima e offrono passando per `place_bid` come tutti |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -107,14 +108,12 @@ il suo overall dipende da quattro attributi invece che da sei.
 
 ### Il prossimo blocco, in ordine di valore
 
-1. **Il risveglio delle AI.** `AiManager` decide gia'; manca il codice che porta le sue
-   decisioni sul database. Senza, i club AI non comprano e non trattano mai.
-2. **Il replay della partita.** La timeline viene salvata intera a database; manca la
+1. **Il replay della partita.** La timeline viene salvata intera a database; manca la
    schermata che la riproduce con l'orologio del telefono.
-3. **Formazione e ordini condizionali.** La tabella `lineups` esiste e si scrive già alla
+2. **Formazione e ordini condizionali.** La tabella `lineups` esiste e si scrive già alla
    fondazione del club, ma il tick usa sempre la formazione automatica: quella scelta a
    mano non viene ancora letta.
-4. **Notifiche Telegram.** Il tick le accumula in `notifications`, nessuno le consegna.
+3. **Notifiche Telegram.** Il tick le accumula in `notifications`, nessuno le consegna.
 
 ### Cosa fa e cosa non fa il tick, oggi
 
@@ -129,7 +128,7 @@ il suo overall dipende da quattro attributi invece che da sei.
 | Recupero stamina, col moltiplicatore del preparatore | ✅ |
 | Simulazione partite, con crescita, morale e premi | ✅ |
 | Avvio della stagione e calendario | ✅ alla data scelta dall'admin |
-| Risveglio AI | ❌ pianificato, non applicato |
+| Risveglio AI, con offerte vere sulle aste | ✅ |
 | Verifica promesse | ❌ pianificata, non applicata |
 | Riepilogo giornaliero | ❌ pianificato, non applicato |
 

@@ -1,5 +1,10 @@
 package dev.mfoot.tick
 
+import dev.mfoot.core.ai.AiManager
+import dev.mfoot.core.ai.AiObsession
+import dev.mfoot.core.ai.AiPersonality
+import dev.mfoot.core.ai.AiScheduler
+import dev.mfoot.core.ai.AiState
 import dev.mfoot.core.calendar.CalendarSolver
 import dev.mfoot.core.calendar.Competition
 import dev.mfoot.core.calendar.CompetitionType
@@ -26,6 +31,7 @@ import dev.mfoot.core.match.MatchResult
 import dev.mfoot.core.match.TeamSetup
 import dev.mfoot.core.model.Attr
 import dev.mfoot.core.model.Attributes
+import dev.mfoot.core.model.Club
 import dev.mfoot.core.model.ClubId
 import dev.mfoot.core.model.CompetitionId
 import dev.mfoot.core.model.Contract
@@ -127,6 +133,7 @@ class TickRunner(
             activeContracts = loadExpiringContracts(league.id, today),
             activeLoans = loadExpiringLoans(league.id, today),
             pendingFixtures = loadPendingFixtures(league.id),
+            aiStates = loadAiStates(league.id),
             settledMatchDays = state.settledMatchDays,
             lastDigestAt = state.lastDigestAt,
         )
@@ -169,6 +176,11 @@ class TickRunner(
 
                 is TickEffect.ScadiTrattativa -> {
                     expireNegotiation(effect.negotiationId)
+                    applied++
+                }
+
+                is TickEffect.SvegliaAi -> {
+                    wakeAi(league, effect.clubId, now, today)
                     applied++
                 }
 
@@ -559,6 +571,184 @@ class TickRunner(
             st.executeBatch()
         }
     }
+
+    // ------------------------------------------------------------------ risveglio AI
+
+    /**
+     * Un'AI si sveglia, guarda il mercato, forse fa una cosa, e torna a dormire.
+     *
+     * ## L'anti-sciame vive qui
+     *
+     * Il requisito e' esplicito: le AI devono essere avversari veri, ma **non uno
+     * sciame**. Venticinque club che rilanciano tutti insieme sullo stesso giocatore, o
+     * che si svegliano allo stesso minuto, trasformerebbero il mercato in rumore e
+     * l'applicazione in qualcosa da disinstallare.
+     *
+     * Le difese sono quattro, e nessuna basta da sola:
+     *
+     * 1. Si sveglia solo chi ha l'orario arrivato. Un'AI che dorme non sa nemmeno che
+     *    l'asta esiste — non e' che decide di non partecipare, proprio non la vede.
+     * 2. Un'azione per risveglio, con un tetto giornaliero. Anche trovando dieci
+     *    occasioni, ne coglie una.
+     * 3. Piu' AI sono gia' su un obiettivo, meno appetibile diventa: la seconda ci pensa,
+     *    la terza quasi mai, la quarta mai.
+     * 4. Il prossimo risveglio e' scaglionato a caso, quindi non si riallineano mai.
+     */
+    private fun wakeAi(league: LeagueRow, clubId: ClubId, now: Instant, today: MatchDay) {
+        val state = loadAiState(clubId) ?: return
+        val club = loadClub(clubId) ?: return
+
+        // Il tetto giornaliero e' un vincolo del server, non una speranza sul
+        // comportamento dell'AI.
+        if (!AiScheduler.hasActionsLeft(state, now, league.config.ai)) {
+            saveAiState(clubId, AiScheduler.scheduleNext(state, now, league.config.setup.worldSeed))
+            return
+        }
+
+        val squad = loadSquad(league.id, clubId)
+        val acted = tryBid(league, state, club, squad, today)
+
+        val after = if (acted) AiScheduler.recordAction(state, now) else state
+        saveAiState(clubId, AiScheduler.scheduleNext(after, now, league.config.setup.worldSeed))
+    }
+
+    /**
+     * Cerca l'asta piu' interessante e ci offre sopra. Una sola, la migliore.
+     *
+     * @return true se ha davvero offerto.
+     */
+    private fun tryBid(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+        today: MatchDay,
+    ): Boolean {
+        val auctions = loadOpenAuctions(league.id).filter { it.id !in state.abandonedTargets }
+        if (auctions.isEmpty()) return false
+
+        val candidates = auctions.mapNotNull { auction ->
+            val target = (auction.target as? AuctionTarget.ForPlayer) ?: return@mapNotNull null
+            val player = loadPlayerRow(target.playerId)?.player ?: return@mapNotNull null
+
+            // Quante altre AI sono gia' impegnate qui: e' il numero che spegne lo sciame.
+            val competing = auction.bids.map { it.club }.distinct().count { it != club.id && isAi(it) }
+
+            val appeal = AiManager.evaluate(state, club, squad, player, league.config, competing)
+            val max = AiManager.decideBid(state, club, auction, appeal, league.config)
+                ?: return@mapNotNull null
+
+            Triple(auction, max, appeal.appeal)
+        }
+
+        // Una sola azione per risveglio: quella che vale di piu'. Un'AI che offrisse su
+        // tutte le aste aperte in un colpo solo e' esattamente lo sciame da evitare.
+        val scelta = candidates.maxByOrNull { it.third } ?: return false
+        val auction = scelta.first
+        val max = scelta.second
+
+        // L'offerta passa dalla stessa funzione che usa l'app: stesso lock, stessi
+        // controlli sui fondi. Un'AI che scrivesse direttamente nella tabella potrebbe
+        // spendere crediti che non ha, e nessuno se ne accorgerebbe.
+        val ok = connection.prepareStatement("select place_bid(?, ?, ?)").use { st ->
+            st.setLong(1, auction.id)
+            st.setLong(2, club.id.value)
+            st.setInt(3, max)
+            st.executeQuery().use { rs ->
+                rs.next() && JsonNode.parse(rs.getString(1))["ok"].bool(false)
+            }
+        }
+
+        if (ok) {
+            log("Lega ${league.id}: ${club.name} offre fino a $max sull'asta ${auction.id}.")
+        }
+        return ok
+    }
+
+    private fun isAi(clubId: ClubId): Boolean =
+        connection.prepareStatement("select is_ai from clubs where id = ?").use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs -> rs.next() && rs.getBoolean(1) }
+        }
+
+    private fun loadAiStates(leagueId: Long): List<AiState> {
+        val out = mutableListOf<AiState>()
+        connection.prepareStatement(
+            "select club_id, personality, next_wake_at, actions_today, action_day, " +
+                "abandoned_targets from ai_states where league_id = ?",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> while (rs.next()) out += readAiState(rs) }
+        }
+        return out
+    }
+
+    private fun loadAiState(clubId: ClubId): AiState? =
+        connection.prepareStatement(
+            "select club_id, personality, next_wake_at, actions_today, action_day, " +
+                "abandoned_targets from ai_states where club_id = ?",
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs -> if (rs.next()) readAiState(rs) else null }
+        }
+
+    private fun readAiState(rs: java.sql.ResultSet): AiState {
+        val p = JsonNode.parse(rs.getString("personality"))
+        val clubId = ClubId(rs.getLong("club_id"))
+
+        return AiState(
+            personality = AiPersonality(
+                clubId = clubId,
+                marketAggression = p["marketAggression"].double(0.5),
+                youthPreference = p["youthPreference"].double(0.5),
+                budgetDiscipline = p["budgetDiscipline"].double(0.5),
+                patience = p["patience"].double(0.5),
+                activeFromHour = p["activeFromHour"].int(9),
+                activeToHour = p["activeToHour"].int(23),
+                checksPerDay = p["checksPerDay"].int(2),
+                obsessions = p["obsessions"].asList()
+                    .mapNotNull { o -> AiObsession.entries.firstOrNull { it.name == o.str("") } }
+                    .toSet(),
+            ),
+            nextWakeAt = rs.getTimestamp("next_wake_at").toInstant(),
+            actionsToday = rs.getInt("actions_today"),
+            actionDay = rs.getDate("action_day")?.toLocalDate(),
+            abandonedTargets = (rs.getArray("abandoned_targets")?.array as? Array<*>)
+                ?.mapNotNull { (it as? Number)?.toLong() }?.toSet() ?: emptySet(),
+        )
+    }
+
+    private fun saveAiState(clubId: ClubId, state: AiState) {
+        connection.prepareStatement(
+            "update ai_states set next_wake_at = ?, actions_today = ?, action_day = ?, " +
+                "abandoned_targets = ? where club_id = ?",
+        ).use { st ->
+            st.setTimestamp(1, Timestamp.from(state.nextWakeAt))
+            st.setInt(2, state.actionsToday)
+            st.setDate(3, state.actionDay?.let { java.sql.Date.valueOf(it) })
+            st.setArray(4, connection.createArrayOf("bigint", state.abandonedTargets.toTypedArray()))
+            st.setLong(5, clubId.value)
+            st.executeUpdate()
+        }
+    }
+
+    private fun loadClub(clubId: ClubId): Club? =
+        connection.prepareStatement(
+            "select id, name, short_name, is_ai, credits, committed_credits from clubs where id = ?",
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs ->
+                if (!rs.next()) return null
+                Club(
+                    id = ClubId(rs.getLong("id")),
+                    name = rs.getString("name"),
+                    shortName = rs.getString("short_name"),
+                    isAi = rs.getBoolean("is_ai"),
+                    credits = rs.getInt("credits"),
+                    committedCredits = rs.getInt("committed_credits"),
+                )
+            }
+        }
 
     // --------------------------------------------------------- scadenze e movimenti
 
