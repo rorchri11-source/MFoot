@@ -63,37 +63,64 @@ Misurati su migliaia di partite simulate, non stimati:
 
 ## Da fare
 
-### Fase 9 — Server (`server/`)
+### Fase 9 — Backend a costo zero
 
-Il pezzo che rende il gioco giocabile. Tutto quello che serve esiste già in `core`:
-qui si tratta di orchestrarlo e conservarlo.
+**Vincolo dell'utente: costo zero assoluto, nessuna carta di credito, nessuna macchina
+propria accesa.** L'architettura è stata scelta di conseguenza.
 
-- **World Tick** — coroutine che gira ogni minuto per sempre: simula le partite in
-  orario, chiude le aste scadute, fa scadere contratti e prestiti, distribuisce i
-  crediti, sveglia le AI dovute, aggiorna stamina/morale/crescita, verifica le promesse,
-  manda il riepilogo giornaliero.
-- **Recupero idempotente** — `ultimoTickElaborato` salvato, e al riavvio dopo
-  un'interruzione recupera tutto quello che sarebbe dovuto succedere, **una volta sola**.
-  Un'asta non deve poter essere assegnata due volte perché il server è ripartito.
-- **PostgreSQL** — schema e persistenza. Le operazioni sui crediti devono girare in
-  transazione con lock di riga.
-- **REST API** — stato lega, rose, formazioni, mercato, storico.
-- **WebSocket** — aste e partite in diretta.
-- **Auth** — codice lega + nickname + password. Per venti amici basta questo.
-- **Notifiche** — bot Discord/Telegram in fase 1 (venti righe, arriva dove già chattate),
-  FCM in fase 2.
+| Pezzo | Chi lo fa | Costo |
+|---|---|---|
+| Database + API REST + login + realtime | **Supabase** (Postgres gestito) | gratis |
+| **World Tick** | **GitHub Actions**, cron ogni 5 minuti | gratis |
+| Notifiche | **Bot Telegram** | gratis |
 
-#### Hosting: Railway (deciso)
+Il repository è **pubblico**: è la condizione per avere minuti GitHub Actions illimitati.
+Password e chiavi non stanno mai nel codice ma nei *secrets* di GitHub, che restano
+privati anche sui repo pubblici.
 
-Hosting gestito, **non** un VPS da amministrare e **non** un PC di casa: deploy con
-`git push`, HTTPS e PostgreSQL gestiti, ~5 $/mese. Fly.io è l'alternativa equivalente.
+#### Perché una griglia da 5 minuti è accettabile *per questo gioco*
 
-⚠️ **Da evitare in assoluto:** i piani gratuiti di Render e Heroku spengono l'app quando
-è inattiva. Fermerebbero il World Tick esattamente quando serve — cioè quando tutti hanno
-il telefono spento.
+Non è un ripiego: dipende da due decisioni di design prese molto prima, per altri motivi.
 
-Il server sarà comunque un container, quindi migrare su un VPS (Hetzner, ~4 €/mese) resta
-possibile in mezza giornata se un giorno servisse.
+1. **Le aste usano l'offerta massima automatica.** Si dichiara il proprio limite e si va
+   via; l'asta dura un'ora e i 5 minuti spariscono dentro. Con rilanci manuali da 1
+   credito sarebbe stato insopportabile.
+2. **Le partite sono timeline pre-calcolate** che il client riproduce in locale. La
+   diretta delle 21 dipende dall'orologio del telefono, non dal server. Latenza
+   percepita: zero.
+
+Il **recupero idempotente** serve esattamente qui: se GitHub ritarda o salta
+un'esecuzione, al giro successivo il tick recupera tutto quello che sarebbe dovuto
+succedere, in ordine e una volta sola.
+
+#### Da costruire
+
+- **`WorldTick`** — l'orchestratore. Gira come programma che parte, elabora e termina
+  (non un servizio sempre acceso): simula le partite dovute, chiude le aste scadute, fa
+  scadere contratti e prestiti, distribuisce i crediti, sveglia le AI dovute, aggiorna
+  stamina/morale/crescita, verifica le promesse, manda il riepilogo.
+- **`ultimoTickElaborato`** salvato a database, con recupero idempotente al risveglio.
+- **Schema PostgreSQL** su Supabase. Le operazioni sui crediti girano in transazione con
+  lock di riga.
+- **Row Level Security** — i client scrivono solo dove possono: offerte e comandi. Lo
+  stato autorevole lo scrive il tick.
+- **Validazione immediata delle offerte** con un trigger Postgres che controlla i fondi
+  in modo atomico: l'utente ha risposta subito, senza aspettare il tick. Il calcolo di
+  chi è in testa è una funzione pura delle offerte, quindi lo può fare anche il client
+  per mostrarlo all'istante.
+- **Bot Telegram** per le notifiche, chiamato dal tick.
+
+#### Rischi accettati consapevolmente
+
+- Tutto si muove su una griglia da ~5 minuti.
+- I cron di GitHub possono essere ritardati sotto carico (il recupero idempotente lo
+  assorbe) e vengono disattivati dopo ~60 giorni di repo fermo (si riattivano con un
+  click).
+- Si dipende da due servizi gratuiti che possono cambiare condizioni.
+
+**Mitigazione:** il tick resta un normale programma JVM che parla con un Postgres via
+variabile d'ambiente. Il giorno in cui diventasse sensato spendere ~5 €/mese, si sposta
+su un server sempre acceso — e passa da 5 minuti a 1 minuto — senza riscrivere niente.
 
 ### Fase 10 — App Android (`android/`)
 
