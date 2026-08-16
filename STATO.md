@@ -141,7 +141,26 @@ succedere, in ordine e una volta sola.
 variabile d'ambiente. Il giorno in cui diventasse sensato spendere ~5 €/mese, si sposta
 su un server sempre acceso — e passa da 5 minuti a 1 minuto — senza riscrivere niente.
 
-### Fase 10 — App Android (`android/`)
+### Fase 10 — App Android (`android/`)  🟡 sistema visivo deciso
+
+Il linguaggio visivo è approvato e fissato in [`docs/DESIGN-SYSTEM.md`](docs/DESIGN-SYSTEM.md),
+con i valori già nella forma che serve a Compose. I mockup di riferimento sono in
+[`docs/mockups/`](docs/mockups/) e si guardano con `gradlew`-indipendente:
+
+```
+node -e "..."   # vedi .claude/launch.json, poi http://localhost:4173/system.html
+```
+
+**Il principio è due registri, una lingua.** La scheda giocatore si guarda una alla volta
+prima di spendere sessanta crediti, quindi può permettersi il teatro. La lista si scorre
+per venti minuti cercando un terzino, quindi deve stare zitta. Sbagliare registro è il modo
+più veloce per rendere l'app faticosa.
+
+Metodo: **progettare in HTML, implementare in Compose.** Iterare un mockup costa secondi,
+iterare una schermata Android costa minuti. I mockup non sono lavoro buttato: sono la
+specifica visiva, e sono ciò che l'utente approva prima che si scriva Kotlin.
+
+
 
 - Compose per tutte le schermate: creazione lega con preset, creazione club ed editor
   maglia, creazione player custom con budget abilità, rosa e Primavera, formazione con
