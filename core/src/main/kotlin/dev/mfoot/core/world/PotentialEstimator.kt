@@ -101,6 +101,23 @@ object PotentialEstimator {
     }
 
     /**
+     * La stima che il **client** puo' calcolare da solo.
+     *
+     * A conoscenza zero le due interpolazioni di [estimate] danno peso zero ai valori
+     * veri: il risultato dipende solo da eta', overall, id e osservatore, tutti pubblici.
+     * Questo e' cio' che permette all'app di mostrare una forbice sensata leggendo la
+     * vista `players_public`, che i potenziali veri non li contiene affatto — e di
+     * mostrarla senza che il segreto debba mai lasciare il server.
+     *
+     * Quando un club iniziera' ad accumulare minuti visti e lavoro degli osservatori, la
+     * stima ristretta dovra' arrivare **gia' calcolata dal tick**, che i valori veri li
+     * ha. Non e' un dettaglio implementativo: e' la ragione per cui la conoscenza puo'
+     * crescere senza che il client possa mai dedurre la verita' per differenza.
+     */
+    fun publicEstimate(player: Player, observerId: Long): IntRange =
+        estimate(player, observerId, minutesObserved = 0, scoutAccuracy = 0.0)
+
+    /**
      * Il tetto deducibile da eta' e overall, senza sbirciare niente di nascosto.
      *
      * E' l'inverso della curva di sviluppo: se il mondo genera l'overall attuale come

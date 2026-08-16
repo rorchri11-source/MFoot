@@ -31,8 +31,7 @@ import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
-import dev.mfoot.android.world.PlayerRow
-import dev.mfoot.android.world.displayAttributes
+import dev.mfoot.android.app.PlayerRow
 import dev.mfoot.core.model.Attr
 
 /** Estremi della scala su cui si legge la fascia di crescita. */

@@ -20,28 +20,24 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import dev.mfoot.android.data.ConnectionStatus
+import dev.mfoot.android.app.AppState
+import dev.mfoot.android.app.ListScope
+import dev.mfoot.android.app.PlayerRow
+import dev.mfoot.android.app.RoleFilter
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
-import dev.mfoot.android.world.PlayerRow
-import dev.mfoot.android.world.RoleFilter
-import dev.mfoot.android.world.UploadState
-import dev.mfoot.android.world.WorldUiState
 
 /**
- * La lista dei giocatori del mondo — **registro calmo**.
+ * La lista dei giocatori — **registro calmo**.
  *
  * Questa schermata si scorre per venti minuti cercando un terzino, quindi deve stare
  * zitta: densita' alta, colore spento, nessun effetto. Il teatro sta nella scheda, che si
@@ -49,26 +45,27 @@ import dev.mfoot.android.world.WorldUiState
  */
 @Composable
 fun PlayerListScreen(
-    state: WorldUiState,
+    state: AppState.Dentro,
     onQuery: (String) -> Unit,
     onFilter: (RoleFilter) -> Unit,
+    onScope: (ListScope) -> Unit,
     onSelect: (PlayerRow) -> Unit,
-    onCreateLeague: () -> Unit = {},
+    onDismissNotice: () -> Unit,
+    onLeave: () -> Unit,
 ) {
     Column(
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg),
     ) {
-        ListHeader(state, onQuery, onFilter, onCreateLeague)
+        ListHeader(state, onQuery, onFilter, onScope, onDismissNotice, onLeave)
 
-        if (state.loading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MFootColors.elite)
-            }
+        val visible = state.visible
+        if (visible.isEmpty()) {
+            EmptyState(state)
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
-                items(state.visible, key = { it.player.id.value }) { row ->
+                items(visible, key = { it.player.id.value }) { row ->
                     PlayerListRow(row) { onSelect(row) }
                 }
             }
@@ -78,16 +75,33 @@ fun PlayerListScreen(
 
 @Composable
 private fun ListHeader(
-    state: WorldUiState,
+    state: AppState.Dentro,
     onQuery: (String) -> Unit,
     onFilter: (RoleFilter) -> Unit,
-    onCreate: () -> Unit,
+    onScope: (ListScope) -> Unit,
+    onDismissNotice: () -> Unit,
+    onLeave: () -> Unit,
 ) {
+    val browse = state.browse
+
     Column(
         Modifier
             .fillMaxWidth()
             .padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 14.dp),
     ) {
+        LeagueBar(state, onLeave)
+
+        if (state.avviso != null) {
+            Spacer(Modifier.height(MFootSpacing.related))
+            Notice(
+                state.avviso,
+                MFootColors.elite,
+                Modifier.clickable(onClick = onDismissNotice),
+            )
+        }
+
+        Spacer(Modifier.height(MFootSpacing.related))
+
         Row(
             Modifier
                 .fillMaxWidth()
@@ -99,11 +113,11 @@ private fun ListHeader(
             Text("⌕", style = MFootType.rowTitle, color = MFootColors.ink3)
             Spacer(Modifier.width(10.dp))
             Box(Modifier.weight(1f)) {
-                if (state.query.isEmpty()) {
+                if (browse.query.isEmpty()) {
                     Text("Cerca un giocatore…", style = MFootType.rowTitle, color = MFootColors.ink3)
                 }
                 BasicTextField(
-                    value = state.query,
+                    value = browse.query,
                     onValueChange = onQuery,
                     singleLine = true,
                     textStyle = MFootType.rowTitle.copy(color = MFootColors.ink),
@@ -119,126 +133,90 @@ private fun ListHeader(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            ListScope.entries.forEach { scope ->
+                Chip(scope.label, scope == browse.scope) { onScope(scope) }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             RoleFilter.entries.forEach { filter ->
-                FilterChip(filter.label, filter == state.filter) { onFilter(filter) }
+                Chip(filter.label, filter == browse.filter) { onFilter(filter) }
             }
         }
 
         Spacer(Modifier.height(MFootSpacing.related))
 
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Label("${state.visible.size} giocatori · ordinati per overall")
+    }
+
+    Hairline()
+}
+
+/**
+ * La riga di intestazione della lega.
+ *
+ * I crediti disponibili stanno qui e non nascosti in una schermata di riepilogo, perche'
+ * sono l'unico numero che serve sapere **mentre** si guarda un giocatore: senza, ogni
+ * valutazione va fatta a memoria.
+ */
+@Composable
+private fun LeagueBar(state: AppState.Dentro, onLeave: () -> Unit) {
+    val club = state.lega.myClub
+
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
             Text(
-                text = if (state.loading) {
-                    "GENERAZIONE DEL MONDO…"
-                } else {
-                    "${state.visible.size} SVINCOLATI · ORDINATI PER OVERALL"
-                },
-                style = MFootType.label,
-                color = MFootColors.ink3,
+                state.lega.league.name,
+                style = MFootType.rowTitle,
+                color = MFootColors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            ConnectionDot(state.connection)
+            Text(
+                if (club != null) {
+                    "${club.name} · ${club.available} crediti"
+                } else {
+                    "Non hai ancora un club"
+                },
+                style = MFootType.chip,
+                color = if (club != null) MFootColors.ink3 else MFootColors.gamble,
+            )
         }
-
-        UploadBar(state.upload, onCreate)
-    }
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(MFootColors.line),
-    )
-}
-
-/**
- * La barra per creare la lega e caricare il mondo.
- *
- * Riporta l'esito con i numeri veri — quanti giocatori sono arrivati a destinazione —
- * perche' un "fatto" generico non dice se il carico e' passato tutto.
- */
-@Composable
-private fun UploadBar(upload: UploadState, onCreate: () -> Unit) {
-    Spacer(Modifier.height(MFootSpacing.related))
-
-    when (upload) {
-        is UploadState.Inattivo -> Text(
-            text = "Crea la lega e carica il mondo",
-            style = MFootType.value,
-            color = MFootColors.bg,
+        Text(
+            "esci",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
             modifier = Modifier
-                .fillMaxWidth()
-                .background(MFootColors.elite, MFootShapes.pill)
-                .clickable(onClick = onCreate)
-                .padding(vertical = 11.dp),
-            textAlign = TextAlign.Center,
+                .clickable(onClick = onLeave)
+                .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
         )
-
-        is UploadState.InCorso -> UploadNotice(upload.fase, MFootColors.ink2)
-
-        is UploadState.Riuscito -> UploadNotice(
-            "Lega #${upload.leagueId} creata · ${upload.giocatori} giocatori sul database",
-            MFootColors.elite,
-        )
-
-        is UploadState.Fallito -> UploadNotice(upload.motivo, MFootColors.gamble)
     }
 }
 
+/** Una lista vuota deve dire **perche'** e' vuota, o sembra che l'app sia rotta. */
 @Composable
-private fun UploadNotice(text: String, color: Color) {
-    Text(
-        text = text,
-        style = MFootType.chip,
-        color = color,
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(color.copy(alpha = 0.08f), MFootShapes.field)
-            .border(1.dp, color.copy(alpha = 0.22f), MFootShapes.field)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    )
-}
-
-/**
- * Lo stato del collegamento al database, discreto ma sempre visibile.
- *
- * L'app funziona comunque senza database — il mondo lo genera in locale — quindi questo
- * non e' un errore bloccante: e' un'informazione. Ma va mostrata, o si finisce per non
- * capire perche' la lega non si salva.
- */
-@Composable
-private fun ConnectionDot(status: ConnectionStatus) {
-    val color = when (status) {
-        is ConnectionStatus.Connected -> MFootColors.elite
-        is ConnectionStatus.Checking -> MFootColors.ink3
-        else -> MFootColors.gamble
+private fun EmptyState(state: AppState.Dentro) {
+    val message = when {
+        state.browse.query.isNotBlank() -> "Nessun giocatore trovato per \"${state.browse.query}\"."
+        state.browse.scope == ListScope.MIA_ROSA && state.lega.myClub == null ->
+            "Non hai ancora un club in questa lega."
+        state.browse.scope == ListScope.MIA_ROSA -> "La tua rosa e' ancora vuota."
+        else -> "Nessun giocatore in questa selezione."
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier
-                .size(6.dp)
-                .background(color, RoundedCornerShape(50)),
+
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            message,
+            style = MFootType.secondary,
+            color = MFootColors.ink3,
+            modifier = Modifier.padding(horizontal = 40.dp),
         )
-        Spacer(Modifier.width(6.dp))
-        Text(status.label.uppercase(), style = MFootType.label, color = MFootColors.ink3)
     }
-}
-
-@Composable
-private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Text(
-        text = label,
-        style = MFootType.chip,
-        color = if (selected) MFootColors.bg else MFootColors.ink2,
-        modifier = Modifier
-            .background(if (selected) MFootColors.ink else MFootColors.line, MFootShapes.pill)
-            .border(1.dp, MFootColors.line, MFootShapes.pill)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 5.dp),
-    )
 }
 
 /**
@@ -279,9 +257,14 @@ private fun PlayerListRow(row: PlayerRow, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${player.age} anni · ${player.nationality}",
+                buildString {
+                    append(player.age).append(" anni · ").append(player.nationality)
+                    row.club?.let { append(" · ").append(it.shortName) }
+                },
                 style = MFootType.chip,
                 color = MFootColors.ink3,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
@@ -305,12 +288,7 @@ private fun PlayerListRow(row: PlayerRow, onClick: () -> Unit) {
         )
     }
 
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(MFootColors.line),
-    )
+    Hairline()
 }
 
 @Composable

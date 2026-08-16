@@ -1,5 +1,6 @@
 package dev.mfoot.android.data
 
+import dev.mfoot.core.json.JsonWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -13,6 +14,12 @@ sealed interface ApiResult<out T> {
     data class Error(val message: String) : ApiResult<Nothing>
 }
 
+/** Scorciatoia per incatenare chiamate senza una piramide di `when`. */
+inline fun <T, R> ApiResult<T>.then(block: (T) -> ApiResult<R>): ApiResult<R> = when (this) {
+    is ApiResult.Ok -> block(value)
+    is ApiResult.Error -> this
+}
+
 /**
  * Le chiamate a Supabase che servono all'app.
  *
@@ -23,12 +30,41 @@ object SupabaseApi {
 
     private const val TIMEOUT_MS = 30_000
 
-    /** Il token dell'utente corrente. Null finche' non si e' fatto l'accesso. */
-    @Volatile
-    var accessToken: String? = null
-        private set
+    // -------------------------------------------------------------------------- accesso
 
-    val isSignedIn: Boolean get() = accessToken != null
+    /**
+     * Garantisce che ci sia un token valido, nel modo meno distruttivo possibile.
+     *
+     * L'ordine conta. Un token fresco si usa; uno scaduto si rinnova; un accesso anonimo
+     * nuovo si crea **solo se non c'e' proprio nessuna identita' da recuperare**. Se il
+     * rinnovo fallisse per un problema di rete e l'app reagisse creando un utente nuovo,
+     * l'utente si ritroverebbe fuori dalla propria lega per una connessione ballerina, e
+     * senza modo di rientrare: l'identita' anonima precedente non e' piu' raggiungibile
+     * da nessuno.
+     */
+    suspend fun ensureSession(): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        if (Session.isFresh) return@withContext ApiResult.Ok(Unit)
+
+        if (Session.canRefresh) {
+            return@withContext when (val refreshed = refresh()) {
+                is ApiResult.Ok -> ApiResult.Ok(Unit)
+                is ApiResult.Error ->
+                    // Il server ha detto che quel refresh token non vale piu': l'identita'
+                    // e' persa comunque, tanto vale ripartire. Qualsiasi altro errore
+                    // (rete, timeout, 500) si propaga: il token potrebbe essere ancora buono.
+                    if (refreshed.message.contains("invalid", ignoreCase = true) ||
+                        refreshed.message.contains("(400)") ||
+                        refreshed.message.contains("(401)")
+                    ) {
+                        signInAnonymously().then { ApiResult.Ok(Unit) }
+                    } else {
+                        refreshed
+                    }
+            }
+        }
+
+        signInAnonymously().then { ApiResult.Ok(Unit) }
+    }
 
     /**
      * Accesso anonimo.
@@ -65,20 +101,37 @@ object SupabaseApi {
                     response
                 }
             }
-            is ApiResult.Ok -> {
-                val token = runCatching {
-                    JSONObject(response.value).optString("access_token").takeIf { it.isNotBlank() }
-                }.getOrNull()
 
-                if (token == null) {
-                    ApiResult.Error("Risposta di accesso senza token.")
+            is ApiResult.Ok ->
+                if (Session.saveTokens(response.value)) {
+                    ApiResult.Ok(Session.accessToken.orEmpty())
                 } else {
-                    accessToken = token
-                    ApiResult.Ok(token)
+                    ApiResult.Error("Risposta di accesso senza token.")
                 }
+        }
+    }
+
+    /** Rinnova il token senza cambiare identita'. */
+    private fun refresh(): ApiResult<String> {
+        val token = Session.refreshToken ?: return ApiResult.Error("Nessun token da rinnovare.")
+        val body = JsonWriter(256).beginObject().field("refresh_token", token).endObject().toString()
+
+        return request(
+            path = "/auth/v1/token?grant_type=refresh_token",
+            method = "POST",
+            body = body,
+            authenticated = false,
+            allowRetry = false,
+        ).then { response ->
+            if (Session.saveTokens(response)) {
+                ApiResult.Ok(Session.accessToken.orEmpty())
+            } else {
+                ApiResult.Error("Rinnovo senza token.")
             }
         }
     }
+
+    // ------------------------------------------------------------------------ operazioni
 
     /**
      * Crea la lega e carica il mondo in un'unica transazione lato database.
@@ -88,17 +141,7 @@ object SupabaseApi {
      */
     suspend fun createLeague(payload: String): ApiResult<Long> =
         withContext(Dispatchers.IO) {
-            when (val response = request("/rest/v1/rpc/create_league", "POST", payload)) {
-                is ApiResult.Error -> response
-                is ApiResult.Ok -> {
-                    val id = response.value.trim().trim('"').toLongOrNull()
-                    if (id == null) {
-                        ApiResult.Error("Risposta inattesa: ${response.value.take(120)}")
-                    } else {
-                        ApiResult.Ok(id)
-                    }
-                }
-            }
+            request("/rest/v1/rpc/create_league", "POST", payload).then { it.asId() }
         }
 
     suspend fun joinLeague(accessCode: String, nickname: String): ApiResult<Long> =
@@ -112,12 +155,86 @@ object SupabaseApi {
 
             when (val response = request("/rest/v1/rpc/join_league", "POST", payload)) {
                 is ApiResult.Error -> response
-                is ApiResult.Ok -> {
-                    val id = response.value.trim().trim('"').toLongOrNull()
-                    if (id == null) ApiResult.Error("Codice non riconosciuto.")
-                    else ApiResult.Ok(id)
+                is ApiResult.Ok -> response.value.asId("Codice non riconosciuto.")
+            }
+        }
+
+    /** Una GET su PostgREST: percorso e filtri gia' pronti, risposta grezza. */
+    suspend fun get(path: String): ApiResult<String> = withContext(Dispatchers.IO) {
+        request(path, "GET")
+    }
+
+    /**
+     * Una GET letta **in streaming**, senza mai avere l'intera risposta in memoria.
+     *
+     * E' l'unico modo accettabile di leggere la lista dei giocatori. Milletrecento righe
+     * sono ~400 KB di testo, ma trasformarle prima in stringa e poi in albero di oggetti
+     * ne costa decine di megabyte: e' esattamente il percorso che ha fatto uccidere l'app
+     * per memoria esaurita in fase di caricamento. Qui il JSON viene consumato a pezzi e
+     * ogni riga diventa subito un oggetto di gioco.
+     *
+     * Il lettore vive solo dentro [parse]: dopo, la connessione e' chiusa.
+     */
+    suspend fun <T> stream(
+        path: String,
+        extraHeaders: Map<String, String> = emptyMap(),
+        parse: (android.util.JsonReader) -> T,
+    ): ApiResult<T> =
+        withContext(Dispatchers.IO) { streamOnce(path, extraHeaders, parse, allowRetry = true) }
+
+    private fun <T> streamOnce(
+        path: String,
+        extraHeaders: Map<String, String>,
+        parse: (android.util.JsonReader) -> T,
+        allowRetry: Boolean,
+    ): ApiResult<T> {
+        if (!Supabase.isConfigured) {
+            return ApiResult.Error("Credenziali Supabase assenti in local.properties.")
+        }
+
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = (URL("${Supabase.url}$path").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                setRequestProperty("apikey", Supabase.key)
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Authorization", "Bearer ${Session.accessToken ?: Supabase.key}")
+                extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
+            }
+
+            val code = connection.responseCode
+            when {
+                // 206 e' la risposta normale quando si chiede un intervallo di righe.
+                code in 200..299 ->
+                    android.util.JsonReader(connection.inputStream.bufferedReader())
+                        .use { ApiResult.Ok(parse(it)) }
+
+                code == 401 && allowRetry && Session.canRefresh ->
+                    when (refresh()) {
+                        is ApiResult.Ok -> streamOnce(path, extraHeaders, parse, allowRetry = false)
+                        is ApiResult.Error -> ApiResult.Error("Sessione scaduta.")
+                    }
+
+                else -> {
+                    val body = runCatching {
+                        connection.errorStream?.bufferedReader()?.use(BufferedReader::readText)
+                    }.getOrNull().orEmpty()
+                    ApiResult.Error(readableError(code, body))
                 }
             }
+        } catch (e: Exception) {
+            ApiResult.Error(e.message?.take(140) ?: "Rete non raggiungibile")
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    /** Una chiamata a funzione SQL, con il corpo gia' serializzato. */
+    suspend fun rpc(function: String, payload: String): ApiResult<String> =
+        withContext(Dispatchers.IO) {
+            request("/rest/v1/rpc/$function", "POST", payload)
         }
 
     /** Quante righe ci sono in una tabella: serve a verificare che il carico sia arrivato. */
@@ -139,11 +256,21 @@ object SupabaseApi {
             }
         }
 
+    /** PostgREST restituisce gli scalari come testo nudo, virgolette comprese. */
+    private fun String.asId(onFailure: String = "Risposta inattesa."): ApiResult<Long> {
+        val id = trim().trim('"').toLongOrNull()
+        return if (id == null) ApiResult.Error(onFailure) else ApiResult.Ok(id)
+    }
+
+    // ----------------------------------------------------------------------------- rete
+
     /**
      * Una richiesta HTTP verso Supabase.
      *
      * @param wantHeader se valorizzato, restituisce quell'intestazione invece del corpo:
      *        serve per i conteggi, che Supabase mette in `content-range`.
+     * @param allowRetry al primo 401 rinnova il token e riprova una volta sola. Va spento
+     *        sulla chiamata di rinnovo stessa, o un token rifiutato genera ricorsione.
      */
     private fun request(
         path: String,
@@ -152,6 +279,7 @@ object SupabaseApi {
         authenticated: Boolean = true,
         extraHeaders: Map<String, String> = emptyMap(),
         wantHeader: String? = null,
+        allowRetry: Boolean = true,
     ): ApiResult<String> {
         if (!Supabase.isConfigured) {
             return ApiResult.Error("Credenziali Supabase assenti in local.properties.")
@@ -166,7 +294,7 @@ object SupabaseApi {
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Accept", "application/json")
                 // Con un token si agisce come utente; senza, come chiave pubblicabile.
-                val bearer = if (authenticated) accessToken ?: Supabase.key else Supabase.key
+                val bearer = if (authenticated) Session.accessToken ?: Supabase.key else Supabase.key
                 setRequestProperty("Authorization", "Bearer $bearer")
                 extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
                 if (body != null) {
@@ -187,10 +315,21 @@ object SupabaseApi {
             val header = wantHeader?.let { connection.getHeaderField(it) }
             connection.disconnect()
 
-            if (code in 200..299) {
-                ApiResult.Ok(header ?: text)
-            } else {
-                ApiResult.Error(readableError(code, text))
+            when {
+                code in 200..299 -> ApiResult.Ok(header ?: text)
+
+                // Il token e' scaduto mentre l'app era aperta: si rinnova e si riprova,
+                // in silenzio. Farlo qui evita di ripetere il controllo in ogni chiamata.
+                code == 401 && allowRetry && authenticated && Session.canRefresh ->
+                    when (refresh()) {
+                        is ApiResult.Ok -> request(
+                            path, method, body, authenticated, extraHeaders, wantHeader,
+                            allowRetry = false,
+                        )
+                        is ApiResult.Error -> ApiResult.Error(readableError(code, text))
+                    }
+
+                else -> ApiResult.Error(readableError(code, text))
             }
         } catch (e: Exception) {
             ApiResult.Error(e.message?.take(140) ?: "Rete non raggiungibile")

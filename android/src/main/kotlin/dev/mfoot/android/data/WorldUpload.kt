@@ -2,7 +2,9 @@ package dev.mfoot.android.data
 
 import dev.mfoot.core.ai.AiPersonality
 import dev.mfoot.core.ai.AiPersonalityGenerator
+import dev.mfoot.core.config.ConfigJson
 import dev.mfoot.core.config.LeagueConfig
+import dev.mfoot.core.json.JsonWriter
 import dev.mfoot.core.model.Attr
 import dev.mfoot.core.model.ClubId
 import dev.mfoot.core.model.Player
@@ -44,7 +46,13 @@ object WorldUpload {
         w.field("p_nickname", nickname)
         w.field("p_seed", config.setup.worldSeed)
 
-        writeConfig(w, config)
+        // La configurazione la serializza `core`, la stessa libreria che la rilegge sul
+        // server: se scrittura e lettura divergessero, le regole scelte dall'admin
+        // tornerebbero ai valori di serie senza che nessuno se ne accorga.
+        w.objectField("p_config")
+        ConfigJson.writeInto(w, config)
+        w.endObject()
+
         writePlayers(w, world.players)
         writeStaff(w, world.staff)
         writeAiClubs(w, config)
@@ -55,7 +63,7 @@ object WorldUpload {
 
     /** ~360 byte a giocatore piu' un margine: evita che lo StringBuilder si ridimensioni. */
     private fun estimatedSize(world: GeneratedWorld): Int =
-        world.players.size * 360 + world.staff.size * 120 + 8192
+        world.players.size * 360 + world.staff.size * 120 + 16384
 
     private fun writePlayers(w: JsonWriter, players: List<Player>) {
         w.arrayField("p_players")
@@ -144,49 +152,6 @@ object WorldUpload {
         w.arrayField("obsessions")
         p.obsessions.forEach { w.value(it.name) }
         w.endArray()
-    }
-
-    /**
-     * La configurazione, ridotta alle sezioni che qualcuno rilegge davvero: la funzione
-     * SQL per i crediti iniziali, il tick per la cadenza delle entrate e le regole
-     * d'asta. Serializzare novanta campi che nessuno consulta sarebbe solo peso.
-     */
-    private fun writeConfig(w: JsonWriter, config: LeagueConfig) {
-        w.objectField("p_config")
-
-        w.objectField("setup")
-        w.field("totalClubs", config.setup.totalClubs)
-        w.field("aiClubs", config.setup.aiClubs)
-        w.field("minSquadSize", config.setup.minSquadSize)
-        w.field("maxSquadSize", config.setup.maxSquadSize)
-        w.field("worldSeed", config.setup.worldSeed)
-        w.endObject()
-
-        w.objectField("economy")
-        w.field("startingCredits", config.economy.startingCredits)
-        w.field("recurringIncome", config.economy.recurringIncome)
-        w.field("incomeCadence", config.economy.incomeCadence.name)
-        w.field("renewalCostFraction", config.economy.renewalCostFraction)
-        w.field("wagesEnabled", config.economy.wagesEnabled)
-        w.endObject()
-
-        w.objectField("market")
-        w.field("auctionDurationMinutes", config.market.auctionDurationMinutes)
-        w.field("minimumRaise", config.market.minimumRaise)
-        w.field("antiSnipeEnabled", config.market.antiSnipeEnabled)
-        w.field("antiSnipeSeconds", config.market.antiSnipeSeconds)
-        w.field("defaultContractMatchDays", config.market.defaultContractMatchDays)
-        w.field("maxParallelAuctionsPerClub", config.market.maxParallelAuctionsPerClub)
-        w.endObject()
-
-        w.objectField("rules")
-        w.field("customMustStart", config.rules.customMustStart)
-        w.field("growthMultiplier", config.rules.growthMultiplier)
-        w.field("youthTeamEnabled", config.rules.youthTeamEnabled)
-        w.field("youthMaxAge", config.rules.youthMaxAge)
-        w.endObject()
-
-        w.endObject()
     }
 
     // Nomi di club inventati: stessa logica dei giocatori, nessuna licenza da rispettare.

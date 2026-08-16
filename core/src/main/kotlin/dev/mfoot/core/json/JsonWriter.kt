@@ -1,21 +1,25 @@
-package dev.mfoot.android.data
+package dev.mfoot.core.json
 
 /**
  * Scrittore JSON che produce testo direttamente, senza costruire oggetti.
  *
- * ## Perche' non `org.json`
+ * ## Perche' non una libreria
  *
- * Con milletrecento giocatori, ognuno con un oggetto annidato per i dodici attributi,
- * l'albero di `JSONObject` occupa decine di megabyte prima ancora di diventare testo — e
- * poi il testo va comunque prodotto, e poi convertito in byte: tre copie della stessa
- * cosa. Sull'emulatore il sistema ha ucciso l'app per memoria esaurita a 162 MB.
+ * Sta in `core`, che non ha dipendenze: e' cosi' che la stessa libreria gira identica sul
+ * telefono e sul server, senza doversi chiedere quale versione di quale parser ha vinto la
+ * risoluzione delle dipendenze da una parte o dall'altra.
  *
- * Scrivendo su uno `StringBuilder` si passa direttamente ai ~400 KB che servono davvero.
+ * Il motivo pratico e' la memoria. Con milletrecento giocatori, ognuno con un oggetto
+ * annidato per i dodici attributi, un albero di oggetti JSON occupa decine di megabyte
+ * prima ancora di diventare testo — e poi il testo va comunque prodotto, e poi convertito
+ * in byte: tre copie della stessa cosa. Sull'emulatore il sistema ha ucciso l'app per
+ * memoria esaurita a 162 MB. Scrivendo su uno `StringBuilder` si passa direttamente ai
+ * ~400 KB che servono davvero.
  *
- * Non e' un JSON writer generico: fa solo quello che serve al caricamento del mondo, e
- * si fida di chi lo chiama sull'ordine delle chiamate. In cambio non alloca niente.
+ * Non e' un writer generico: si fida di chi lo chiama sull'ordine delle chiamate. In
+ * cambio non alloca niente.
  */
-class JsonWriter(initialCapacity: Int = 512 * 1024) {
+class JsonWriter(initialCapacity: Int = 8 * 1024) {
 
     private val sb = StringBuilder(initialCapacity)
     private var needsComma = false
@@ -70,18 +74,24 @@ class JsonWriter(initialCapacity: Int = 512 * 1024) {
     }
 
     fun field(name: String, value: Double) = apply {
-        key(name); sb.append(value); needsComma = true
+        key(name); number(value); needsComma = true
     }
 
     fun field(name: String, value: Boolean) = apply {
         key(name); sb.append(value); needsComma = true
     }
 
-    /** Un elemento di array che e' una semplice stringa. */
+    /** Un elemento di array. */
     fun value(text: String) = apply {
-        separator()
-        quoted(text)
-        needsComma = true
+        separator(); quoted(text); needsComma = true
+    }
+
+    fun value(number: Int) = apply {
+        separator(); sb.append(number); needsComma = true
+    }
+
+    fun value(number: Double) = apply {
+        separator(); number(number); needsComma = true
     }
 
     /** JSON gia' pronto, inserito cosi' com'e'. */
@@ -105,6 +115,24 @@ class JsonWriter(initialCapacity: Int = 512 * 1024) {
     }
 
     /**
+     * I decimali senza notazione esponenziale.
+     *
+     * `1.0E-4` e' JSON valido e Postgres lo legge, ma un file di configurazione va anche
+     * letto da un essere umano quando qualcosa non torna.
+     */
+    private fun number(value: Double) {
+        if (value.isNaN() || value.isInfinite()) {
+            sb.append("null")
+            return
+        }
+        if (value == StrictMath.floor(value) && StrictMath.abs(value) < 1e15) {
+            sb.append(value.toLong()).append(".0")
+        } else {
+            sb.append(java.math.BigDecimal(value).toPlainString().trimEnd('0').trimEnd('.'))
+        }
+    }
+
+    /**
      * Escape secondo RFC 8259.
      *
      * I nomi generati sono innocui, ma un nickname scritto dall'utente puo' contenere
@@ -120,14 +148,20 @@ class JsonWriter(initialCapacity: Int = 512 * 1024) {
                 '\r' -> sb.append("\\r")
                 '\t' -> sb.append("\\t")
                 '\b' -> sb.append("\\b")
-                '' -> sb.append("\\f")
                 else -> if (c < ' ') {
-                    sb.append("\\u").append(String.format("%04x", c.code))
+                    sb.append("\\u").append(HEX[(c.code shr 12) and 0xF])
+                        .append(HEX[(c.code shr 8) and 0xF])
+                        .append(HEX[(c.code shr 4) and 0xF])
+                        .append(HEX[c.code and 0xF])
                 } else {
                     sb.append(c)
                 }
             }
         }
         sb.append('"')
+    }
+
+    private companion object {
+        val HEX = "0123456789abcdef".toCharArray()
     }
 }

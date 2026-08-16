@@ -126,6 +126,36 @@ class PotentialEstimatorAgeTest {
         assertTrue((osservato.last - osservato.first) < (alBuio.last - alBuio.first))
     }
 
+    /**
+     * La prova che il segreto puo' restare sul server.
+     *
+     * L'app legge `players_public`, dove i potenziali veri non ci sono: al loro posto
+     * mette un segnaposto. Se la stima pubblica cambiasse al variare dei valori veri,
+     * quel segnaposto falserebbe ogni scheda — e peggio, chi confrontasse la stima
+     * dell'app con quella del server potrebbe dedurre per differenza cio' che non deve
+     * sapere. Due giocatori identici in tutto cio' che e' pubblico devono produrre la
+     * stessa identica forbice, quali che siano i loro potenziali reali.
+     */
+    @Test
+    fun `la stima pubblica non dipende dai potenziali veri`() {
+        val fenomeno = player(age = 19, overall = 61, potMin = 88, potMax = 93, id = 77L)
+        val bidone = player(age = 19, overall = 61, potMin = 61, potMax = 63, id = 77L)
+
+        assertEquals(
+            PotentialEstimator.publicEstimate(fenomeno, observerId = 4L),
+            PotentialEstimator.publicEstimate(bidone, observerId = 4L),
+            "la stima pubblica lascia trapelare il potenziale vero",
+        )
+    }
+
+    @Test
+    fun `osservatori diversi vedono stime diverse dello stesso giocatore`() {
+        val giovane = player(age = 18, overall = 58, potMin = 78, potMax = 86, id = 12L)
+        val stime = (1L..8L).map { PotentialEstimator.publicEstimate(giovane, it) }.toSet()
+
+        assertTrue(stime.size > 1, "tutti i club vedono la stessa forbice: nessun affare e' possibile")
+    }
+
     @Test
     fun `la stima resta comunque sopra l'overall attuale e dentro la scala`() {
         listOf(16, 22, 28, 35).forEach { age ->
