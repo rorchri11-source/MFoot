@@ -10,6 +10,9 @@ import java.net.URL
 /** Esito di un tentativo di raggiungere Supabase, in una forma mostrabile all'utente. */
 sealed interface ConnectionStatus {
     data object NotConfigured : ConnectionStatus
+
+    /** L'esempio della guida e' stato copiato senza sostituire i segnaposto. */
+    data object Placeholder : ConnectionStatus
     data object Checking : ConnectionStatus
     data class Connected(val millis: Long) : ConnectionStatus
     data class Failed(val reason: String) : ConnectionStatus
@@ -18,6 +21,7 @@ sealed interface ConnectionStatus {
     val label: String
         get() = when (this) {
             NotConfigured -> "non collegato"
+            Placeholder -> "url da compilare"
             Checking -> "collegamento…"
             is Connected -> "collegato"
             is Failed -> "errore"
@@ -27,6 +31,8 @@ sealed interface ConnectionStatus {
     val detail: String
         get() = when (this) {
             NotConfigured -> "Credenziali Supabase assenti in local.properties"
+            Placeholder -> "In local.properties c'e' ancora il segnaposto dell'esempio, " +
+                "non l'indirizzo del tuo progetto"
             Checking -> "Verifica del collegamento in corso"
             is Connected -> "Collegato in ${millis}ms"
             is Failed -> reason
@@ -53,6 +59,16 @@ object Supabase {
     val isConfigured: Boolean get() = url.isNotBlank() && key.isNotBlank()
 
     /**
+     * L'errore piu' probabile in assoluto: si copia la riga d'esempio dalla guida e ci si
+     * dimentica di sostituire il nome del progetto. Senza questo controllo l'app dice
+     * solo "errore" e non si capisce dove guardare.
+     */
+    private val isPlaceholder: Boolean
+        get() = url.contains("IL-TUO-PROGETTO", ignoreCase = true) ||
+            url.contains("YOUR-PROJECT", ignoreCase = true) ||
+            key.contains("...")
+
+    /**
      * Verifica che il tubo funzioni.
      *
      * Interroga una tabella qualsiasi chiedendo zero righe: quello che interessa non e'
@@ -62,6 +78,7 @@ object Supabase {
      */
     suspend fun checkConnection(): ConnectionStatus = withContext(Dispatchers.IO) {
         if (!isConfigured) return@withContext ConnectionStatus.NotConfigured
+        if (isPlaceholder) return@withContext ConnectionStatus.Placeholder
 
         val started = System.currentTimeMillis()
         try {

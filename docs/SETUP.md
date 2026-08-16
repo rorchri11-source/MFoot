@@ -119,14 +119,18 @@ Apri `local.properties` nella cartella del progetto — **git lo ignora**, quind
 ci scrivi non finisce mai nel repository pubblico — e aggiungi due righe:
 
 ```properties
-supabase.url=https://IL-TUO-PROGETTO.supabase.co
-supabase.key=sb_publishable_...
+supabase.url=https://abcdefghijkl.supabase.co
+supabase.key=sb_publishable_xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 | Valore | Dove si trova |
 |---|---|
 | `supabase.url` | Project Settings → **Data API** → *Project URL* |
 | `supabase.key` | Project Settings → **API Keys** → *Publishable key* |
+
+⚠️ **Sostituisci davvero i valori.** Copiare la riga d'esempio così com'è è l'errore più
+frequente: l'app se ne accorge e mostra `url da compilare` invece di un generico errore,
+ma è comunque mezz'ora persa.
 
 ### Perché la chiave sta qui e non nel codice
 
