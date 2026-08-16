@@ -1,0 +1,354 @@
+package dev.mfoot.core.config
+
+import dev.mfoot.core.model.Position
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.LocalTime
+
+/**
+ * Tutte le regole di una lega, decise dall'admin al momento della creazione.
+ *
+ * ## Il principio
+ *
+ * **Nessun numero di gioco vive nel codice.** Il motore non sa cosa sia "100 crediti":
+ * lo chiede qui. Vale anche per l'AI, che ragiona sempre in percentuale del budget
+ * disponibile e mai in crediti assoluti, cosi' si adatta da sola a qualunque economia
+ * l'admin abbia impostato — ricca, povera o assurda.
+ *
+ * Questo permette anche di ritoccare il bilanciamento **senza pubblicare un nuovo APK**:
+ * i valori stanno sul server, l'app li legge.
+ *
+ * Le impostazioni sono raggruppate per area cosi' l'interfaccia puo' mostrarne una per
+ * schermata, e i preset possono sostituirne interi blocchi.
+ */
+data class LeagueConfig(
+    val setup: SetupConfig = SetupConfig(),
+    val economy: EconomyConfig = EconomyConfig(),
+    val market: MarketConfig = MarketConfig(),
+    val calendar: CalendarConfig = CalendarConfig(),
+    val rules: RulesConfig = RulesConfig(),
+    val world: WorldConfig = WorldConfig(),
+    val notifications: NotificationConfig = NotificationConfig(),
+    val ai: AiConfig = AiConfig(),
+    val engine: EngineConfig = EngineConfig(),
+)
+
+// ---------------------------------------------------------------------------- setup
+
+enum class LeagueMode { SOLO_MULTIPLAYER, MULTIPLAYER_PIU_AI }
+
+data class SetupConfig(
+    val leagueName: String = "Lega MFoot",
+    /** Parola o codice che serve agli altri per unirsi. */
+    val accessCode: String = "MFOOT",
+    val totalClubs: Int = 16,
+    val mode: LeagueMode = LeagueMode.MULTIPLAYER_PIU_AI,
+    /** Quanti dei [totalClubs] sono gestiti dall'AI. */
+    val aiClubs: Int = 8,
+    val minSquadSize: Int = 16,
+    val maxSquadSize: Int = 28,
+    /** Seed del mondo. Generato una volta e salvato: non va mai rigenerato sul client. */
+    val worldSeed: Long = 20260816L,
+) {
+    val humanClubs: Int get() = totalClubs - aiClubs
+}
+
+// -------------------------------------------------------------------------- economia
+
+enum class IncomeCadence { PER_GIORNATA, PER_SETTIMANA, FINE_COMPETIZIONE }
+
+data class EconomyConfig(
+    val startingCredits: Int = 300,
+    val recurringIncome: Int = 8,
+    val incomeCadence: IncomeCadence = IncomeCadence.PER_GIORNATA,
+    /** Premi per posizione finale, dal primo in giu'. */
+    val placementPrizes: List<Int> = listOf(120, 70, 45, 30, 20, 15, 10, 5),
+    val winPrize: Int = 4,
+    val drawPrize: Int = 1,
+    val wagesEnabled: Boolean = true,
+    /** Stipendio per giornata = overall^2 * questo fattore. Cresce piu' che linearmente. */
+    val wageFactor: Double = 0.0009,
+    /** Il rinnovo costa questa frazione di quanto era stato pagato. */
+    val renewalCostFraction: Double = 0.5,
+    val negativeBalanceAllowed: Boolean = false,
+)
+
+// --------------------------------------------------------------------------- mercato
+
+enum class MarketWindowMode {
+    /** Il mercato e' sempre aperto. */
+    SEMPRE_APERTO,
+
+    /** Solo nelle fasce orarie indicate. */
+    FASCE_ORARIE,
+
+    /** Solo quando non ci sono partite in programma: e' il comportamento predefinito. */
+    SOLO_CALENDARIO_VUOTO,
+}
+
+enum class InitialAuctionMode {
+    /** Tutti collegati insieme, si chiamano i giocatori a turno. Il momento sociale piu' forte. */
+    SERATA_ASTA,
+
+    /** Aste parallele a scadenza con offerta massima: nessuno deve essere presente. */
+    ASINCRONA,
+}
+
+data class MarketConfig(
+    val initialAuctionMode: InitialAuctionMode = InitialAuctionMode.SERATA_ASTA,
+    val auctionDurationMinutes: Int = 60,
+    val minimumRaise: Int = 1,
+    val antiSnipeEnabled: Boolean = true,
+    val antiSnipeSeconds: Int = 60,
+    /**
+     * Offerta massima automatica, stile eBay.
+     *
+     * E' il meccanismo che elimina la pressione di controllare il telefono ogni ora:
+     * dichiari il tuo massimo e vai a dormire, il sistema difende la tua posizione.
+     * Disattivarlo rende il mercato ostile a chi lavora o studia.
+     */
+    val proxyBiddingEnabled: Boolean = true,
+    val maxParallelAuctionsPerClub: Int = 3,
+    val windowMode: MarketWindowMode = MarketWindowMode.SOLO_CALENDARIO_VUOTO,
+    val windowSlots: List<ClosedRange<LocalTime>> = emptyList(),
+    val loansEnabled: Boolean = true,
+    val releaseClausesEnabled: Boolean = true,
+    val swapsEnabled: Boolean = true,
+    /** Durata base di un contratto, in giornate di gioco. */
+    val defaultContractMatchDays: Int = 19,
+    /** Dopo quanti minuti un'offerta di trattativa non risposta decade. */
+    val negotiationExpiryMinutes: Int = 1440,
+    val minLoanMatchDays: Int = 2,
+    val maxLoanMatchDays: Int = 19,
+)
+
+// ------------------------------------------------------------------------- calendario
+
+enum class MatchSpeed(val label: String, val secondsPerGameMinute: Double) {
+    REALISTICA("1x - 90 minuti", 60.0),
+    VELOCE("3x - 30 minuti", 20.0),
+    RAPIDA("6x - 15 minuti", 10.0),
+    ISTANTANEA("Istantanea", 0.0),
+}
+
+data class CalendarConfig(
+    val startDate: LocalDate = LocalDate.of(2026, 9, 1),
+    val endDate: LocalDate = LocalDate.of(2026, 9, 20),
+    /** Quante partite puo' giocare lo stesso club in un giorno reale. */
+    val matchesPerDayPerClub: Int = 2,
+    /** Giorni della settimana senza partite. */
+    val restWeekdays: Set<DayOfWeek> = emptySet(),
+    /** Date specifiche da saltare. */
+    val restDates: Set<LocalDate> = emptySet(),
+    /** Orari di inizio disponibili nell'arco della giornata. */
+    val kickoffSlots: List<LocalTime> = listOf(LocalTime.of(18, 30), LocalTime.of(21, 0)),
+    val matchSpeed: MatchSpeed = MatchSpeed.RAPIDA,
+    /** Durata in minuti reali della finestra di intervallo per cambi e correzioni. */
+    val halfTimeWindowMinutes: Int = 3,
+)
+
+// ----------------------------------------------------------------------- regole gioco
+
+enum class InjurySeverity { LIEVE, NORMALE, REALISTICA }
+
+data class RulesConfig(
+    /**
+     * Il player custom deve essere schierato titolare.
+     *
+     * Senza questo vincolo il giocatore creato dal proprietario (che parte da 65 in un
+     * mondo dove i migliori stanno a 88+) non entrerebbe mai in campo, quindi non
+     * crescerebbe mai, quindi non entrerebbe mai in campo. L'obbligo rompe il circolo
+     * vizioso e rende la squadra davvero *tua*: hai un punto debole strutturale e il
+     * gioco sta nel costruirci intorno.
+     */
+    val customMustStart: Boolean = true,
+    val customMinimumMinutes: Int = 60,
+    /** Quante volte piu' in fretta cresce il player custom rispetto ai generati. */
+    val customGrowthMultiplier: Double = 3.5,
+
+    /** Moltiplicatore globale sulla crescita: la manopola del ritmo di progressione. */
+    val growthMultiplier: Double = 1.0,
+    val peakAgeStart: Int = 22,
+    val peakAgeEnd: Int = 26,
+    val plateauAgeEnd: Int = 28,
+    val declineAge: Int = 32,
+
+    val friendliesEnabled: Boolean = true,
+    /**
+     * Se false, le amichevoli non fanno crescere nessuno.
+     *
+     * Va lasciato false salvo ottime ragioni: se un'amichevole facesse crescere, si
+     * potrebbero concordare quindici partite al giorno fra amici compiacenti e il
+     * sistema di crescita salterebbe del tutto.
+     */
+    val friendliesCountForGrowth: Boolean = false,
+
+    val injuriesEnabled: Boolean = true,
+    val injurySeverity: InjurySeverity = InjurySeverity.NORMALE,
+    val suspensionsEnabled: Boolean = true,
+    val yellowCardsForSuspension: Int = 5,
+
+    val youthTeamEnabled: Boolean = true,
+    val youthMaxAge: Int = 21,
+    /** Quanto vale, in crescita, una partita di Primavera rispetto a una di prima squadra. */
+    val youthMatchGrowthFactor: Double = 0.75,
+
+    val moraleEnabled: Boolean = true,
+    val conversationsEnabled: Boolean = true,
+    /** Sotto questa soglia il giocatore puo' chiedere la cessione o rifiutare il rinnovo. */
+    val lowMoraleThreshold: Int = 30,
+)
+
+// ------------------------------------------------------------------------ mondo
+
+/** Quanti giocatori per fascia di forza. La coda alta deve restare sottile. */
+data class OverallTiers(
+    val fuoriclasse: Int = 8,      // 87-93
+    val top: Int = 40,             // 81-86
+    val buoni: Int = 160,          // 74-80
+    val normali: Int = 420,        // 66-73
+    val gregari: Int = 500,        // 55-65
+) {
+    val total: Int get() = fuoriclasse + top + buoni + normali + gregari
+}
+
+data class WorldConfig(
+    val tiers: OverallTiers = OverallTiers(),
+    /** Quote indicative per ruolo. Vengono normalizzate, non serve che sommino a 1. */
+    val positionQuotas: Map<Position, Double> = defaultPositionQuotas(),
+    val nationalities: List<String> = listOf(
+        "Italia", "Francia", "Germania", "Spagna", "Inghilterra", "Turchia",
+        "Brasile", "Argentina", "Portogallo", "Paesi Bassi",
+    ),
+    val minAge: Int = 16,
+    val maxAge: Int = 37,
+    /** Probabilita' che un giocatore abbia almeno un tratto. */
+    val traitChance: Double = 0.45,
+    val maxTraitsPerPlayer: Int = 2,
+    /** Ampiezza minima e massima della forbice di potenziale alla generazione. */
+    val minPotentialSpread: Int = 3,
+    val maxPotentialSpread: Int = 18,
+) {
+    val playerCount: Int get() = tiers.total
+}
+
+private fun defaultPositionQuotas(): Map<Position, Double> = mapOf(
+    Position.POR to 0.11,
+    Position.TD to 0.09,
+    Position.DC to 0.17,
+    Position.TS to 0.09,
+    Position.MED to 0.09,
+    Position.CC to 0.15,
+    Position.TRQ to 0.07,
+    Position.AD to 0.07,
+    Position.AS to 0.07,
+    Position.SP to 0.04,
+    Position.ATT to 0.05,
+)
+
+// -------------------------------------------------------------------------- notifiche
+
+data class NotificationConfig(
+    val immediateEnabled: Boolean = true,
+    val dailyDigestHour: LocalTime = LocalTime.of(9, 0),
+    /**
+     * Tetto duro di eventi generati dall'AI notificati a un club umano in un giorno.
+     *
+     * E' una garanzia imposta dal server, non una speranza sul comportamento dell'AI.
+     * Con venticinque club che si muovono, senza questo tetto l'app verrebbe
+     * disinstallata nel giro di tre giorni.
+     */
+    val maxAiEventsPerHumanClubPerDay: Int = 3,
+)
+
+// --------------------------------------------------------------------------------- AI
+
+data class AiConfig(
+    /** Moltiplicatore su valutazioni e budget: la difficolta' della lega. */
+    val difficultyMultiplier: Double = 1.0,
+    val maxMarketActionsPerDay: Int = 2,
+    /** Intervallo del ritardo umano prima di rilanciare. */
+    val minRebidDelayMinutes: Int = 18,
+    val maxRebidDelayMinutes: Int = 180,
+    /** Quante volte al giorno un'AI si sveglia a guardare il mercato. */
+    val minWakeupsPerDay: Int = 1,
+    val maxWakeupsPerDay: Int = 3,
+    /**
+     * Quanto cala l'appetibilita' di un giocatore per ogni AI gia' impegnata su di lui.
+     *
+     * E' la regola che impedisce lo sciame: la seconda AI ci pensa, la terza quasi mai,
+     * la quarta mai. Il risultato naturale e' 1-3 AI per asta invece di venticinque.
+     */
+    val crowdingPenalty: Double = 0.45,
+    /** Dopo un rifiuto, quante giornate prima di riprovare con lo stesso club. */
+    val refusalCooldownMatchDays: Int = 4,
+    /** Non fa offerte per un giocatore acquistato da meno di queste giornate. */
+    val recentPurchaseGraceMatchDays: Int = 6,
+    /** Quanto rilancia oltre l'offerta corrente, in frazione del proprio tetto. */
+    val rebidStepFraction: Double = 0.08,
+)
+
+// ----------------------------------------------------------------- manopole del motore
+
+/**
+ * I parametri numerici del motore di simulazione.
+ *
+ * Sono separati dal resto perche' hanno un ciclo di vita diverso: le altre sezioni le
+ * tocca l'admin, questa la si tara **misurando**, con la simulazione a forza bruta di
+ * migliaia di partite. Nessuno di questi valori va scelto a intuito.
+ */
+data class EngineConfig(
+    /**
+     * Quanto conta la differenza di forza fra due zone.
+     *
+     * E' il parametro piu' importante del gioco. K piccolo: la squadra piu' forte vince
+     * quasi sempre e il campionato e' gia' deciso al sorteggio. K grande: tutto diventa
+     * casuale e costruire la rosa non serve a niente. Va tarato finche' una squadra con
+     * +10 di overall vince circa il 65% delle volte, non il 95%.
+     */
+    val sigmoidK: Double = 11.0,
+
+    /** Bonus ai rating di zona per chi gioca in casa. */
+    val homeAdvantage: Double = 2.6,
+
+    /** Numero medio di azioni in cui si scompone una partita. */
+    val actionsPerMatch: Int = 118,
+
+    /** Probabilita' base di concludere quando l'azione arriva in zona offensiva. */
+    val shotChanceInAttackingZone: Double = 0.34,
+
+    /** xG base per zona di conclusione: il centro vale molto piu' delle fasce. */
+    val baseXgCentral: Double = 0.135,
+    val baseXgWide: Double = 0.055,
+
+    /** Malus all'xG quando si conclude di piede debole. */
+    val weakFootPenaltyPerStar: Double = 0.055,
+
+    val foulChance: Double = 0.09,
+    val yellowCardChanceOnFoul: Double = 0.18,
+    val redCardChanceOnFoul: Double = 0.006,
+    val cornerChanceOnLostAttack: Double = 0.14,
+    val injuryChancePerAction: Double = 0.0016,
+
+    /**
+     * Quanto pesa l'inerzia psicologica dopo un gol.
+     *
+     * E' il parametro che genera le rimonte, cioe' le partite di cui si parla il giorno
+     * dopo. A zero le partite diventano piatte e prevedibili.
+     */
+    val momentumStrength: Double = 3.2,
+    val momentumDecayPerAction: Double = 0.94,
+
+    /** Stamina consumata per minuto giocato, prima dei modificatori di fisico e tratti. */
+    val staminaDrainPerMinute: Double = 0.42,
+    /** Stamina recuperata per giornata, prima del moltiplicatore del preparatore. */
+    val staminaRecoveryPerMatchDay: Double = 34.0,
+    /** Sotto questa soglia la stanchezza inizia a pesare sui rating. */
+    val staminaComfortThreshold: Int = 65,
+    /** Malus massimo ai rating quando la stamina e' a zero. */
+    val maxStaminaPenalty: Double = 14.0,
+
+    /** Peso di morale e forma sui rating di zona. */
+    val moraleWeight: Double = 0.06,
+    val formWeight: Double = 0.9,
+)
