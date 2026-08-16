@@ -39,6 +39,7 @@ import dev.mfoot.android.ui.FoundingScreen
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.PlayerDetailScreen
 import dev.mfoot.android.ui.PlayerListScreen
+import dev.mfoot.android.ui.TableScreen
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootMotion
 import dev.mfoot.android.ui.theme.MFootTheme
@@ -84,6 +85,12 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
             is AppState.Guasto -> Guasto(current.motivo, viewModel::avvia)
 
+            is AppState.Classifica -> TableScreen(
+                state = current.table,
+                onPickCompetition = viewModel::scegliCompetizione,
+                onClose = viewModel::chiudiClassifica,
+            )
+
             is AppState.Competizioni -> CompetitionsScreen(
                 state = current.competitions,
                 onNew = viewModel::nuovaCompetizione,
@@ -117,6 +124,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     onOpenBid = viewModel::apriOfferta,
                     onRefreshAuctions = { viewModel.aggiornaAste() },
                     onCompetitions = viewModel::apriCompetizioni,
+                    onTable = viewModel::apriClassifica,
                 )
 
                 // Il foglio dell'offerta copre tutto: si sta decidendo quanto spendere, e

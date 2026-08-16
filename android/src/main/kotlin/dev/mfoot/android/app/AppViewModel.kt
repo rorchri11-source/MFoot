@@ -11,6 +11,7 @@ import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.data.Session
 import dev.mfoot.android.data.Supabase
+import dev.mfoot.android.data.TableRepository
 import dev.mfoot.android.data.SupabaseApi
 import dev.mfoot.android.data.WorldUpload
 import dev.mfoot.core.config.ConfigPresets
@@ -353,6 +354,59 @@ class AppViewModel : ViewModel() {
     }
 
     fun chiudiCompetizioni() = ricarica()
+
+    /**
+     * Apre classifica e calendario.
+     *
+     * La aprono tutti, non solo l'admin: e' la schermata che si guarda piu' spesso, ed e'
+     * quella che fa sembrare la lega un campionato invece di una serie di partite slegate.
+     */
+    fun apriClassifica() {
+        val dentro = _state.value as? AppState.Dentro ?: return
+        val leagueId = dentro.lega.league.id
+
+        viewModelScope.launch {
+            _state.value = AppState.Caricamento("Leggo la classifica…")
+
+            when (val competizioni = CompetitionRepository.list(leagueId)) {
+                is ApiResult.Error -> _state.value = AppState.Classifica(
+                    TableState(emptyList(), null, errore = competizioni.message),
+                )
+
+                is ApiResult.Ok -> {
+                    val prima = competizioni.value.firstOrNull()
+                    val base = TableState(
+                        competitions = competizioni.value,
+                        selectedId = prima?.id,
+                        clubs = dentro.lega.clubs,
+                        myClubId = dentro.lega.myClub?.id,
+                    )
+                    _state.value = AppState.Classifica(
+                        if (prima == null) base else base.copy(view = caricaTabella(leagueId, prima))
+                    )
+                }
+            }
+        }
+    }
+
+    fun scegliCompetizione(id: Long) {
+        val schermata = (_state.value as? AppState.Classifica)?.table ?: return
+        val competizione = schermata.competitions.firstOrNull { it.id == id } ?: return
+        val leagueId = Session.leagueId ?: return
+
+        viewModelScope.launch {
+            _state.value = AppState.Classifica(
+                schermata.copy(selectedId = id, view = caricaTabella(leagueId, competizione)),
+            )
+        }
+    }
+
+    private suspend fun caricaTabella(
+        leagueId: Long,
+        competizione: dev.mfoot.android.data.CompetitionInfo,
+    ) = (TableRepository.load(leagueId, competizione) as? ApiResult.Ok)?.value
+
+    fun chiudiClassifica() = ricarica()
 
     /** Comincia una competizione nuova, con tutti i club gia' iscritti. */
     fun nuovaCompetizione() {

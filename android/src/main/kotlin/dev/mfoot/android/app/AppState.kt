@@ -179,6 +179,9 @@ sealed interface AppState {
     /** L'admin gestisce le competizioni della lega. */
     data class Competizioni(val competitions: CompetitionsState) : AppState
 
+    /** Classifica e calendario: la schermata che si guarda piu' spesso di tutte. */
+    data class Classifica(val table: TableState) : AppState
+
     /** Qualcosa e' andato storto in modo da cui non si esce da soli. */
     data class Guasto(val motivo: String) : AppState
 }

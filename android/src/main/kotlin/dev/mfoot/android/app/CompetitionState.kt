@@ -2,6 +2,7 @@ package dev.mfoot.android.app
 
 import dev.mfoot.android.data.ClubInfo
 import dev.mfoot.android.data.CompetitionInfo
+import dev.mfoot.android.data.TableView
 import dev.mfoot.core.calendar.CompetitionType
 import dev.mfoot.core.calendar.Schedule
 import dev.mfoot.core.config.CalendarConfig
@@ -51,6 +52,23 @@ data class CompetitionDraft(
      * come opzione libera in ogni formato porterebbe a chiedersi cosa faccia.
      */
     val supportsDoubleRound: Boolean get() = type != CompetitionType.GIRONI_PIU_ELIMINAZIONE
+}
+
+/**
+ * Classifica e calendario di una competizione.
+ *
+ * Aperta da chiunque, non solo dall'admin: e' la schermata che si guarda piu' spesso di
+ * tutte, ed e' quella che rende una lega un campionato invece di una serie di partite.
+ */
+data class TableState(
+    val competitions: List<CompetitionInfo>,
+    val selectedId: Long?,
+    val view: TableView? = null,
+    val clubs: List<ClubInfo> = emptyList(),
+    val myClubId: Long? = null,
+    val errore: String? = null,
+) {
+    fun clubName(id: Long): String = clubs.firstOrNull { it.id == id }?.name ?: "Club #$id"
 }
 
 /** La schermata delle competizioni: quelle esistenti e quella in costruzione. */
