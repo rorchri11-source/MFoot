@@ -306,10 +306,17 @@ data class EngineConfig(
      * casuale e costruire la rosa non serve a niente. Va tarato finche' una squadra con
      * +10 di overall vince circa il 65% delle volte, non il 95%.
      */
-    val sigmoidK: Double = 11.0,
+    val sigmoidK: Double = 34.0,
 
-    /** Bonus ai rating di zona per chi gioca in casa. */
-    val homeAdvantage: Double = 2.6,
+    /**
+     * Bonus ai rating di zona per chi gioca in casa.
+     *
+     * Va letto **insieme a [sigmoidK]**: i due parametri non sono indipendenti. Alzando
+     * K, ogni bonus per azione pesa meno, quindi il vantaggio del campo va rialzato in
+     * proporzione. Tarato per ottenere circa 45% vittorie in casa e 28% fuori fra
+     * squadre di pari forza.
+     */
+    val homeAdvantage: Double = 5.0,
 
     /** Numero medio di azioni in cui si scompone una partita. */
     val actionsPerMatch: Int = 118,
@@ -318,8 +325,8 @@ data class EngineConfig(
     val shotChanceInAttackingZone: Double = 0.34,
 
     /** xG base per zona di conclusione: il centro vale molto piu' delle fasce. */
-    val baseXgCentral: Double = 0.135,
-    val baseXgWide: Double = 0.055,
+    val baseXgCentral: Double = 0.112,
+    val baseXgWide: Double = 0.046,
 
     /** Malus all'xG quando si conclude di piede debole. */
     val weakFootPenaltyPerStar: Double = 0.055,
@@ -340,7 +347,7 @@ data class EngineConfig(
     val momentumDecayPerAction: Double = 0.94,
 
     /** Stamina consumata per minuto giocato, prima dei modificatori di fisico e tratti. */
-    val staminaDrainPerMinute: Double = 0.42,
+    val staminaDrainPerMinute: Double = 0.34,
     /** Stamina recuperata per giornata, prima del moltiplicatore del preparatore. */
     val staminaRecoveryPerMatchDay: Double = 34.0,
     /** Sotto questa soglia la stanchezza inizia a pesare sui rating. */
