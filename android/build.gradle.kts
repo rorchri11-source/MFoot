@@ -1,10 +1,31 @@
 // Da AGP 9.0 il supporto Kotlin e' integrato nel plugin Android: applicare anche
 // org.jetbrains.kotlin.android fa fallire la configurazione.
 // https://kotl.in/gradle/agp-built-in-kotlin
+import java.util.Properties
+
+// Da AGP 9.0 il supporto Kotlin e' integrato nel plugin Android: applicare anche
+// org.jetbrains.kotlin.android fa fallire la configurazione.
+// https://kotl.in/gradle/agp-built-in-kotlin
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+/**
+ * Le credenziali Supabase arrivano da `local.properties`, che git ignora.
+ *
+ * La chiave pubblicabile non e' un segreto come una password — Supabase stessa dice che
+ * si puo' condividere, e la difesa vera sono le Row Level Security. Ma il repository e'
+ * pubblico, e lasciarcela dentro significherebbe che chiunque puo' bersagliare il
+ * progetto e consumarne i limiti. Tenerla fuori costa una riga.
+ */
+val localProps = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun secret(name: String, fallback: String = ""): String =
+    (localProps.getProperty(name) ?: System.getenv(name) ?: fallback)
 
 android {
     namespace = "dev.mfoot.android"
@@ -18,6 +39,9 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+
+        buildConfigField("String", "SUPABASE_URL", "\"${secret("supabase.url")}\"")
+        buildConfigField("String", "SUPABASE_KEY", "\"${secret("supabase.key")}\"")
     }
 
     buildTypes {
@@ -33,6 +57,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

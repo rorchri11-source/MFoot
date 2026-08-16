@@ -108,6 +108,49 @@ Se leggi questo, GitHub parla con Supabase e l'infrastruttura è in piedi.
 
 ---
 
+---
+
+## 5. Collegare l'app Android al database
+
+L'app funziona anche senza: genera un mondo tutto suo a ogni avvio, il che va benissimo
+per provare le schermate. Ma per salvare una lega vera servono due valori.
+
+Apri `local.properties` nella cartella del progetto — **git lo ignora**, quindi quello che
+ci scrivi non finisce mai nel repository pubblico — e aggiungi due righe:
+
+```properties
+supabase.url=https://IL-TUO-PROGETTO.supabase.co
+supabase.key=sb_publishable_...
+```
+
+| Valore | Dove si trova |
+|---|---|
+| `supabase.url` | Project Settings → **Data API** → *Project URL* |
+| `supabase.key` | Project Settings → **API Keys** → *Publishable key* |
+
+### Perché la chiave sta qui e non nel codice
+
+La chiave **publishable** non è un segreto come una password: Supabase stessa scrive che
+*"publishable keys can be safely shared publicly"*, e la difesa vera dei dati sono le Row
+Level Security che lo schema ha già impostato.
+
+Ma il repository è **pubblico**. Lasciarla dentro significherebbe che chiunque può
+bersagliare il progetto e consumarne i limiti del piano gratuito. Tenerla fuori costa una
+riga.
+
+### Verifica
+
+Ricompila e riavvia l'app: in alto a destra, accanto al conteggio dei giocatori, c'è un
+pallino.
+
+| Pallino | Significato |
+|---|---|
+| 🟡 `non collegato` | Le due righe non ci sono, o sono vuote |
+| 🟢 `collegato` | URL e chiave funzionano, le tabelle rispondono |
+| 🟡 `errore` | Chiave rifiutata, oppure lo schema SQL non è stato eseguito |
+
+---
+
 ## Note
 
 - Il cron di GitHub **non è puntuale** e ogni tanto salta un giro. Non è un problema: il

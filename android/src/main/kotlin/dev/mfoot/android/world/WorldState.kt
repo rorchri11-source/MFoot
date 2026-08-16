@@ -2,6 +2,8 @@ package dev.mfoot.android.world
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.mfoot.android.data.ConnectionStatus
+import dev.mfoot.android.data.Supabase
 import dev.mfoot.core.config.ConfigPresets
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.market.Valuation
@@ -60,6 +62,7 @@ data class WorldUiState(
     val filter: RoleFilter = RoleFilter.TUTTI,
     val selected: PlayerRow? = null,
     val generationMillis: Long = 0,
+    val connection: ConnectionStatus = ConnectionStatus.Checking,
 ) {
     val visible: List<PlayerRow>
         get() = rows
@@ -92,6 +95,22 @@ class WorldViewModel : ViewModel() {
 
     init {
         generate(ConfigPresets.sprint(20, 12, LocalDate.now()))
+        checkConnection()
+    }
+
+    /**
+     * Verifica il collegamento al database in parallelo alla generazione.
+     *
+     * Il mondo si genera comunque in locale, quindi l'app resta usabile anche senza
+     * database: e' una scelta, non un ripiego, perche' permette di provare le schermate
+     * e di giocare offline con un mondo di prova.
+     */
+    fun checkConnection() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(connection = ConnectionStatus.Checking)
+            val status = Supabase.checkConnection()
+            _state.value = _state.value.copy(connection = status)
+        }
     }
 
     fun generate(config: LeagueConfig) {
@@ -108,7 +127,7 @@ class WorldViewModel : ViewModel() {
                     .sortedByDescending { it.player.overall }
             }
 
-            _state.value = WorldUiState(
+            _state.value = _state.value.copy(
                 loading = false,
                 rows = rows,
                 generationMillis = System.currentTimeMillis() - started,

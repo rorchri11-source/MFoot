@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mfoot.android.data.ConnectionStatus
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -120,15 +121,22 @@ private fun ListHeader(
 
         Spacer(Modifier.height(MFootSpacing.related))
 
-        Text(
-            text = if (state.loading) {
-                "GENERAZIONE DEL MONDO…"
-            } else {
-                "${state.visible.size} SVINCOLATI · ORDINATI PER OVERALL"
-            },
-            style = MFootType.label,
-            color = MFootColors.ink3,
-        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (state.loading) {
+                    "GENERAZIONE DEL MONDO…"
+                } else {
+                    "${state.visible.size} SVINCOLATI · ORDINATI PER OVERALL"
+                },
+                style = MFootType.label,
+                color = MFootColors.ink3,
+            )
+            ConnectionDot(state.connection)
+        }
     }
 
     Box(
@@ -137,6 +145,31 @@ private fun ListHeader(
             .height(1.dp)
             .background(MFootColors.line),
     )
+}
+
+/**
+ * Lo stato del collegamento al database, discreto ma sempre visibile.
+ *
+ * L'app funziona comunque senza database — il mondo lo genera in locale — quindi questo
+ * non e' un errore bloccante: e' un'informazione. Ma va mostrata, o si finisce per non
+ * capire perche' la lega non si salva.
+ */
+@Composable
+private fun ConnectionDot(status: ConnectionStatus) {
+    val color = when (status) {
+        is ConnectionStatus.Connected -> MFootColors.elite
+        is ConnectionStatus.Checking -> MFootColors.ink3
+        else -> MFootColors.gamble
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(6.dp)
+                .background(color, RoundedCornerShape(50)),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(status.label.uppercase(), style = MFootType.label, color = MFootColors.ink3)
+    }
 }
 
 @Composable
