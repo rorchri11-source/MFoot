@@ -3,6 +3,10 @@
 --
 -- Da incollare nell'SQL Editor di Supabase ed eseguire una volta sola.
 --
+-- Lo script e' RIESEGUIBILE: si puo' rilanciare quante volte si vuole senza rompere
+-- niente e senza perdere dati. Serve, perche' la prima esecuzione puo' interrompersi a
+-- meta' e bisogna poter semplicemente rifarla.
+--
 -- Principi:
 --   1. Lo stato autorevole lo scrive il tick. I client propongono, il tick dispone.
 --   2. Le operazioni sui crediti girano in transazione con lock di riga. Senza, un club
@@ -541,6 +545,26 @@ as $$
         select 1 from clubs where id = p_club_id and owner_user_id = auth.uid()
     );
 $$;
+
+-- Postgres non ha "create policy if not exists": senza il drop preventivo, rieseguire
+-- questo script si incastrerebbe sulla prima policy gia' presente. Ed e' normale doverlo
+-- rieseguire, per esempio se la prima volta si e' interrotto a meta'.
+drop policy if exists read_leagues      on leagues;
+drop policy if exists read_members      on league_members;
+drop policy if exists read_clubs        on clubs;
+drop policy if exists read_players      on players;
+drop policy if exists read_staff        on staff;
+drop policy if exists read_contracts    on contracts;
+drop policy if exists read_loans        on loans;
+drop policy if exists read_competitions on competitions;
+drop policy if exists read_fixtures     on fixtures;
+drop policy if exists read_results      on match_results;
+drop policy if exists read_auctions     on auctions;
+drop policy if exists read_negotiations on negotiations;
+drop policy if exists read_lineups      on lineups;
+drop policy if exists read_notifications on notifications;
+drop policy if exists read_own_bids     on bids;
+drop policy if exists write_own_lineup  on lineups;
 
 -- Lettura: tutto quello che riguarda una lega di cui si fa parte.
 create policy read_leagues      on leagues       for select using (is_member_of(id));
