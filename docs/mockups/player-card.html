@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MFoot — scheda giocatore</title>
+<style>
+  :root{
+    --bg:#07080A;
+    --shell:#0E1014;
+    --core:#14171C;
+    --core-2:#181C22;
+    --line:rgba(255,255,255,.07);
+    --line-strong:rgba(255,255,255,.12);
+    --ink:#F2F4F7;
+    --ink-2:#9BA3AE;
+    --ink-3:#5F6874;
+    /* Tre gradini nettamente distinti: il colore deve permettere di scansionare la
+       scheda senza leggere i numeri. Cinque sfumature di verde non lo permettevano. */
+    --elite:#2BE07E;   /* 85+  eccellenza */
+    --good:#CFD6DE;    /* 70-84 solido   */
+    --mid:#78828F;     /* 55-69 modesto  */
+    --low:#4E5661;     /* <55  carente   */
+    --gamble:#FFC53D;
+    --decline:#F87171;
+    --r:26px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100dvh;
+    padding:48px 24px;
+    display:flex;gap:28px;justify-content:center;align-items:flex-start;flex-wrap:wrap;
+  }
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events-none;z-index:0;
+    background:
+      radial-gradient(60% 45% at 20% 0%, rgba(74,222,128,.07), transparent 70%),
+      radial-gradient(50% 40% at 85% 15%, rgba(56,189,248,.05), transparent 70%);
+  }
+
+  /* ---- doppio bordo: guscio esterno + nucleo ---- */
+  .shell{
+    position:relative;z-index:1;
+    width:390px;
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    padding:6px;
+  }
+  .core{
+    background:linear-gradient(180deg,var(--core-2),var(--core));
+    border-radius:calc(var(--r) - 6px);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+    overflow:hidden;
+  }
+
+  /* ---- testata ---- */
+  .head{padding:20px 20px 18px;display:flex;gap:16px;align-items:flex-start}
+  .ident{flex:1;min-width:0}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:7px;
+    font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-3);margin-bottom:9px;
+  }
+  .flag{width:5px;height:5px;border-radius:50%;background:var(--ink-3)}
+  .name{font-size:23px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+  .surname{display:block}
+  .given{color:var(--ink-2);font-weight:400;font-size:15px;letter-spacing:0}
+  .meta{margin-top:10px;display:flex;gap:7px;flex-wrap:wrap}
+  .chip{
+    font-size:11px;padding:4px 9px;border-radius:999px;
+    background:rgba(255,255,255,.05);border:1px solid var(--line);
+    color:var(--ink-2);letter-spacing:.02em;
+  }
+  .chip.role{color:var(--ink);background:rgba(255,255,255,.09)}
+
+  /* ---- overall ---- */
+  .ovr{
+    flex-shrink:0;width:72px;height:72px;border-radius:20px;
+    background:rgba(255,255,255,.04);border:1px solid var(--line-strong);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .ovr b{font-size:31px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+  .ovr span{font-size:9px;letter-spacing:.18em;color:var(--ink-3);margin-top:5px}
+
+  /* ---- fascia potenziale ---- */
+  .band{margin:0 20px 18px;padding:14px 16px 13px;border-radius:16px;
+        background:rgba(255,255,255,.028);border:1px solid var(--line)}
+  .band-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+  .band-label{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3)}
+  .band-val{font-size:14px;font-variant-numeric:tabular-nums;font-weight:600;color:var(--gamble)}
+  .track{position:relative;height:7px;border-radius:4px;background:rgba(255,255,255,.07)}
+  /* Il tratto gia' percorso: da dove si parte fino a oggi. */
+  .done-part{position:absolute;top:0;bottom:0;left:0;border-radius:4px;background:rgba(255,255,255,.22)}
+  /* Il margine ancora da conquistare: e' questo il motivo per cui lo compri. */
+  .range{position:absolute;top:0;bottom:0;border-radius:4px;
+         background:linear-gradient(90deg,var(--gamble),rgba(255,197,61,.25))}
+  .now{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;
+       transform:translate(-50%,-50%);background:var(--ink);
+       box-shadow:0 0 0 3px var(--core),0 2px 8px rgba(0,0,0,.7)}
+  .scale{display:flex;justify-content:space-between;margin-top:9px;font-size:10px;color:var(--ink-3)}
+  .scale b{color:var(--ink-2);font-weight:500;font-variant-numeric:tabular-nums}
+
+  /* Chi e' arrivato non ha una scheggia di barra: ha una barra piena.
+     La maturita' e' un fatto compiuto, non una mancanza. */
+  .band.done{background:rgba(43,224,126,.05);border-color:rgba(43,224,126,.18)}
+  .band.done .band-val{color:var(--elite);font-size:12px;font-weight:500;
+                       letter-spacing:.04em;display:inline-flex;align-items:center;gap:6px}
+  .band.done .done-part{background:linear-gradient(90deg,rgba(43,224,126,.55),rgba(43,224,126,.3))}
+  .band.done .range{display:none}
+  .band.done .now{background:var(--elite);box-shadow:0 0 0 3px var(--core),0 0 12px rgba(43,224,126,.5)}
+
+  /* ---- attributi ---- */
+  .attrs{padding:2px 20px 18px}
+  .sect{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3);
+        margin:6px 0 12px;display:flex;align-items:center;gap:9px}
+  .sect::after{content:'';flex:1;height:1px;background:var(--line)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 18px}
+  .a{display:flex;flex-direction:column;gap:5px}
+  .a-top{display:flex;justify-content:space-between;align-items:baseline}
+  .a-name{font-size:11.5px;color:var(--ink-2);letter-spacing:.01em}
+  .a.key .a-name{color:var(--ink);font-weight:500}
+  .a-val{font-size:12.5px;font-variant-numeric:tabular-nums;font-weight:600}
+  .bar{height:4px;border-radius:2px;background:rgba(255,255,255,.09);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:2px;opacity:.9}
+
+  /* ---- piede e tecnica ---- */
+  .stars{display:flex;gap:20px;padding:0 20px 18px}
+  .st{flex:1}
+  .st-l{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px}
+  .dots{display:flex;gap:4px}
+  .dot{width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,.09)}
+  .dot.on{background:var(--ink-2)}
+
+  /* ---- tratti ---- */
+  .traits{padding:0 20px 20px;display:flex;gap:7px;flex-wrap:wrap}
+  .trait{font-size:11px;padding:5px 11px;border-radius:999px;
+         background:rgba(74,222,128,.09);border:1px solid rgba(74,222,128,.22);color:#A7F3C0}
+  .trait.none{background:rgba(255,255,255,.03);border-color:var(--line);color:var(--ink-3)}
+
+  /* ---- piede della card ---- */
+  .foot{display:flex;align-items:center;justify-content:space-between;
+        padding:15px 20px;border-top:1px solid var(--line);background:rgba(0,0,0,.22)}
+  .price{display:flex;align-items:baseline;gap:6px}
+  .price b{font-size:19px;font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-.02em}
+  .price span{font-size:11px;color:var(--ink-3)}
+  .cta{
+    display:inline-flex;align-items:center;gap:9px;padding:8px 8px 8px 17px;
+    border-radius:999px;background:var(--ink);color:#0B0D10;
+    font-size:12.5px;font-weight:600;border:none;cursor:pointer;
+    transition:transform .5s cubic-bezier(.32,.72,0,1),opacity .5s cubic-bezier(.32,.72,0,1);
+  }
+  .cta:active{transform:scale(.97)}
+  .cta i{width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.1);
+         display:grid;place-items:center;font-style:normal;font-size:12px;
+         transition:transform .5s cubic-bezier(.32,.72,0,1)}
+  .cta:hover i{transform:translate(2px,-1px)}
+
+  .caption{width:100%;text-align:center;color:var(--ink-3);font-size:11px;
+           letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px}
+</style>
+</head>
+<body>
+
+<div class="caption">MFoot · scheda giocatore · dati reali dal generatore</div>
+
+<!-- ============ FUORICLASSE ============ -->
+<div class="shell">
+  <div class="core">
+    <div class="head">
+      <div class="ident">
+        <div class="eyebrow"><span class="flag"></span> Brasile · 28 anni</div>
+        <div class="name"><span class="given">Luan</span><span class="surname">Dantas</span></div>
+        <div class="meta">
+          <span class="chip role">TD · Terzino destro</span>
+          <span class="chip">anche DC</span>
+        </div>
+      </div>
+      <div class="ovr"><b>91</b><span>OVR</span></div>
+    </div>
+
+    <div class="band done">
+      <div class="band-top">
+        <span class="band-label">Maturità</span>
+        <span class="band-val">◆ Giocatore completo</span>
+      </div>
+      <div class="track">
+        <div class="done-part" style="width:86.4%"></div>
+        <div class="now" style="left:86.4%"></div>
+      </div>
+      <div class="scale"><span>Non crescerà più</span><span><b>91</b> ora, tetto <b>92</b></span></div>
+    </div>
+
+    <div class="attrs">
+      <div class="sect">Attributi</div>
+      <div class="grid">
+        <div class="a key"><div class="a-top"><span class="a-name">Difesa</span><span class="a-val" style="color:var(--elite)">96</span></div><div class="bar"><i style="width:96%;background:var(--elite)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Velocità</span><span class="a-val" style="color:var(--elite)">95</span></div><div class="bar"><i style="width:95%;background:var(--elite)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Passaggio</span><span class="a-val" style="color:var(--elite)">94</span></div><div class="bar"><i style="width:94%;background:var(--elite)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Fisico</span><span class="a-val" style="color:var(--elite)">90</span></div><div class="bar"><i style="width:90%;background:var(--elite)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Posizionam.</span><span class="a-val" style="color:var(--elite)">90</span></div><div class="bar"><i style="width:90%;background:var(--elite)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Intercett.</span><span class="a-val" style="color:var(--elite)">86</span></div><div class="bar"><i style="width:86%;background:var(--elite)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Dribbling</span><span class="a-val" style="color:var(--good)">76</span></div><div class="bar"><i style="width:76%;background:var(--good)"></i></div></div>
+        <div class="a"><div class="a-top"><span class="a-name">Tiro</span><span class="a-val" style="color:var(--good)">70</span></div><div class="bar"><i style="width:70%;background:var(--good)"></i></div></div>
+        <div class="a"><div class="a-top"><span class="a-name">Tecnica</span><span class="a-val" style="color:var(--mid)">64</span></div><div class="bar"><i style="width:64%;background:var(--mid)"></i></div></div>
+      </div>
+    </div>
+
+    <div class="stars">
+      <div class="st"><div class="st-l">Piede debole</div><div class="dots"><span class="dot on"></span><span class="dot on"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>
+      <div class="st"><div class="st-l">Tecnica</div><div class="dots"><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span><span class="dot"></span><span class="dot"></span></div></div>
+    </div>
+
+    <div class="traits"><span class="trait">Uomo spogliatoio</span></div>
+
+    <div class="foot">
+      <div class="price"><b>64</b><span>crediti stimati</span></div>
+      <button class="cta">Chiama all'asta <i>↗</i></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PROSPETTO ============ -->
+<div class="shell">
+  <div class="core">
+    <div class="head">
+      <div class="ident">
+        <div class="eyebrow"><span class="flag"></span> Francia · 20 anni</div>
+        <div class="name"><span class="given">Louis</span><span class="surname">Colin</span></div>
+        <div class="meta">
+          <span class="chip role">DC · Difensore centrale</span>
+        </div>
+      </div>
+      <div class="ovr"><b>62</b><span>OVR</span></div>
+    </div>
+
+    <div class="band">
+      <div class="band-top">
+        <span class="band-label">Margine di crescita</span>
+        <span class="band-val">+10 &nbsp;/&nbsp; +24</span>
+      </div>
+      <div class="track">
+        <div class="done-part" style="width:37.3%"></div>
+        <div class="range" style="left:37.3%;right:22%"></div>
+        <div class="now" style="left:37.3%"></div>
+      </div>
+      <div class="scale"><span>20 anni, in crescita</span><span><b>62</b> ora, può arrivare a <b>72–86</b></span></div>
+    </div>
+
+    <div class="attrs">
+      <div class="sect">Attributi</div>
+      <div class="grid">
+        <div class="a key"><div class="a-top"><span class="a-name">Difesa</span><span class="a-val" style="color:var(--mid)">68</span></div><div class="bar"><i style="width:68%;background:var(--mid)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Posizionam.</span><span class="a-val" style="color:var(--mid)">67</span></div><div class="bar"><i style="width:67%;background:var(--mid)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Intercett.</span><span class="a-val" style="color:var(--mid)">66</span></div><div class="bar"><i style="width:66%;background:var(--mid)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Fisico</span><span class="a-val" style="color:var(--mid)">61</span></div><div class="bar"><i style="width:61%;background:var(--mid)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Passaggio</span><span class="a-val" style="color:var(--mid)">58</span></div><div class="bar"><i style="width:58%;background:var(--mid)"></i></div></div>
+        <div class="a"><div class="a-top"><span class="a-name">Tecnica</span><span class="a-val" style="color:var(--low)">49</span></div><div class="bar"><i style="width:49%;background:var(--low)"></i></div></div>
+        <div class="a"><div class="a-top"><span class="a-name">Dribbling</span><span class="a-val" style="color:var(--low)">45</span></div><div class="bar"><i style="width:45%;background:var(--low)"></i></div></div>
+        <div class="a"><div class="a-top"><span class="a-name">Velocità</span><span class="a-val" style="color:var(--low)">44</span></div><div class="bar"><i style="width:44%;background:var(--low)"></i></div></div>
+        <div class="a"><div class="a-top"><span class="a-name">Tiro</span><span class="a-val" style="color:var(--low)">41</span></div><div class="bar"><i style="width:41%;background:var(--low)"></i></div></div>
+      </div>
+    </div>
+
+    <div class="stars">
+      <div class="st"><div class="st-l">Piede debole</div><div class="dots"><span class="dot on"></span><span class="dot on"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>
+      <div class="st"><div class="st-l">Tecnica</div><div class="dots"><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span><span class="dot"></span><span class="dot"></span></div></div>
+    </div>
+
+    <div class="traits"><span class="trait none">Nessun tratto noto</span></div>
+
+    <div class="foot">
+      <div class="price"><b>9</b><span>crediti stimati</span></div>
+      <button class="cta">Chiama all'asta <i>↗</i></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PORTIERE ============ -->
+<div class="shell">
+  <div class="core">
+    <div class="head">
+      <div class="ident">
+        <div class="eyebrow"><span class="flag"></span> Portogallo · 28 anni</div>
+        <div class="name"><span class="given">Marco</span><span class="surname">Oliveira</span></div>
+        <div class="meta">
+          <span class="chip role">POR · Portiere</span>
+        </div>
+      </div>
+      <div class="ovr"><b>86</b><span>OVR</span></div>
+    </div>
+
+    <div class="band done">
+      <div class="band-top">
+        <span class="band-label">Maturità</span>
+        <span class="band-val">◆ Quasi completo</span>
+      </div>
+      <div class="track">
+        <div class="done-part" style="width:78.3%"></div>
+        <div class="now" style="left:78.3%"></div>
+      </div>
+      <div class="scale"><span>Margine minimo</span><span><b>86</b> ora, tetto <b>88</b></span></div>
+    </div>
+
+    <div class="attrs">
+      <div class="sect">Attributi</div>
+      <div class="grid">
+        <div class="a key"><div class="a-top"><span class="a-name">Uscita</span><span class="a-val" style="color:var(--elite)">86</span></div><div class="bar"><i style="width:86%;background:var(--elite)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Riflessi</span><span class="a-val" style="color:var(--elite)">85</span></div><div class="bar"><i style="width:85%;background:var(--elite)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Parata</span><span class="a-val" style="color:var(--good)">84</span></div><div class="bar"><i style="width:84%;background:var(--good)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Posizionam.</span><span class="a-val" style="color:var(--good)">79</span></div><div class="bar"><i style="width:79%;background:var(--good)"></i></div></div>
+        <div class="a"><div class="a-top"><span class="a-name">Fisico</span><span class="a-val" style="color:var(--mid)">64</span></div><div class="bar"><i style="width:64%;background:var(--mid)"></i></div></div>
+        <div class="a"><div class="a-top"><span class="a-name">Passaggio</span><span class="a-val" style="color:var(--mid)">58</span></div><div class="bar"><i style="width:58%;background:var(--mid)"></i></div></div>
+      </div>
+    </div>
+
+    <div class="stars">
+      <div class="st"><div class="st-l">Piede debole</div><div class="dots"><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span></div></div>
+      <div class="st"><div class="st-l">Tecnica</div><div class="dots"><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span><span class="dot"></span></div></div>
+    </div>
+
+    <div class="traits"><span class="trait">Uomo delle grandi partite</span></div>
+
+    <div class="foot">
+      <div class="price"><b>47</b><span>crediti stimati</span></div>
+      <button class="cta">Chiama all'asta <i>↗</i></button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
