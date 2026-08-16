@@ -1,0 +1,58 @@
+name: World Tick
+
+# Il battito del mondo di MFoot.
+#
+# Fa avanzare il gioco anche quando nessuno sta giocando: simula le partite in orario,
+# chiude le aste scadute, fa scadere contratti e prestiti, sveglia le squadre AI.
+#
+# Il cron di GitHub non e' puntuale e ogni tanto salta un giro: non e' un problema.
+# Il tick non chiede "cosa succede adesso" ma "cosa sarebbe dovuto succedere fra
+# l'ultimo giro e adesso", quindi recupera da solo gli intervalli persi.
+
+on:
+  schedule:
+    # Ogni 5 minuti. E' il minimo consentito da GitHub.
+    - cron: '*/5 * * * *'
+  # Permette di lanciarlo a mano dalla tab Actions, utile per provare.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Calcola il piano senza scrivere niente"
+        type: boolean
+        default: false
+
+# Due tick in parallelo scriverebbero sugli stessi dati. Meglio saltarne uno che
+# rischiare una corsa critica: quello dopo recupera comunque.
+concurrency:
+  group: world-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Costruisci il tick
+        run: ./gradlew :tick:fatJar --no-daemon
+
+      - name: Esegui il tick
+        env:
+          MFOOT_DB_URL: ${{ secrets.MFOOT_DB_URL }}
+          MFOOT_DB_USER: ${{ secrets.MFOOT_DB_USER }}
+          MFOOT_DB_PASSWORD: ${{ secrets.MFOOT_DB_PASSWORD }}
+          MFOOT_TELEGRAM_TOKEN: ${{ secrets.MFOOT_TELEGRAM_TOKEN }}
+          MFOOT_TELEGRAM_CHAT: ${{ secrets.MFOOT_TELEGRAM_CHAT }}
+          MFOOT_DRY_RUN: ${{ inputs.dry_run }}
+        run: java -jar tick/build/dist/world-tick.jar
