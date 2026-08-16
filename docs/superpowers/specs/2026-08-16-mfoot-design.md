@@ -34,7 +34,7 @@ Il motore non sa cosa sia "100 crediti": lo chiede alla configurazione. Questo v
 | **core** | Kotlin/JVM, libreria pura | Nessuna dipendenza da Android, Ktor o database. Testabile in isolamento, condivisa da server e app. |
 | **server** | Ktor + PostgreSQL, JVM | Processo sempre acceso per il World Tick. WebSocket integrati per aste e partite live. |
 | **android** | Jetpack Compose + SQLDelight | App nativa, APK. Cache locale per funzionare con connessione scarsa. FCM nativo per le push. |
-| **hosting** | VPS sempre acceso (Hetzner / Oracle Always Free / PC di casa) | ~0-5 €/mese. **Evitare i piani gratuiti che spengono l'app quando è inattiva** (Render, Heroku): fermerebbero il World Tick. |
+| **hosting** | **Railway** (hosting gestito, sempre acceso) | Deploy con `git push`, HTTPS e PostgreSQL gestiti, ~5 $/mese. Scelto per non caricare l'utente di amministrazione di sistema. Fly.io equivalente. **Escluso il PC di casa** per scelta dell'utente. **Evitare i piani gratuiti che spengono l'app quando è inattiva** (Render, Heroku): fermerebbero il World Tick proprio quando serve. |
 | **notifiche** | FCM | Requisito esplicito: aste e trattative devono notificare. |
 
 ### Perché `core` è Kotlin/JVM e non Kotlin Multiplatform
@@ -586,6 +586,7 @@ L'ordine è scelto perché ogni fase è verificabile da sola e sblocca la succes
 | Kotlin nativo (non Blazor/C#) | Scelta dell'utente: migliore app Android, FCM nativo, funzionamento offline |
 | `core` Kotlin/JVM, non KMP | Server e app sono entrambi JVM. Migrazione a KMP meccanica se servirà iOS |
 | Server sempre acceso | Il mondo deve girare a telefoni spenti — requisito esplicito |
+| Hosting gestito (Railway), non VPS né PC di casa | Scelta dell'utente. Il backend non è il suo mestiere: `git push` invece di SSH, certificati e backup |
 | Timeline pre-calcolata | Costo zero durante il live, nessuna divergenza, replay gratuito |
 | Ordini condizionali + intervallo | Agency vera senza penalizzare chi non c'è alle 21 |
 | Tutto in giornate, non giorni | Il ritmo reale è configurabile e nessun sistema si rompe |

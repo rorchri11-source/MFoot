@@ -83,6 +83,18 @@ qui si tratta di orchestrarlo e conservarlo.
 - **Notifiche** — bot Discord/Telegram in fase 1 (venti righe, arriva dove già chattate),
   FCM in fase 2.
 
+#### Hosting: Railway (deciso)
+
+Hosting gestito, **non** un VPS da amministrare e **non** un PC di casa: deploy con
+`git push`, HTTPS e PostgreSQL gestiti, ~5 $/mese. Fly.io è l'alternativa equivalente.
+
+⚠️ **Da evitare in assoluto:** i piani gratuiti di Render e Heroku spengono l'app quando
+è inattiva. Fermerebbero il World Tick esattamente quando serve — cioè quando tutti hanno
+il telefono spento.
+
+Il server sarà comunque un container, quindi migrare su un VPS (Hetzner, ~4 €/mese) resta
+possibile in mezza giornata se un giorno servisse.
+
 ### Fase 10 — App Android (`android/`)
 
 - Compose per tutte le schermate: creazione lega con preset, creazione club ed editor
