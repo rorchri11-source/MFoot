@@ -29,8 +29,11 @@ import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.core.calendar.CompetitionType
+import java.time.DayOfWeek
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 private val GIORNO = DateTimeFormatter.ofPattern("d MMM")
 
@@ -259,36 +262,61 @@ private fun Builder(
     }
 
     Spacer(Modifier.height(28.dp))
-    Label("Quando")
+    Label("Quando si gioca")
     Spacer(Modifier.height(10.dp))
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("Inizio", style = MFootType.chip, color = MFootColors.ink3, modifier = Modifier.weight(1f))
         Stepper(draft.startDate.format(GIORNO)) { delta ->
-            onEdit { it.copy(startDate = it.startDate.plusDays(delta.toLong())) }
+            onEdit {
+                val nuovo = it.startDate.plusDays(delta.toLong())
+                it.copy(
+                    startDate = nuovo,
+                    // La fine si sposta con l'inizio se le si passa davanti: due date
+                    // incrociate producono un calendario vuoto e nessuna spiegazione.
+                    endDate = if (it.endDate.isBefore(nuovo)) nuovo.plusDays(1) else it.endDate,
+                )
+            }
         }
     }
     Spacer(Modifier.height(10.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Durata", style = MFootType.chip, color = MFootColors.ink3, modifier = Modifier.weight(1f))
-        Stepper("${draft.days} giorni") { delta ->
-            onEdit { it.copy(days = (it.days + delta).coerceIn(1, 120)) }
-        }
-    }
-    Spacer(Modifier.height(10.dp))
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "Partite al giorno per club",
-            style = MFootType.chip,
-            color = MFootColors.ink3,
-            modifier = Modifier.weight(1f),
-        )
-        Stepper(draft.matchesPerDayPerClub.toString()) { delta ->
-            onEdit { it.copy(matchesPerDayPerClub = (it.matchesPerDayPerClub + delta).coerceIn(1, 4)) }
+        Text("Fine", style = MFootType.chip, color = MFootColors.ink3, modifier = Modifier.weight(1f))
+        Stepper(draft.endDate.format(GIORNO)) { delta ->
+            onEdit {
+                val nuovo = it.endDate.plusDays(delta.toLong())
+                it.copy(endDate = if (nuovo.isBefore(it.startDate)) it.startDate else nuovo)
+            }
         }
     }
 
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(18.dp))
+    Label("Giorni buca")
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "I giorni della settimana in cui non si gioca.",
+        style = MFootType.chip,
+        color = MFootColors.ink3,
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        DayOfWeek.entries.forEach { giorno ->
+            val buca = giorno in draft.restWeekdays
+            Chip(giorno.getDisplayName(TextStyle.SHORT, Locale.ITALIAN), buca) {
+                onEdit {
+                    it.copy(
+                        restWeekdays = if (buca) it.restWeekdays - giorno
+                        else it.restWeekdays + giorno,
+                    )
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(18.dp))
     Label("Orari di inizio")
     Spacer(Modifier.height(8.dp))
     Row(
@@ -379,7 +407,26 @@ private fun Preview(draft: CompetitionDraft) {
                 )
                 Text("giornate", style = MFootType.chip, color = MFootColors.ink3)
             }
+            // Le partite al giorno sono un **risultato**, non una scelta: si ricavano
+            // dalle squadre iscritte e dai giorni disponibili. Mostrarle qui, accanto
+            // agli altri numeri calcolati, dice da sola che non e' una manopola.
+            Column(Modifier.weight(1f)) {
+                Text(
+                    draft.matchesPerDayPerClub.toString(),
+                    style = MFootType.overallLarge,
+                    color = MFootColors.ink,
+                )
+                Text("al giorno, per club", style = MFootType.chip, color = MFootColors.ink3)
+            }
         }
+
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "${draft.participants.size} squadre · ${draft.matchDaysNeeded} giornate da giocare " +
+                "in ${draft.playableDays} giorni disponibili",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
 
         schedule.fixtures.mapNotNull { it.kickoff }.minOrNull()?.let { prima ->
             val ultima = schedule.fixtures.mapNotNull { it.kickoff }.max()
@@ -435,7 +482,8 @@ private fun FormatCard(type: CompetitionType, selected: Boolean, onClick: () -> 
 
 private fun descrizione(type: CompetitionType): String = when (type) {
     CompetitionType.GIRONE ->
-        "Tutti contro tutti. Vince chi fa piu' punti."
+        "Come la Serie A o la Premier: tutti contro tutti, classifica a punti. " +
+            "Vince chi ne fa di piu' alla fine."
     CompetitionType.ELIMINAZIONE_DIRETTA ->
         "Tabellone: chi perde esce. Serve un numero di squadre potenza di due, " +
             "altrimenti qualcuno passa il turno senza giocare."
