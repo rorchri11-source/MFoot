@@ -50,6 +50,13 @@ private fun MFootApp(viewModel: WorldViewModel = viewModel()) {
             onQuery = viewModel::onQuery,
             onFilter = viewModel::onFilter,
             onSelect = viewModel::select,
+            onCreateLeague = {
+                viewModel.createLeague(
+                    name = "Lega di prova",
+                    accessCode = "MFOOT",
+                    nickname = "admin",
+                )
+            },
         )
 
         // La scheda entra dal basso sopra la lista: cosi' si capisce che si sta

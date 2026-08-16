@@ -155,6 +155,42 @@ pallino.
 
 ---
 
+## 6. Creare una lega vera
+
+Due passaggi, entrambi da fare una volta sola.
+
+### 6a. Attivare l'accesso anonimo
+
+Su Supabase: **Authentication → Sign In / Providers → Anonymous sign-ins → attiva**.
+
+Senza, l'app non può identificare chi crea la lega e le funzioni la rifiutano. È la scelta
+che permette ai tuoi amici di entrare scrivendo solo un nickname, senza email né password.
+
+### 6b. Eseguire la seconda migrazione
+
+SQL Editor → incolla
+[`supabase/migrations/0002_create_league.sql`](../supabase/migrations/0002_create_league.sql)
+→ Run. Anche questo è rieseguibile.
+
+Aggiunge due funzioni: `create_league`, che crea la lega e carica l'intero mondo in
+**un'unica transazione**, e `join_league`, per entrare con il codice.
+
+> **Perché una funzione e non degli insert.** Creare una lega significa scrivere in sei
+> tabelle. Farlo con sei chiamate dal telefono vuol dire che una connessione persa a metà
+> lascia una lega monca — con i giocatori ma senza club — che nessuno saprà come
+> sistemare. Con una funzione sola: o passa tutto o non passa niente. E le Row Level
+> Security restano chiuse in scrittura, perché è la funzione ad avere il permesso, non il
+> client.
+
+### Verifica
+
+Nell'app, il pulsante **"Crea la lega e carica il mondo"**. Deve rispondere con il numero
+della lega e **quanti giocatori sono arrivati davvero sul database** — non un generico
+"fatto", perché un 200 dice solo che la chiamata è passata, non che il carico sia
+completo.
+
+---
+
 ## Note
 
 - Il cron di GitHub **non è puntuale** e ogni tanto salta un giro. Non è un problema: il

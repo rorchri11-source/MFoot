@@ -25,7 +25,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.data.ConnectionStatus
@@ -35,6 +37,7 @@ import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.android.world.PlayerRow
 import dev.mfoot.android.world.RoleFilter
+import dev.mfoot.android.world.UploadState
 import dev.mfoot.android.world.WorldUiState
 
 /**
@@ -50,13 +53,14 @@ fun PlayerListScreen(
     onQuery: (String) -> Unit,
     onFilter: (RoleFilter) -> Unit,
     onSelect: (PlayerRow) -> Unit,
+    onCreateLeague: () -> Unit = {},
 ) {
     Column(
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg),
     ) {
-        ListHeader(state, onQuery, onFilter)
+        ListHeader(state, onQuery, onFilter, onCreateLeague)
 
         if (state.loading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -77,6 +81,7 @@ private fun ListHeader(
     state: WorldUiState,
     onQuery: (String) -> Unit,
     onFilter: (RoleFilter) -> Unit,
+    onCreate: () -> Unit,
 ) {
     Column(
         Modifier
@@ -137,6 +142,8 @@ private fun ListHeader(
             )
             ConnectionDot(state.connection)
         }
+
+        UploadBar(state.upload, onCreate)
     }
 
     Box(
@@ -144,6 +151,54 @@ private fun ListHeader(
             .fillMaxWidth()
             .height(1.dp)
             .background(MFootColors.line),
+    )
+}
+
+/**
+ * La barra per creare la lega e caricare il mondo.
+ *
+ * Riporta l'esito con i numeri veri — quanti giocatori sono arrivati a destinazione —
+ * perche' un "fatto" generico non dice se il carico e' passato tutto.
+ */
+@Composable
+private fun UploadBar(upload: UploadState, onCreate: () -> Unit) {
+    Spacer(Modifier.height(MFootSpacing.related))
+
+    when (upload) {
+        is UploadState.Inattivo -> Text(
+            text = "Crea la lega e carica il mondo",
+            style = MFootType.value,
+            color = MFootColors.bg,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MFootColors.elite, MFootShapes.pill)
+                .clickable(onClick = onCreate)
+                .padding(vertical = 11.dp),
+            textAlign = TextAlign.Center,
+        )
+
+        is UploadState.InCorso -> UploadNotice(upload.fase, MFootColors.ink2)
+
+        is UploadState.Riuscito -> UploadNotice(
+            "Lega #${upload.leagueId} creata · ${upload.giocatori} giocatori sul database",
+            MFootColors.elite,
+        )
+
+        is UploadState.Fallito -> UploadNotice(upload.motivo, MFootColors.gamble)
+    }
+}
+
+@Composable
+private fun UploadNotice(text: String, color: Color) {
+    Text(
+        text = text,
+        style = MFootType.chip,
+        color = color,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color.copy(alpha = 0.08f), MFootShapes.field)
+            .border(1.dp, color.copy(alpha = 0.22f), MFootShapes.field)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
     )
 }
 

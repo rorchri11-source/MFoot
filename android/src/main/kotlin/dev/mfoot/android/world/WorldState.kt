@@ -2,8 +2,11 @@ package dev.mfoot.android.world
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.mfoot.android.data.ApiResult
 import dev.mfoot.android.data.ConnectionStatus
 import dev.mfoot.android.data.Supabase
+import dev.mfoot.android.data.SupabaseApi
+import dev.mfoot.android.data.WorldUpload
 import dev.mfoot.core.config.ConfigPresets
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.market.Valuation
@@ -55,8 +58,17 @@ enum class RoleFilter(val label: String) {
     }
 }
 
+/** Lo stato del caricamento del mondo sul database. */
+sealed interface UploadState {
+    data object Inattivo : UploadState
+    data class InCorso(val fase: String) : UploadState
+    data class Riuscito(val leagueId: Long, val giocatori: Int) : UploadState
+    data class Fallito(val motivo: String) : UploadState
+}
+
 data class WorldUiState(
     val loading: Boolean = true,
+    val upload: UploadState = UploadState.Inattivo,
     val rows: List<PlayerRow> = emptyList(),
     val query: String = "",
     val filter: RoleFilter = RoleFilter.TUTTI,
@@ -93,6 +105,10 @@ class WorldViewModel : ViewModel() {
     /** L'osservatore: la stima di potenziale cambia da club a club. */
     private val observerId = 1L
 
+    /** Il mondo generato in memoria, pronto da caricare. */
+    private var currentWorld: GeneratedWorld? = null
+    private var currentConfig: LeagueConfig? = null
+
     init {
         generate(ConfigPresets.sprint(20, 12, LocalDate.now()))
         checkConnection()
@@ -121,6 +137,8 @@ class WorldViewModel : ViewModel() {
             val world: GeneratedWorld = withContext(Dispatchers.Default) {
                 WorldGenerator.generate(config)
             }
+            currentWorld = world
+            currentConfig = config
             val rows = withContext(Dispatchers.Default) {
                 world.players
                     .map { toRow(it, config) }
@@ -161,6 +179,54 @@ class WorldViewModel : ViewModel() {
 
     fun select(row: PlayerRow?) {
         _state.value = _state.value.copy(selected = row)
+    }
+
+    /**
+     * Crea la lega e carica il mondo.
+     *
+     * Accesso anonimo, poi un'unica chiamata alla funzione SQL che scrive in sei tabelle
+     * dentro una sola transazione. Se qualcosa va storto a meta', non resta una lega
+     * monca che nessuno sa come sistemare.
+     */
+    fun createLeague(name: String, accessCode: String, nickname: String) {
+        val config = currentConfig ?: return
+        val world = currentWorld ?: return
+
+        viewModelScope.launch {
+            _state.value = _state.value.copy(upload = UploadState.InCorso("Accesso…"))
+
+            if (!SupabaseApi.isSignedIn) {
+                when (val signIn = SupabaseApi.signInAnonymously()) {
+                    is ApiResult.Error -> {
+                        _state.value = _state.value.copy(upload = UploadState.Fallito(signIn.message))
+                        return@launch
+                    }
+                    is ApiResult.Ok -> Unit
+                }
+            }
+
+            _state.value = _state.value.copy(
+                upload = UploadState.InCorso("Carico ${world.players.size} giocatori…"),
+            )
+
+            val payload = withContext(Dispatchers.Default) {
+                WorldUpload.buildPayload(world, config, name, accessCode, nickname)
+            }
+
+            when (val result = SupabaseApi.createLeague(payload)) {
+                is ApiResult.Error ->
+                    _state.value = _state.value.copy(upload = UploadState.Fallito(result.message))
+
+                is ApiResult.Ok -> {
+                    // Si verifica contando davvero le righe: un 200 dice solo che la
+                    // chiamata e' andata, non che il mondo sia arrivato tutto.
+                    val caricati = (SupabaseApi.count("players", result.value) as? ApiResult.Ok)?.value
+                    _state.value = _state.value.copy(
+                        upload = UploadState.Riuscito(result.value, caricati ?: world.players.size),
+                    )
+                }
+            }
+        }
     }
 }
 
