@@ -75,5 +75,6 @@ Misurato su migliaia di partite simulate, non stimato a occhio:
 
 ## Documentazione
 
+- [`docs/SETUP.md`](docs/SETUP.md) — come metterlo in piedi da zero
 - [`STATO.md`](STATO.md) — cosa è fatto, cosa manca, cosa è stato deciso e perché
 - [`docs/superpowers/specs/`](docs/superpowers/specs/) — la specifica completa del design
