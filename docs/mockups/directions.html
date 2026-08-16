@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MFoot — tre direzioni</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:#0A0A0C;font-family:'Segoe UI',system-ui,sans-serif;
+  padding:40px 24px;display:flex;gap:34px;justify-content:center;align-items:flex-start;flex-wrap:wrap;
+  -webkit-font-smoothing:antialiased;
+}
+.col{width:360px}
+.tag{
+  text-align:center;margin-bottom:16px;color:#6B7280;font-size:11px;
+  letter-spacing:.2em;text-transform:uppercase;
+}
+.tag b{display:block;color:#E5E7EB;font-size:15px;letter-spacing:.02em;
+       text-transform:none;font-weight:600;margin-bottom:4px}
+
+/* ══════════════ A · CARTA DA COLLEZIONE ══════════════ */
+.card-a{
+  border-radius:20px;overflow:hidden;position:relative;
+  background:linear-gradient(157deg,#1B2E1F 0%,#0D1710 45%,#08110B 100%);
+  border:1px solid rgba(80,220,140,.28);
+  box-shadow:0 24px 60px -20px rgba(0,0,0,.9), inset 0 1px 0 rgba(140,255,190,.14);
+}
+.card-a::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(112deg,transparent 38%,rgba(140,255,190,.07) 47%,transparent 56%);
+}
+.a-top{display:flex;padding:22px 22px 16px;gap:18px;align-items:center}
+.a-ovr{text-align:center;flex-shrink:0}
+.a-ovr b{
+  display:block;font-size:56px;line-height:.86;font-weight:800;letter-spacing:-.045em;
+  background:linear-gradient(180deg,#EAFFF2,#5BE49B);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  font-variant-numeric:tabular-nums;
+}
+.a-ovr i{
+  display:block;font-style:normal;font-size:12px;font-weight:700;letter-spacing:.1em;
+  color:#5BE49B;margin-top:5px;
+}
+.a-div{width:1px;align-self:stretch;background:linear-gradient(180deg,transparent,rgba(140,255,190,.3),transparent)}
+.a-id{flex:1;min-width:0}
+.a-id h2{font-size:26px;font-weight:800;color:#fff;letter-spacing:-.02em;line-height:1.05;
+         text-transform:uppercase}
+.a-id h2 small{display:block;font-size:12px;font-weight:500;color:#7FCFA0;
+               letter-spacing:.14em;margin-bottom:3px}
+.a-id p{margin-top:8px;font-size:11.5px;color:#93A599;letter-spacing:.03em}
+.a-grid{padding:4px 22px 18px;display:grid;grid-template-columns:1fr 1fr;gap:2px 22px}
+.a-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;
+       border-bottom:1px solid rgba(255,255,255,.05)}
+.a-row span{font-size:11px;color:#8FA396;letter-spacing:.09em;text-transform:uppercase;font-weight:600}
+.a-row b{font-size:16px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums}
+.a-row.hi b{color:#5BE49B}
+.a-pot{
+  margin:0 22px 18px;padding:12px 14px;border-radius:12px;
+  background:rgba(91,228,155,.09);border:1px solid rgba(91,228,155,.22);
+  display:flex;justify-content:space-between;align-items:center;
+}
+.a-pot span{font-size:10.5px;color:#8FA396;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+.a-pot b{font-size:14px;color:#5BE49B;font-weight:800}
+.a-foot{padding:14px 22px;background:rgba(0,0,0,.4);display:flex;
+        justify-content:space-between;align-items:center;
+        border-top:1px solid rgba(255,255,255,.07)}
+.a-foot .c{font-size:22px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums}
+.a-foot .c em{font-style:normal;font-size:11px;color:#8FA396;font-weight:600;margin-left:5px}
+.a-btn{background:#5BE49B;color:#06210F;border:none;border-radius:10px;
+       padding:11px 18px;font-size:12.5px;font-weight:800;letter-spacing:.05em;
+       text-transform:uppercase;cursor:pointer}
+
+/* ══════════════ B · SPORTIVO CHIARO ══════════════ */
+.card-b{
+  background:#fff;border-radius:18px;overflow:hidden;
+  box-shadow:0 20px 50px -18px rgba(0,0,0,.55);
+}
+.b-top{padding:20px 20px 16px;border-bottom:1px solid #EEF0F3}
+.b-line{display:flex;align-items:center;gap:12px}
+.b-pos{width:44px;height:44px;border-radius:12px;background:#0F62FE;color:#fff;
+       display:grid;place-items:center;font-size:12px;font-weight:800;letter-spacing:.04em;flex-shrink:0}
+.b-id{flex:1;min-width:0}
+.b-id h2{font-size:20px;font-weight:700;color:#0B0E14;letter-spacing:-.02em;line-height:1.2}
+.b-id p{font-size:12px;color:#6B7280;margin-top:2px}
+.b-ovr{text-align:right;flex-shrink:0}
+.b-ovr b{font-size:30px;font-weight:800;color:#0B0E14;line-height:1;
+         font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.b-ovr i{display:block;font-style:normal;font-size:9.5px;color:#9AA1AC;
+         letter-spacing:.16em;font-weight:700;margin-top:3px}
+.b-pot{margin:14px 0 0;padding:11px 13px;border-radius:11px;background:#F4F6F8;
+       display:flex;justify-content:space-between;align-items:center}
+.b-pot span{font-size:11px;color:#6B7280;font-weight:600}
+.b-pot b{font-size:13px;color:#0B0E14;font-weight:700}
+.b-attrs{padding:16px 20px 18px}
+.b-a{margin-bottom:11px}
+.b-a:last-child{margin-bottom:0}
+.b-ah{display:flex;justify-content:space-between;margin-bottom:5px}
+.b-ah span{font-size:12px;color:#4B5563;font-weight:500}
+.b-ah b{font-size:12.5px;color:#0B0E14;font-weight:700;font-variant-numeric:tabular-nums}
+.b-bar{height:6px;border-radius:3px;background:#EDEFF2;overflow:hidden}
+.b-bar i{display:block;height:100%;border-radius:3px;background:#0F62FE}
+.b-bar i.hi{background:#00A758}
+.b-foot{padding:14px 20px;border-top:1px solid #EEF0F3;display:flex;
+        justify-content:space-between;align-items:center;background:#FAFBFC}
+.b-foot .c{font-size:19px;font-weight:800;color:#0B0E14;font-variant-numeric:tabular-nums}
+.b-foot .c em{font-style:normal;font-size:11px;color:#6B7280;font-weight:500;margin-left:5px}
+.b-btn{background:#0B0E14;color:#fff;border:none;border-radius:999px;
+       padding:11px 20px;font-size:12.5px;font-weight:600;cursor:pointer}
+
+/* ══════════════ C · TERMINALE DATI ══════════════ */
+.card-c{
+  background:#0B0D0F;border:1px solid #1E2429;border-radius:6px;overflow:hidden;
+  font-family:'Cascadia Mono','Consolas','SF Mono',monospace;
+}
+.c-top{padding:16px 18px;border-bottom:1px solid #1E2429;background:#0E1114}
+.c-key{font-size:10px;color:#4B5966;letter-spacing:.16em;margin-bottom:9px}
+.c-name{font-size:19px;color:#D7E3EC;font-weight:600;letter-spacing:-.01em}
+.c-sub{font-size:11px;color:#5C6C7A;margin-top:5px}
+.c-badges{margin-top:12px;display:flex;gap:6px;flex-wrap:wrap}
+.c-b{font-size:10px;padding:3px 8px;border:1px solid #263039;color:#7E90A0;border-radius:3px}
+.c-b.on{border-color:#2A6E4A;color:#4ADE80;background:rgba(74,222,128,.07)}
+.c-body{padding:14px 18px 16px}
+.c-r{display:flex;align-items:center;gap:10px;padding:3.5px 0;font-size:12px}
+.c-r .l{width:96px;color:#5C6C7A;flex-shrink:0}
+.c-r .g{flex:1;color:#232C34;letter-spacing:-.5px;overflow:hidden;white-space:nowrap}
+.c-r .g b{color:#4ADE80;font-weight:400}
+.c-r .g b.mid{color:#93A5B4}
+.c-r .g b.low{color:#3E4A55}
+.c-r .v{width:26px;text-align:right;color:#D7E3EC;font-variant-numeric:tabular-nums}
+.c-hr{height:1px;background:#1A2026;margin:12px 0}
+.c-meta{font-size:11px;color:#5C6C7A;line-height:1.9}
+.c-meta b{color:#D7E3EC;font-weight:600}
+.c-meta em{font-style:normal;color:#4ADE80}
+.c-foot{padding:13px 18px;border-top:1px solid #1E2429;background:#0E1114;
+        display:flex;justify-content:space-between;align-items:center}
+.c-foot .c{font-size:15px;color:#D7E3EC}
+.c-foot .c em{font-style:normal;color:#5C6C7A;font-size:11px;margin-left:6px}
+.c-btn{background:transparent;border:1px solid #2A6E4A;color:#4ADE80;border-radius:4px;
+       padding:8px 14px;font-size:11px;font-family:inherit;cursor:pointer;letter-spacing:.05em}
+</style>
+</head>
+<body>
+
+<!-- ══════════ A ══════════ -->
+<div class="col">
+  <div class="tag"><b>A · Carta da collezione</b>Gioco. Numeri grandi, oro e verde.</div>
+  <div class="card-a">
+    <div class="a-top">
+      <div class="a-ovr"><b>91</b><i>OVR</i></div>
+      <div class="a-div"></div>
+      <div class="a-id">
+        <h2><small>LUAN</small>DANTAS</h2>
+        <p>TD · Terzino destro · 28 anni · Brasile</p>
+      </div>
+    </div>
+    <div class="a-grid">
+      <div class="a-row hi"><span>Dif</span><b>96</b></div>
+      <div class="a-row hi"><span>Vel</span><b>95</b></div>
+      <div class="a-row hi"><span>Pas</span><b>94</b></div>
+      <div class="a-row hi"><span>Fis</span><b>90</b></div>
+      <div class="a-row hi"><span>Pos</span><b>90</b></div>
+      <div class="a-row hi"><span>Int</span><b>86</b></div>
+      <div class="a-row"><span>Dri</span><b>76</b></div>
+      <div class="a-row"><span>Tir</span><b>70</b></div>
+    </div>
+    <div class="a-pot"><span>Crescita</span><b>◆ COMPLETO</b></div>
+    <div class="a-foot">
+      <div class="c">64<em>CR</em></div>
+      <button class="a-btn">All'asta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ B ══════════ -->
+<div class="col">
+  <div class="tag"><b>B · Sportivo chiaro</b>Come FotMob. Pulito, leggibile di giorno.</div>
+  <div class="card-b">
+    <div class="b-top">
+      <div class="b-line">
+        <div class="b-pos">TD</div>
+        <div class="b-id">
+          <h2>Luan Dantas</h2>
+          <p>Terzino destro · 28 anni · Brasile</p>
+        </div>
+        <div class="b-ovr"><b>91</b><i>OVR</i></div>
+      </div>
+      <div class="b-pot"><span>Margine di crescita</span><b>Al suo massimo</b></div>
+    </div>
+    <div class="b-attrs">
+      <div class="b-a"><div class="b-ah"><span>Difesa</span><b>96</b></div><div class="b-bar"><i class="hi" style="width:96%"></i></div></div>
+      <div class="b-a"><div class="b-ah"><span>Velocità</span><b>95</b></div><div class="b-bar"><i class="hi" style="width:95%"></i></div></div>
+      <div class="b-a"><div class="b-ah"><span>Passaggio</span><b>94</b></div><div class="b-bar"><i class="hi" style="width:94%"></i></div></div>
+      <div class="b-a"><div class="b-ah"><span>Fisico</span><b>90</b></div><div class="b-bar"><i class="hi" style="width:90%"></i></div></div>
+      <div class="b-a"><div class="b-ah"><span>Intercettazione</span><b>86</b></div><div class="b-bar"><i style="width:86%"></i></div></div>
+      <div class="b-a"><div class="b-ah"><span>Dribbling</span><b>76</b></div><div class="b-bar"><i style="width:76%"></i></div></div>
+      <div class="b-a"><div class="b-ah"><span>Tiro</span><b>70</b></div><div class="b-bar"><i style="width:70%"></i></div></div>
+    </div>
+    <div class="b-foot">
+      <div class="c">64<em>crediti</em></div>
+      <button class="b-btn">Chiama all'asta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ C ══════════ -->
+<div class="col">
+  <div class="tag"><b>C · Terminale dati</b>Per chi ama i numeri. Denso, tecnico.</div>
+  <div class="card-c">
+    <div class="c-top">
+      <div class="c-key">PLAYER · P1041 · BRA</div>
+      <div class="c-name">DANTAS, Luan</div>
+      <div class="c-sub">TD/DC · 28y · OVR 91 · POT 91-92</div>
+      <div class="c-badges">
+        <span class="c-b on">UOMO SPOGLIATOIO</span>
+        <span class="c-b">WF 2/5</span>
+        <span class="c-b">SK 3/5</span>
+      </div>
+    </div>
+    <div class="c-body">
+      <div class="c-r"><span class="l">DIFESA</span><span class="g"><b>████████████████████</b>░░</span><span class="v">96</span></div>
+      <div class="c-r"><span class="l">VELOCITA</span><span class="g"><b>███████████████████</b>░░░</span><span class="v">95</span></div>
+      <div class="c-r"><span class="l">PASSAGGIO</span><span class="g"><b>███████████████████</b>░░░</span><span class="v">94</span></div>
+      <div class="c-r"><span class="l">FISICO</span><span class="g"><b>██████████████████</b>░░░░</span><span class="v">90</span></div>
+      <div class="c-r"><span class="l">POSIZIONAM.</span><span class="g"><b>██████████████████</b>░░░░</span><span class="v">90</span></div>
+      <div class="c-r"><span class="l">INTERCETT.</span><span class="g"><b>█████████████████</b>░░░░░</span><span class="v">86</span></div>
+      <div class="c-r"><span class="l">DRIBBLING</span><span class="g"><b class="mid">███████████████</b>░░░░░░░</span><span class="v">76</span></div>
+      <div class="c-r"><span class="l">TIRO</span><span class="g"><b class="mid">██████████████</b>░░░░░░░░</span><span class="v">70</span></div>
+      <div class="c-r"><span class="l">TECNICA</span><span class="g"><b class="low">████████████</b>░░░░░░░░░░</span><span class="v">64</span></div>
+      <div class="c-hr"></div>
+      <div class="c-meta">
+        crescita residua <em>nulla</em> — al suo tetto<br>
+        valore stimato <b>64 cr</b> · stipendio <b>7 cr/giornata</b>
+      </div>
+    </div>
+    <div class="c-foot">
+      <div class="c">64<em>crediti</em></div>
+      <button class="c-btn">&gt; ASTA</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
