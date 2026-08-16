@@ -45,9 +45,19 @@ object DevelopmentCurve {
      *
      * Usato per decidere quanto e' larga la forbice di potenziale: piu' margine resta,
      * meno si puo' sapere di come andra' a finire.
+     *
+     * **Solo verso l'alto.** Superato il picco il valore e' zero, non "un po'": un
+     * trentatreenne non ha nessun margine di crescita, sta calando. Senza questo taglio,
+     * la formula basata sulla sola distanza dal picco restituirebbe un margine positivo
+     * anche per i veterani, e la scheda finirebbe per promettere che un
+     * trentatreenne da 80 puo' arrivare a 89.
      */
     fun remainingUpside(age: Int): Double =
-        (1.0 - realizedFraction(age)).coerceAtLeast(0.0) / 0.44
+        if (age >= PEAK_AGE) 0.0
+        else ((1.0 - realizedFraction(age)) / 0.44).coerceIn(0.0, 1.0)
+
+    /** L'eta' oltre la quale non si cresce piu'. */
+    const val PEAK_AGE = 27
 
     /** L'eta' e' ancora in fase di crescita? */
     fun isGrowing(age: Int): Boolean = age < 28

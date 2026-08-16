@@ -29,8 +29,17 @@ import dev.mfoot.core.rng.MathX
  */
 object PotentialEstimator {
 
-    /** Incertezza massima in punti di overall, quando non si sa proprio nulla. */
+    /** Incertezza massima, per un sedicenne di cui non si sa nulla. */
     private const val MAX_UNCERTAINTY = 13.0
+
+    /**
+     * Incertezza minima, per chi ha gia' finito di crescere.
+     *
+     * Non e' zero perche' un margine di dubbio resta sempre, ma e' piccola: il livello
+     * attuale di un ventottenne e' sotto gli occhi di tutti, e su quanto crescera'
+     * ancora non c'e' molto da discutere.
+     */
+    private const val MIN_UNCERTAINTY = 1.5
 
     /** Minuti di osservazione oltre i quali guardarlo giocare non aggiunge quasi nulla. */
     private const val MINUTES_FOR_FULL_KNOWLEDGE = 1800.0
@@ -70,12 +79,17 @@ object PotentialEstimator {
         // Stesso osservatore e stesso giocatore: sempre la stessa stima.
         val rng = DeterministicRandom(player.id.value * 31L + observerId * 1_000_003L)
 
-        // La distorsione si riduce con la conoscenza ma non sparisce.
-        val maxBias = MAX_UNCERTAINTY * 0.45
-        val bias = rng.nextGaussian() * maxBias * (1.0 - k) * 0.5
+        // Quanto ci si puo' sbagliare dipende dall'eta', che e' pubblica: su un
+        // sedicenne moltissimo, su un ventottenne quasi per niente.
+        val upside = DevelopmentCurve.remainingUpside(player.age)
+        val maxUncertainty = MathX.lerp(MIN_UNCERTAINTY, MAX_UNCERTAINTY, upside)
 
-        val halfSpread = MathX.lerp(MAX_UNCERTAINTY, trueHalfSpread, k)
-        val center = trueCenter + bias
+        val bias = rng.nextGaussian() * maxUncertainty * 0.45 * (1.0 - k) * 0.5
+
+        // Senza informazioni si parte da cio' che e' deducibile pubblicamente; man mano
+        // che si osserva il giocatore, la stima converge verso la verita'.
+        val center = MathX.lerp(plausiblePeak(player) + bias, trueCenter, k)
+        val halfSpread = MathX.lerp(maxUncertainty, trueHalfSpread, k)
 
         val low = StrictMath.round(center - halfSpread).toInt()
         val high = StrictMath.round(center + halfSpread).toInt()
@@ -85,6 +99,42 @@ object PotentialEstimator {
         val clampedHigh = high.coerceIn(clampedLow, 99)
         return clampedLow..clampedHigh
     }
+
+    /**
+     * Il tetto deducibile da eta' e overall, senza sbirciare niente di nascosto.
+     *
+     * E' l'inverso della curva di sviluppo: se il mondo genera l'overall attuale come
+     * `potenziale x frazione realizzata`, allora chi guarda puo' fare la divisione. Un
+     * ventenne a 62, che a quell'eta' ha realizzato circa il 79% di se stesso, punta a
+     * un tetto intorno a 78. Non serve barare per stimare: basta saper leggere una
+     * scheda, ed e' esattamente quello che fa un osservatore vero.
+     *
+     * Superato il picco la divisione darebbe il massimo **storico**, che e' alle spalle
+     * e non tornera'. Per chi sta calando il tetto futuro e' il livello attuale: e' il
+     * motivo per cui la scheda di un trentatreenne non deve promettere crescita.
+     */
+    fun plausiblePeak(player: Player): Double {
+        if (player.age >= DevelopmentCurve.PEAK_AGE) return player.overall.toDouble()
+        val realized = DevelopmentCurve.realizedFraction(player.age).coerceAtLeast(0.35)
+        // Il limite non e' 99 ma il massimo che il mondo genera davvero: sulle eta'
+        // piu' basse la divisione amplifica il rumore e puo' proiettare oltre il tetto,
+        // e a quel punto la stima si appiattisce contro il massimo assoluto perdendo
+        // ogni capacita' di distinguere un buon prospetto da un fenomeno.
+        return (player.overall / realized).coerceAtMost(REALISTIC_CEILING)
+    }
+
+    /** Il massimo che la generazione produce davvero (fascia fuoriclasse: 87-93). */
+    private const val REALISTIC_CEILING = 93.0
+
+    /**
+     * Ha ancora margine di crescita?
+     *
+     * L'interfaccia dovrebbe mostrare la forbice di potenziale **solo** quando la
+     * risposta e' si'. Per un veterano ha piu' senso indicare che sta calando che
+     * ripetere un numero uguale al suo overall.
+     */
+    fun hasUpside(player: Player): Boolean =
+        DevelopmentCurve.remainingUpside(player.age) > 0.0
 
     /**
      * Etichetta leggibile della forbice, come la mostrerebbe il client.

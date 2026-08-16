@@ -543,11 +543,27 @@ class PotentialEstimatorTest {
         )
     }
 
+    /**
+     * Su un prospetto rappresentativo, non sul talento estremo del mondo: quello viene
+     * proiettato cosi' in alto che la stima si appoggia al massimo assoluto di 99, e il
+     * troncamento nasconde il restringimento invece di mostrarlo. Il comportamento e'
+     * corretto — di un fenomeno diciassettenne davvero non si sa niente — ma non e'
+     * quello che questo test vuole misurare.
+     */
     @Test
     fun `lo scouting da solo stringe la forbice`() {
-        val senza = PotentialEstimator.estimate(giovane, 3L, scoutAccuracy = 0.0)
-        val con = PotentialEstimator.estimate(giovane, 3L, scoutAccuracy = 0.75)
-        assertTrue((con.last - con.first) < (senza.last - senza.first))
+        val prospetto = world.players
+            .filter { it.age in 18..20 && it.overall in 55..65 }
+            .minByOrNull { it.id.value }
+            ?: giovane
+
+        val senza = PotentialEstimator.estimate(prospetto, 3L, scoutAccuracy = 0.0)
+        val con = PotentialEstimator.estimate(prospetto, 3L, scoutAccuracy = 0.75)
+
+        assertTrue(
+            (con.last - con.first) < (senza.last - senza.first),
+            "senza scouting ${senza.first}-${senza.last}, con scouting ${con.first}-${con.last}",
+        )
     }
 
     @Test
