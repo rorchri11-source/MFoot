@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MFoot — sistema visivo</title>
+<style>
+:root{
+  --bg:#07080A;
+  --core:#14171C; --core-2:#181C22;
+  --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.12);
+  --ink:#F2F4F7; --ink-2:#9BA3AE; --ink-3:#5F6874;
+  --elite:#2BE07E; --good:#CFD6DE; --mid:#78828F; --low:#4E5661;
+  --gamble:#FFC53D;
+  --r:26px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;padding:36px 24px;
+  display:flex;gap:34px;justify-content:center;align-items:flex-start;flex-wrap:wrap;
+}
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(60% 45% at 25% 0%,rgba(43,224,126,.06),transparent 70%);
+}
+.col{position:relative;width:390px}
+.tag{text-align:center;margin-bottom:14px;color:var(--ink-3);font-size:10px;
+     letter-spacing:.2em;text-transform:uppercase}
+.tag b{display:block;color:var(--ink);font-size:14px;letter-spacing:.01em;
+       text-transform:none;font-weight:600;margin-bottom:3px}
+
+.shell{background:rgba(255,255,255,.03);border:1px solid var(--line);
+       border-radius:var(--r);padding:6px}
+.core{background:linear-gradient(180deg,var(--core-2),var(--core));
+      border-radius:calc(var(--r) - 6px);box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+      overflow:hidden}
+
+/* ══════ SCHEDA — registro alto ══════ */
+.head{padding:20px 20px 16px;display:flex;gap:16px;align-items:flex-start}
+.ident{flex:1;min-width:0}
+.eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:10px;
+         letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+.flag{width:5px;height:5px;border-radius:50%;background:var(--ink-3)}
+.name{font-size:23px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+.given{color:var(--ink-2);font-weight:400;font-size:15px;letter-spacing:0;display:block}
+.meta{margin-top:10px;display:flex;gap:7px;flex-wrap:wrap}
+.chip{font-size:11px;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.05);
+      border:1px solid var(--line);color:var(--ink-2)}
+.chip.role{color:var(--ink);background:rgba(255,255,255,.09)}
+.ovr{flex-shrink:0;width:72px;height:72px;border-radius:20px;background:rgba(255,255,255,.04);
+     border:1px solid var(--line-2);display:flex;flex-direction:column;align-items:center;
+     justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.ovr b{font-size:31px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.ovr span{font-size:9px;letter-spacing:.18em;color:var(--ink-3);margin-top:5px}
+
+.band{margin:0 20px 18px;padding:14px 16px 13px;border-radius:16px;
+      background:rgba(255,255,255,.028);border:1px solid var(--line)}
+.band-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+.band-label{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3)}
+/* Corretto: prima diceva "+10 / +24", che non si capiva. */
+.band-val{font-size:13px;font-weight:600;color:var(--gamble)}
+.track{position:relative;height:7px;border-radius:4px;background:rgba(255,255,255,.07)}
+.done-part{position:absolute;top:0;bottom:0;left:0;border-radius:4px;background:rgba(255,255,255,.22)}
+.range{position:absolute;top:0;bottom:0;border-radius:4px;
+       background:linear-gradient(90deg,var(--gamble),rgba(255,197,61,.25))}
+.now{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;
+     transform:translate(-50%,-50%);background:var(--ink);
+     box-shadow:0 0 0 3px var(--core),0 2px 8px rgba(0,0,0,.7)}
+.scale{display:flex;justify-content:space-between;margin-top:9px;font-size:10px;color:var(--ink-3)}
+.scale b{color:var(--ink-2);font-weight:500;font-variant-numeric:tabular-nums}
+.band.done{background:rgba(43,224,126,.05);border-color:rgba(43,224,126,.18)}
+.band.done .band-val{color:var(--elite);font-size:12px;font-weight:500;letter-spacing:.03em}
+.band.done .done-part{background:linear-gradient(90deg,rgba(43,224,126,.55),rgba(43,224,126,.3))}
+.band.done .now{background:var(--elite);box-shadow:0 0 0 3px var(--core),0 0 12px rgba(43,224,126,.5)}
+
+.attrs{padding:0 20px 16px}
+.sect{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3);
+      margin:4px 0 12px;display:flex;align-items:center;gap:9px}
+.sect::after{content:'';flex:1;height:1px;background:var(--line)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 18px}
+.a{display:flex;flex-direction:column;gap:5px}
+.a-top{display:flex;justify-content:space-between;align-items:baseline}
+.a-name{font-size:11.5px;color:var(--ink-2)}
+.a.key .a-name{color:var(--ink);font-weight:500}
+.a-val{font-size:12.5px;font-variant-numeric:tabular-nums;font-weight:600}
+.bar{height:4px;border-radius:2px;background:rgba(255,255,255,.09);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:2px;opacity:.9}
+/* Il portiere aveva meno voci e la scheda restava corta e sbilanciata:
+   ora le voci non pertinenti restano visibili ma spente, e l'altezza torna uguale. */
+.a.dim{opacity:.42}
+
+.stars{display:flex;gap:20px;padding:0 20px 16px}
+.st{flex:1}
+.st-l{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px}
+.dots{display:flex;gap:4px}
+.dot{width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,.09)}
+.dot.on{background:var(--ink-2)}
+.traits{padding:0 20px 18px;display:flex;gap:7px;flex-wrap:wrap}
+.trait{font-size:11px;padding:5px 11px;border-radius:999px;background:rgba(43,224,126,.09);
+       border:1px solid rgba(43,224,126,.22);color:#A7F3C0}
+.foot{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;
+      border-top:1px solid var(--line);background:rgba(0,0,0,.22)}
+.price{display:flex;align-items:baseline;gap:6px}
+.price b{font-size:19px;font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-.02em}
+.price span{font-size:11px;color:var(--ink-3)}
+.cta{display:inline-flex;align-items:center;gap:9px;padding:8px 8px 8px 17px;border-radius:999px;
+     background:var(--ink);color:#0B0D10;font-size:12.5px;font-weight:600;border:none;cursor:pointer;
+     transition:transform .5s cubic-bezier(.32,.72,0,1)}
+.cta:active{transform:scale(.97)}
+.cta i{width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.1);display:grid;
+       place-items:center;font-style:normal;font-size:12px;
+       transition:transform .5s cubic-bezier(.32,.72,0,1)}
+.cta:hover i{transform:translate(2px,-1px)}
+
+/* ══════ LISTA — registro calmo ══════ */
+.lhead{padding:18px 18px 14px;border-bottom:1px solid var(--line)}
+.search{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;
+        background:rgba(255,255,255,.05);border:1px solid var(--line)}
+.search span{color:var(--ink-3);font-size:13px}
+.search input{flex:1;background:none;border:none;outline:none;color:var(--ink);font-size:13.5px;
+              font-family:inherit}
+.search input::placeholder{color:var(--ink-3)}
+.filters{display:flex;gap:6px;margin-top:12px;overflow-x:auto;padding-bottom:2px}
+.f{font-size:11px;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.04);
+   border:1px solid var(--line);color:var(--ink-2);white-space:nowrap;cursor:pointer}
+.f.on{background:var(--ink);color:#0B0D10;border-color:var(--ink);font-weight:600}
+.count{margin-top:12px;font-size:10.5px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase}
+
+.rows{padding:6px 0}
+.row{display:flex;align-items:center;gap:12px;padding:11px 18px;cursor:pointer;
+     transition:background .4s cubic-bezier(.32,.72,0,1)}
+.row:hover{background:rgba(255,255,255,.03)}
+.row + .row{box-shadow:inset 0 1px 0 rgba(255,255,255,.045)}
+.pos{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.06);
+     border:1px solid var(--line);display:grid;place-items:center;flex-shrink:0;
+     font-size:10.5px;font-weight:700;color:var(--ink-2);letter-spacing:.03em}
+.who{flex:1;min-width:0}
+.who b{display:block;font-size:13.5px;font-weight:500;letter-spacing:-.01em;
+       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who span{font-size:11px;color:var(--ink-3)}
+/* Il segnale di crescita si legge senza aprire la scheda: e' il motivo per cui si scorre la lista. */
+.up{font-size:10.5px;padding:3px 7px;border-radius:6px;flex-shrink:0;font-weight:600;
+    background:rgba(255,197,61,.11);border:1px solid rgba(255,197,61,.25);color:var(--gamble)}
+.up.none{background:rgba(255,255,255,.03);border-color:var(--line);color:var(--ink-3);font-weight:400}
+.n{width:30px;text-align:right;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;
+   letter-spacing:-.02em;flex-shrink:0}
+.cr{width:44px;text-align:right;font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;
+    flex-shrink:0}
+</style>
+</head>
+<body>
+
+<!-- ══════════ SCHEDA ══════════ -->
+<div class="col">
+  <div class="tag"><b>Scheda giocatore</b>Registro alto · una alla volta, con attenzione</div>
+  <div class="shell"><div class="core">
+
+    <div class="head">
+      <div class="ident">
+        <div class="eyebrow"><span class="flag"></span> Francia · 20 anni</div>
+        <div class="name"><span class="given">Louis</span>Colin</div>
+        <div class="meta"><span class="chip role">DC · Difensore centrale</span></div>
+      </div>
+      <div class="ovr"><b>62</b><span>OVR</span></div>
+    </div>
+
+    <div class="band">
+      <div class="band-top">
+        <span class="band-label">Margine di crescita</span>
+        <span class="band-val">Può crescere molto</span>
+      </div>
+      <div class="track">
+        <div class="done-part" style="width:37.3%"></div>
+        <div class="range" style="left:37.3%;right:22%"></div>
+        <div class="now" style="left:37.3%"></div>
+      </div>
+      <div class="scale">
+        <span>Oggi <b>62</b></span>
+        <span>Potrebbe arrivare fra <b>72</b> e <b>86</b></span>
+      </div>
+    </div>
+
+    <div class="attrs">
+      <div class="sect">Attributi</div>
+      <div class="grid">
+        <div class="a key"><div class="a-top"><span class="a-name">Difesa</span><span class="a-val" style="color:var(--mid)">68</span></div><div class="bar"><i style="width:68%;background:var(--mid)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Posizionam.</span><span class="a-val" style="color:var(--mid)">67</span></div><div class="bar"><i style="width:67%;background:var(--mid)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Intercett.</span><span class="a-val" style="color:var(--mid)">66</span></div><div class="bar"><i style="width:66%;background:var(--mid)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Fisico</span><span class="a-val" style="color:var(--mid)">61</span></div><div class="bar"><i style="width:61%;background:var(--mid)"></i></div></div>
+        <div class="a key"><div class="a-top"><span class="a-name">Passaggio</span><span class="a-val" style="color:var(--mid)">58</span></div><div class="bar"><i style="width:58%;background:var(--mid)"></i></div></div>
+        <div class="a dim"><div class="a-top"><span class="a-name">Tecnica</span><span class="a-val" style="color:var(--low)">49</span></div><div class="bar"><i style="width:49%;background:var(--low)"></i></div></div>
+        <div class="a dim"><div class="a-top"><span class="a-name">Dribbling</span><span class="a-val" style="color:var(--low)">45</span></div><div class="bar"><i style="width:45%;background:var(--low)"></i></div></div>
+        <div class="a dim"><div class="a-top"><span class="a-name">Velocità</span><span class="a-val" style="color:var(--low)">44</span></div><div class="bar"><i style="width:44%;background:var(--low)"></i></div></div>
+        <div class="a dim"><div class="a-top"><span class="a-name">Tiro</span><span class="a-val" style="color:var(--low)">41</span></div><div class="bar"><i style="width:41%;background:var(--low)"></i></div></div>
+      </div>
+    </div>
+
+    <div class="stars">
+      <div class="st"><div class="st-l">Piede debole</div><div class="dots"><span class="dot on"></span><span class="dot on"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>
+      <div class="st"><div class="st-l">Tecnica</div><div class="dots"><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span><span class="dot"></span><span class="dot"></span></div></div>
+    </div>
+
+    <div class="foot">
+      <div class="price"><b>9</b><span>crediti stimati</span></div>
+      <button class="cta">Chiama all'asta <i>↗</i></button>
+    </div>
+
+  </div></div>
+</div>
+
+<!-- ══════════ LISTA ══════════ -->
+<div class="col">
+  <div class="tag"><b>Giocatori del mondo</b>Registro calmo · si scorre per venti minuti</div>
+  <div class="shell"><div class="core">
+
+    <div class="lhead">
+      <div class="search"><span>⌕</span><input placeholder="Cerca un giocatore…"></div>
+      <div class="filters">
+        <span class="f on">Tutti</span><span class="f">POR</span><span class="f">DIF</span>
+        <span class="f">CEN</span><span class="f">ATT</span><span class="f">Under 21</span>
+      </div>
+      <div class="count">1.128 svincolati · ordinati per overall</div>
+    </div>
+
+    <div class="rows">
+      <div class="row">
+        <div class="pos">TD</div>
+        <div class="who"><b>Luan Dantas</b><span>28 anni · Brasile</span></div>
+        <span class="up none">al max</span>
+        <div class="n" style="color:var(--elite)">91</div>
+        <div class="cr">64</div>
+      </div>
+      <div class="row">
+        <div class="pos">POR</div>
+        <div class="who"><b>Marco Oliveira</b><span>28 anni · Portogallo</span></div>
+        <span class="up none">al max</span>
+        <div class="n" style="color:var(--elite)">86</div>
+        <div class="cr">47</div>
+      </div>
+      <div class="row">
+        <div class="pos">AS</div>
+        <div class="who"><b>Kerem Yildirim</b><span>24 anni · Turchia</span></div>
+        <span class="up">+6</span>
+        <div class="n" style="color:var(--elite)">85</div>
+        <div class="cr">44</div>
+      </div>
+      <div class="row">
+        <div class="pos">CC</div>
+        <div class="who"><b>Bruno Coelho</b><span>33 anni · Portogallo</span></div>
+        <span class="up none">in calo</span>
+        <div class="n" style="color:var(--good)">80</div>
+        <div class="cr">17</div>
+      </div>
+      <div class="row">
+        <div class="pos">ATT</div>
+        <div class="who"><b>Santiago Ferreyra</b><span>22 anni · Argentina</span></div>
+        <span class="up">+11</span>
+        <div class="n" style="color:var(--good)">78</div>
+        <div class="cr">39</div>
+      </div>
+      <div class="row">
+        <div class="pos">DC</div>
+        <div class="who"><b>Jonas Brandt</b><span>26 anni · Germania</span></div>
+        <span class="up">+3</span>
+        <div class="n" style="color:var(--good)">76</div>
+        <div class="cr">22</div>
+      </div>
+      <div class="row">
+        <div class="pos">MED</div>
+        <div class="who"><b>Daan Vermeer</b><span>29 anni · Paesi Bassi</span></div>
+        <span class="up none">al max</span>
+        <div class="n" style="color:var(--good)">73</div>
+        <div class="cr">14</div>
+      </div>
+      <div class="row">
+        <div class="pos">AD</div>
+        <div class="who"><b>Pablo Salgado</b><span>19 anni · Spagna</span></div>
+        <span class="up">+21</span>
+        <div class="n" style="color:var(--mid)">66</div>
+        <div class="cr">12</div>
+      </div>
+      <div class="row">
+        <div class="pos">DC</div>
+        <div class="who"><b>Louis Colin</b><span>20 anni · Francia</span></div>
+        <span class="up">+24</span>
+        <div class="n" style="color:var(--mid)">62</div>
+        <div class="cr">9</div>
+      </div>
+      <div class="row">
+        <div class="pos">TS</div>
+        <div class="who"><b>Jack Whitfield</b><span>31 anni · Inghilterra</span></div>
+        <span class="up none">in calo</span>
+        <div class="n" style="color:var(--mid)">61</div>
+        <div class="cr">4</div>
+      </div>
+      <div class="row">
+        <div class="pos">DC</div>
+        <div class="who"><b>Enzo Tessier</b><span>16 anni · Francia</span></div>
+        <span class="up">+45</span>
+        <div class="n" style="color:var(--low)">42</div>
+        <div class="cr">1</div>
+      </div>
+    </div>
+
+  </div></div>
+</div>
+
+</body>
+</html>
