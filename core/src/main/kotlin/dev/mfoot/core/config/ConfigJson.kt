@@ -45,6 +45,7 @@ object ConfigJson {
     /** Come [write], ma dentro un oggetto gia' aperto da chi chiama. */
     fun writeInto(w: JsonWriter, config: LeagueConfig) {
         writeSetup(w, config.setup)
+        writeDivisions(w, config.divisions)
         writeEconomy(w, config.economy)
         writeMarket(w, config.market)
         writeCalendar(w, config.calendar)
@@ -92,6 +93,20 @@ object ConfigJson {
         w.field("minSquadSize", c.minSquadSize)
         w.field("maxSquadSize", c.maxSquadSize)
         w.field("worldSeed", c.worldSeed)
+        w.endObject()
+    }
+
+    private fun writeDivisions(w: JsonWriter, c: DivisionsConfig) {
+        w.objectField("divisions")
+        w.field("count", c.count)
+        w.arrayField("names")
+        c.names.forEach { w.value(it) }
+        w.endArray()
+        w.field("directPromotions", c.directPromotions)
+        w.field("playoffSlots", c.playoffSlots)
+        w.field("directRelegations", c.directRelegations)
+        w.field("playoutSlots", c.playoutSlots)
+        w.field("twoLeggedPlayoffs", c.twoLeggedPlayoffs)
         w.endObject()
     }
 
@@ -297,6 +312,7 @@ object ConfigJson {
         val d = LeagueConfig()
         return LeagueConfig(
             setup = readSetup(root["setup"], d.setup),
+            divisions = readDivisions(root["divisions"], d.divisions),
             economy = readEconomy(root["economy"], d.economy),
             market = readMarket(root["market"], d.market),
             calendar = readCalendar(root["calendar"], d.calendar),
@@ -318,6 +334,16 @@ object ConfigJson {
         minSquadSize = n["minSquadSize"].int(d.minSquadSize),
         maxSquadSize = n["maxSquadSize"].int(d.maxSquadSize),
         worldSeed = n["worldSeed"].long(d.worldSeed),
+    )
+
+    private fun readDivisions(n: JsonNode, d: DivisionsConfig) = DivisionsConfig(
+        count = n["count"].int(d.count),
+        names = n["names"].listOr(d.names) { it.str("") }.filter { it.isNotBlank() },
+        directPromotions = n["directPromotions"].int(d.directPromotions),
+        playoffSlots = n["playoffSlots"].int(d.playoffSlots),
+        directRelegations = n["directRelegations"].int(d.directRelegations),
+        playoutSlots = n["playoutSlots"].int(d.playoutSlots),
+        twoLeggedPlayoffs = n["twoLeggedPlayoffs"].bool(d.twoLeggedPlayoffs),
     )
 
     private fun readEconomy(n: JsonNode, d: EconomyConfig) = EconomyConfig(

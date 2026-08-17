@@ -1,5 +1,6 @@
 package dev.mfoot.core.config
 
+import dev.mfoot.core.calendar.DivisionRules
 import java.time.LocalDate
 
 /** Gravita' di un problema di configurazione. */
@@ -65,6 +66,7 @@ object ConfigValidator {
     fun validate(config: LeagueConfig): ValidationResult {
         val issues = buildList {
             addAll(validateSetup(config))
+            addAll(validateDivisions(config))
             addAll(validateWorld(config))
             addAll(validateCalendar(config))
             addAll(validateEconomy(config))
@@ -112,6 +114,96 @@ object ConfigValidator {
             add(error("setup.accessCode", "Serve un codice d'accesso per far entrare gli altri."))
         }
     }
+
+    // --------------------------------------------------------------------- divisioni
+
+    /**
+     * Le divisioni reggono, o si sfaldano alla seconda stagione?
+     *
+     * ## Il controllo che conta: quante salgono, quante scendono
+     *
+     * Se non coincidono, ogni stagione una divisione si gonfia e un'altra si svuota. Non
+     * da' nessun errore, funziona benissimo per un anno, e alla terza stagione la Serie A ha
+     * ventidue club e la Serie C quattro — e nessuno riesce a ricostruire da dove e'
+     * cominciato. E' l'errore piu' costoso possibile, perche' quando si vede non si
+     * corregge: si ricomincia.
+     *
+     * Il conto e' semplice e va fatto ricordando che **i playoff assegnano un posto solo**,
+     * non uno per partecipante. Quattro squadre ai playoff promuovono una squadra.
+     */
+    private fun validateDivisions(config: LeagueConfig): List<ConfigIssue> = buildList {
+        val d = config.divisions
+        if (d.count < 1) {
+            add(error("divisions.count", "Le divisioni non possono essere meno di una."))
+            return@buildList
+        }
+        if (!d.enabled) return@buildList
+
+        val perDivisione = config.setup.totalClubs / d.count
+
+        if (perDivisione < 2) {
+            add(error(
+                "divisions.count",
+                "${config.setup.totalClubs} club in ${d.count} divisioni fanno " +
+                    "$perDivisione squadre a testa: non ci si puo' giocare un campionato.",
+                "Riduci le divisioni o alza il numero di club.",
+            ))
+            return@buildList
+        }
+        if (perDivisione < 4) {
+            add(warning(
+                "divisions.count",
+                "Solo $perDivisione club per divisione: si incontrano tutti in due giornate " +
+                    "e la classifica la decide un episodio.",
+                "Quattro o piu' per divisione rendono il campionato leggibile.",
+            ))
+        }
+
+        val rules = DivisionRules.of(d)
+        if (!rules.isBalanced) {
+            add(error(
+                "divisions.directPromotions",
+                "Da ogni divisione salgono ${rules.totalMoves} squadre e scendono " +
+                    "${rules.totalDrops}: a ogni stagione le divisioni cambiano dimensione, " +
+                    "e dopo due nessuno sa piu' rimetterle a posto." +
+                    playoffNota(d),
+                "Fai coincidere i due numeri.",
+            ))
+        }
+
+        // Le fasce si sovrappongono: in mezzo qualcuno sarebbe insieme promosso e retrocesso.
+        // Il regolamento risolve la sovrapposizione a favore della promozione, quindi non e'
+        // un errore — ma chi ha scritto quei numeri quasi certamente non voleva questo.
+        val postiPromozione = d.directPromotions + d.playoffSlots
+        val postiRetrocessione = d.directRelegations + d.playoutSlots
+        if (postiPromozione + postiRetrocessione > perDivisione) {
+            add(warning(
+                "divisions.playoffSlots",
+                "In una divisione da $perDivisione squadre, $postiPromozione posizioni " +
+                    "giocano per salire e $postiRetrocessione per non scendere: le due fasce " +
+                    "si sovrappongono. Chi sta in mezzo viene contato fra i promossi, non fra " +
+                    "i retrocessi.",
+                "Riduci gli spareggi, o allarga le divisioni.",
+            ))
+        }
+
+        if (d.names.size < d.count) {
+            add(warning(
+                "divisions.names",
+                "Ci sono ${d.count} divisioni e ${d.names.size} nomi: le altre si chiameranno " +
+                    "\"${d.nameOf(d.count)}\".",
+            ))
+        }
+    }
+
+    /** La riga che spiega il conto quando c'entrano i playoff, e tace quando non c'entrano. */
+    private fun playoffNota(d: DivisionsConfig): String =
+        if (d.playoffSlots > 0 || d.playoutSlots > 0) {
+            " Attenzione: gli spareggi assegnano un posto ciascuno, non uno per " +
+                "partecipante — quattro squadre ai playoff promuovono una squadra."
+        } else {
+            ""
+        }
 
     // ------------------------------------------------------------------------- mondo
 

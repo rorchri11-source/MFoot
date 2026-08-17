@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.Route
+import dev.mfoot.android.app.SettingsSection
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootMotion
@@ -244,7 +245,17 @@ private fun Drawer(
             Item("Partecipanti", Route.Partecipanti, route, onNavigate)
             Item("Regolamento e opzioni", Route.Opzioni, route, onNavigate)
             Item("Competizioni", Route.Competizioni, route, onNavigate)
-            Item("Divisioni", Route.Divisioni, route, onNavigate)
+            // Le divisioni sono una sezione del regolamento, non una schermata a se': la
+            // voce di menu ci porta dritto invece di far cercare la riga giusta in un
+            // elenco di sette. Due porte per la stessa stanza vanno bene; due stanze che
+            // configurano la stessa cosa, no.
+            Item(
+                "Divisioni",
+                Route.Regolamento(SettingsSection.DIVISIONI),
+                route,
+                onNavigate,
+                selected = route is Route.Regolamento && route.sezione == SettingsSection.DIVISIONI,
+            )
             Item("Mercati", Route.Mercati, route, onNavigate)
         }
 
@@ -288,9 +299,19 @@ private fun Section(label: String) {
  * sezione all'altra farebbe pensare di essere usciti.
  */
 @Composable
-private fun Item(label: String, target: Route, current: Route, onNavigate: (Route) -> Unit) {
-    val selected = target::class == current::class
-
+private fun Item(
+    label: String,
+    target: Route,
+    current: Route,
+    onNavigate: (Route) -> Unit,
+    /**
+     * Da passare solo dove il confronto per classe non basta.
+     *
+     * "Regolamento e opzioni" e "Divisioni" portano entrambe a una [Route.Regolamento], e
+     * per classe si accenderebbero insieme.
+     */
+    selected: Boolean = target::class == current::class,
+) {
     Text(
         label,
         style = MFootType.rowTitle,

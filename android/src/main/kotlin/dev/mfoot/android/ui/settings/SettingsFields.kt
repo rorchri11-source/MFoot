@@ -122,6 +122,46 @@ fun MoneyField(value: Int, enabled: Boolean, onChange: (Int) -> Unit) {
     }
 }
 
+/**
+ * Un campo di testo libero, per i nomi.
+ *
+ * Larghezza flessibile e non fissa come gli altri campi: un numero ha una larghezza
+ * prevedibile, "Serie A" e "Il Bar di Gianni" no, e tagliare il nome mentre si scrive
+ * costringe a indovinare cosa si e' digitato.
+ */
+@Composable
+fun NameField(
+    value: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onChange: (String) -> Unit,
+) {
+    var text by remember(value) { mutableStateOf(value) }
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .background(if (enabled) MFootColors.core else MFootColors.bg, MFootShapes.field)
+            .border(1.dp, MFootColors.lineStrong, MFootShapes.field)
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+    ) {
+        BasicTextField(
+            value = text,
+            onValueChange = { raw ->
+                // Un tetto c'e', ma generoso: serve a impedire che qualcuno incolli un
+                // romanzo, non a dettare come si chiamano le divisioni.
+                text = raw.take(28)
+                onChange(text.trim())
+            },
+            enabled = enabled,
+            singleLine = true,
+            textStyle = MFootType.value.copy(color = MFootColors.ink),
+            cursorBrush = SolidColor(MFootColors.elite),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
 /** Un intero con meno e piu'. Per i conteggi, dove digitare e' piu' lento che toccare. */
 @Composable
 fun IntStepper(value: Int, range: IntRange, enabled: Boolean, onChange: (Int) -> Unit) {

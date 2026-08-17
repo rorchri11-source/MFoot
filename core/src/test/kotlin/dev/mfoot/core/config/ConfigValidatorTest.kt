@@ -4,6 +4,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ConfigValidatorTest {
@@ -323,6 +324,130 @@ class ConfigValidatorTest {
             LeagueConfig(market = MarketConfig(minLoanMatchDays = 20, maxLoanMatchDays = 5)),
         )
         assertTrue(hasErrorOn(result, "market.minLoanMatchDays"))
+    }
+
+    // --------------------------------------------------------------------- divisioni
+
+    /** Un girone unico e' la configurazione predefinita, e non deve dire niente. */
+    @Test
+    fun `senza divisioni non si controlla niente`() {
+        val result = ConfigValidator.validate(LeagueConfig())
+        assertFalse(hasWarningOn(result, "divisions.count"))
+        assertFalse(hasErrorOn(result, "divisions.directPromotions"))
+    }
+
+    /**
+     * L'errore che si vede solo alla terza stagione: salgono tre, scendono due.
+     *
+     * Nessun sintomo per un anno, poi la divisione di sopra ha un club in piu' ogni
+     * stagione. Quando si nota non si corregge — si ricomincia — quindi va detto prima.
+     */
+    @Test
+    fun `promozioni e retrocessioni che non coincidono sono un errore`() {
+        val sbilanciata = LeagueConfig(
+            setup = SetupConfig(totalClubs = 18, aiClubs = 9),
+            divisions = DivisionsConfig(
+                count = 3,
+                directPromotions = 3,
+                playoffSlots = 0,
+                directRelegations = 2,
+                playoutSlots = 0,
+            ),
+        )
+        val result = ConfigValidator.validate(sbilanciata)
+
+        assertTrue(hasErrorOn(result, "divisions.directPromotions"), result.describe())
+        // Il messaggio deve dire i due numeri, o non si capisce cosa aggiustare.
+        assertTrue(
+            result.errors.first { it.field == "divisions.directPromotions" }
+                .message.contains("scendono 2"),
+            result.describe(),
+        )
+    }
+
+    /**
+     * I playoff assegnano un posto, e la configurazione che lo rispetta deve passare.
+     *
+     * Una che sale diretta piu' il vincitore dei playoff fanno due; due che scendono
+     * dirette fanno due. Se il validatore contasse quattro promossi perche' quattro
+     * squadre giocano i playoff, respingerebbe la configurazione piu' normale che c'e'.
+     */
+    @Test
+    fun `un playoff a quattro che promuove uno e in equilibrio`() {
+        val equilibrata = LeagueConfig(
+            setup = SetupConfig(totalClubs = 24, aiClubs = 12),
+            divisions = DivisionsConfig(
+                count = 3,
+                names = listOf("Serie A", "Serie B", "Serie C"),
+                directPromotions = 1,
+                playoffSlots = 4,
+                directRelegations = 2,
+                playoutSlots = 0,
+            ),
+        )
+        val result = ConfigValidator.validate(equilibrata)
+
+        assertFalse(hasErrorOn(result, "divisions.directPromotions"), result.describe())
+    }
+
+    @Test
+    fun `divisioni con una squadra a testa vengono rifiutate`() {
+        val assurda = LeagueConfig(
+            setup = SetupConfig(totalClubs = 4, aiClubs = 2),
+            divisions = DivisionsConfig(count = 4),
+        )
+        assertTrue(hasErrorOn(ConfigValidator.validate(assurda), "divisions.count"))
+    }
+
+    @Test
+    fun `divisioni da tre squadre avvisano che la classifica non significa niente`() {
+        val strette = LeagueConfig(
+            setup = SetupConfig(totalClubs = 9, aiClubs = 4),
+            divisions = DivisionsConfig(count = 3, names = listOf("A", "B", "C")),
+        )
+        assertTrue(hasWarningOn(ConfigValidator.validate(strette), "divisions.count"))
+    }
+
+    /**
+     * Fasce sovrapposte: un avviso, non un errore.
+     *
+     * Il regolamento sa cosa fare — la promozione batte la retrocessione — quindi la lega
+     * gira. Ma chi ha scritto sei posizioni di spareggio in una divisione da cinque quasi
+     * certamente non voleva questo, e conviene dirglielo.
+     */
+    @Test
+    fun `fasce di promozione e retrocessione sovrapposte danno un avviso`() {
+        val sovrapposte = LeagueConfig(
+            setup = SetupConfig(totalClubs = 10, aiClubs = 5),
+            divisions = DivisionsConfig(
+                count = 2,
+                names = listOf("A", "B"),
+                directPromotions = 1,
+                playoffSlots = 2,
+                directRelegations = 1,
+                playoutSlots = 2,
+            ),
+        )
+        val result = ConfigValidator.validate(sovrapposte)
+
+        assertTrue(hasWarningOn(result, "divisions.playoffSlots"), result.describe())
+        assertFalse(hasErrorOn(result, "divisions.playoffSlots"))
+    }
+
+    @Test
+    fun `nomi in meno delle divisioni avvisano con il nome di ripiego`() {
+        val senzaNomi = LeagueConfig(
+            setup = SetupConfig(totalClubs = 20, aiClubs = 10),
+            divisions = DivisionsConfig(count = 4, names = listOf("Serie A", "Serie B")),
+        )
+        val result = ConfigValidator.validate(senzaNomi)
+
+        assertTrue(hasWarningOn(result, "divisions.names"))
+        assertTrue(
+            result.warnings.first { it.field == "divisions.names" }
+                .message.contains("Divisione 4"),
+            result.describe(),
+        )
     }
 
     // --------------------------------------------------------------- mercato iniziale

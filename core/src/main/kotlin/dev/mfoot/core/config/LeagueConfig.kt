@@ -23,6 +23,7 @@ import java.time.LocalTime
  */
 data class LeagueConfig(
     val setup: SetupConfig = SetupConfig(),
+    val divisions: DivisionsConfig = DivisionsConfig(),
     val economy: EconomyConfig = EconomyConfig(),
     val market: MarketConfig = MarketConfig(),
     val calendar: CalendarConfig = CalendarConfig(),
@@ -52,6 +53,58 @@ data class SetupConfig(
     val worldSeed: Long = 20260816L,
 ) {
     val humanClubs: Int get() = totalClubs - aiClubs
+}
+
+// ------------------------------------------------------------------------- divisioni
+
+/**
+ * Serie A, B, C: quante, come si chiamano, e chi sale e chi scende.
+ *
+ * ## Perche' e' spento di partenza
+ *
+ * Con otto amici un girone unico e' la cosa giusta: tutti si incontrano, la classifica e'
+ * una sola e si capisce a colpo d'occhio. Le divisioni servono quando i club sono tanti, e
+ * accenderle per default vorrebbe dire spezzare in tre una lega da sei che non ne aveva
+ * bisogno.
+ *
+ * ## Perche' i nomi sono una lista e non un prefisso
+ *
+ * Verrebbe naturale generare "Serie 1", "Serie 2" da un contatore. Ma una lega fra amici
+ * chiama le sue divisioni come vuole — "Champions" e "Europa", o i nomi dei bar dove si
+ * vedono — e un nome scelto vale piu' di un nome corretto.
+ */
+data class DivisionsConfig(
+    /**
+     * Divisioni attive. Uno significa girone unico, cioe' divisioni disattivate.
+     *
+     * Non e' un booleano piu' un numero: due modi di dire la stessa cosa si contraddicono
+     * appena qualcuno mette `enabled = true` con `count = 1`.
+     */
+    val count: Int = 1,
+    /**
+     * I nomi, dalla massima in giu'. Se sono meno di [count], le altre prendono un numero.
+     */
+    val names: List<String> = listOf("Serie A", "Serie B", "Serie C", "Serie D"),
+    /** Quante salgono direttamente dalla divisione di sotto. */
+    val directPromotions: Int = 1,
+    /** Quante si giocano ai playoff l'ultimo posto disponibile. Zero li disattiva. */
+    val playoffSlots: Int = 2,
+    /** Quante scendono direttamente dalla divisione di sopra. */
+    val directRelegations: Int = 1,
+    /** Quante si giocano la salvezza al playout. Zero li disattiva. */
+    val playoutSlots: Int = 2,
+    /**
+     * Gli spareggi si giocano in andata e ritorno.
+     *
+     * Secco e' piu' emozionante e piu' ingiusto; il doppio confronto premia chi e' arrivato
+     * davanti, perche' in caso di parita' passa chi ha il ritorno in casa.
+     */
+    val twoLeggedPlayoffs: Boolean = false,
+) {
+    val enabled: Boolean get() = count > 1
+
+    /** Il nome della divisione di livello [level], che sia stato scelto o no. */
+    fun nameOf(level: Int): String = names.getOrNull(level - 1) ?: "Divisione $level"
 }
 
 // -------------------------------------------------------------------------- economia

@@ -36,6 +36,15 @@ class ConfigJsonTest {
             maxSquadSize = 22,
             worldSeed = 987654321L,
         ),
+        divisions = DivisionsConfig(
+            count = 3,
+            names = listOf("Prima", "Seconda", "Terza"),
+            directPromotions = 2,
+            playoffSlots = 4,
+            directRelegations = 3,
+            playoutSlots = 0,
+            twoLeggedPlayoffs = true,
+        ),
         economy = EconomyConfig(
             startingCredits = 1000,
             recurringIncome = 25,

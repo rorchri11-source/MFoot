@@ -10,6 +10,7 @@ package dev.mfoot.android.app
  */
 enum class SettingsSection(val label: String) {
     SQUADRE("Squadre e rose"),
+    DIVISIONI("Divisioni"),
     ECONOMIA("Economia"),
     MERCATO("Mercato"),
     PARTITA("Partita"),
@@ -49,7 +50,6 @@ sealed interface Route {
             Opzioni -> "Regolamento e opzioni"
             is Regolamento -> sezione.label
             Competizioni -> "Competizioni"
-            Divisioni -> "Divisioni"
             Mercati -> "Mercati"
             Aste -> "Aste"
             Svincolati -> "Svincolati"
@@ -71,8 +71,7 @@ sealed interface Route {
      */
     val isSetup: Boolean
         get() = this is ProfiloLega || this is Partecipanti || this is Opzioni ||
-            this is Regolamento || this is Competizioni || this is Divisioni ||
-            this is Mercati
+            this is Regolamento || this is Competizioni || this is Mercati
 
     /**
      * E' una delle cinque voci della barra in basso?
@@ -109,7 +108,6 @@ sealed interface Route {
     data object Opzioni : Route
     data class Regolamento(val sezione: SettingsSection) : Route
     data object Competizioni : Route
-    data object Divisioni : Route
     data object Mercati : Route
 
     // ---------------------------------------------------------------------------- gioca

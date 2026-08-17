@@ -19,16 +19,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.SettingsSection
+import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Notice
 import dev.mfoot.android.ui.PrimaryButton
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
+import dev.mfoot.core.calendar.Division
+import dev.mfoot.core.calendar.DivisionRules
+import dev.mfoot.core.calendar.SeasonEnd
+import dev.mfoot.core.calendar.SeasonOutcome
+import dev.mfoot.core.config.DivisionsConfig
 import dev.mfoot.core.config.IncomeCadence
 import dev.mfoot.core.config.InjurySeverity
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.config.MatchSpeed
+import dev.mfoot.core.model.ClubId
 
 /**
  * L'elenco delle sei sezioni.
@@ -86,6 +93,7 @@ fun SettingsIndexScreen(canEdit: Boolean, onOpen: (SettingsSection) -> Unit) {
 
 private fun descrizione(section: SettingsSection): String = when (section) {
     SettingsSection.SQUADRE -> "Quanti club, quanti gestiti dall'AI, minimo e massimo in rosa"
+    SettingsSection.DIVISIONI -> "Serie A, B, C: quante, chi sale, chi scende, playoff e playout"
     SettingsSection.ECONOMIA -> "Budget, entrate, premi, stipendi, rinnovi"
     SettingsSection.MERCATO -> "Aste, rilanci, contratti, prestiti"
     SettingsSection.PARTITA -> "Infortuni, cartellini, velocita' della diretta"
@@ -121,6 +129,7 @@ fun SettingsScreen(
         ) {
             when (section) {
                 SettingsSection.SQUADRE -> Squadre(config, canEdit, onChange)
+                SettingsSection.DIVISIONI -> Divisioni(config, canEdit, onChange)
                 SettingsSection.ECONOMIA -> Economia(config, canEdit, onChange)
                 SettingsSection.MERCATO -> Mercato(config, canEdit, onChange)
                 SettingsSection.PARTITA -> Partita(config, canEdit, onChange)
@@ -174,6 +183,242 @@ private fun Squadre(config: LeagueConfig, edit: Boolean, onChange: (LeagueConfig
         "Massimo in rosa",
         "Il tetto agli acquisti. Serve a evitare che chi ha budget si prenda mezzo listino.",
     ) { IntStepper(s.maxSquadSize, s.minSquadSize..60, edit) { set { copy(maxSquadSize = it) } } }
+}
+
+// ---------------------------------------------------------------------------- divisioni
+
+/**
+ * Serie A, B, C — e l'anteprima di cosa succede a fine stagione.
+ *
+ * ## L'anteprima non e' un ornamento
+ *
+ * "Una promozione diretta, due ai playoff, una retrocessione diretta, due ai playout" e'
+ * una frase che si legge e non si capisce: bisogna fare il conto a mente, tenere presente
+ * che gli spareggi assegnano un posto solo, e ricordarsi quante squadre ha una divisione.
+ * Sbagliarlo costa una stagione intera, perche' quando si vede che la Serie A ha un club in
+ * piu' non si torna indietro.
+ *
+ * La scaletta qui sotto mostra le posizioni una per una con cosa capita a chi ci finisce.
+ * E' calcolata dallo **stesso** regolamento che girera' a fine stagione, quindi non e' una
+ * spiegazione di cosa dovrebbe succedere: e' cosa succedera'.
+ */
+@Composable
+private fun Divisioni(config: LeagueConfig, edit: Boolean, onChange: (LeagueConfig) -> Unit) {
+    val d = config.divisions
+    fun set(block: DivisionsConfig.() -> DivisionsConfig) =
+        onChange(config.copy(divisions = d.block()))
+
+    SettingRow(
+        "Quante divisioni",
+        "Una sola significa girone unico: tutti si incontrano e la classifica e' una. Con " +
+            "tanti club conviene spezzare, perche' in un girone da venti chi resta indietro " +
+            "non ha piu' niente da giocare da novembre.",
+    ) { IntStepper(d.count, 1..6, edit) { set { copy(count = it) } } }
+
+    if (!d.enabled) {
+        Spacer(Modifier.height(MFootSpacing.section))
+        Notice(
+            "Girone unico: una classifica sola, nessuna promozione e nessuna retrocessione.",
+            MFootColors.ink2,
+        )
+        return
+    }
+
+    NomiDivisioni(d, edit) { set { copy(names = it) } }
+
+    GroupTitle("Chi sale")
+
+    SettingRow(
+        "Promozioni dirette",
+        "Salgono senza spareggi, dalla divisione di sotto a quella di sopra.",
+    ) { IntStepper(d.directPromotions, 0..6, edit) { set { copy(directPromotions = it) } } }
+
+    SettingRow(
+        "Squadre ai playoff",
+        "Si giocano un posto solo fra loro, non uno per squadra: quattro ai playoff " +
+            "promuovono una squadra. Zero disattiva i playoff.",
+    ) { IntStepper(d.playoffSlots, 0..8, edit) { set { copy(playoffSlots = playoffValido(it)) } } }
+
+    GroupTitle("Chi scende")
+
+    SettingRow(
+        "Retrocessioni dirette",
+        "Scendono senza appello, dal fondo della classifica.",
+    ) { IntStepper(d.directRelegations, 0..6, edit) { set { copy(directRelegations = it) } } }
+
+    SettingRow(
+        "Squadre ai playout",
+        "Si giocano la salvezza fra loro, appena sopra la zona di retrocessione diretta. " +
+            "Come i playoff, il posto in gioco e' uno.",
+    ) { IntStepper(d.playoutSlots, 0..8, edit) { set { copy(playoutSlots = playoffValido(it)) } } }
+
+    SettingRow(
+        "Spareggi andata e ritorno",
+        "Secco e' piu' emozionante e piu' ingiusto. Nel doppio confronto, a parita' passa " +
+            "chi e' arrivato davanti in campionato.",
+    ) { Switch(d.twoLeggedPlayoffs, edit) { set { copy(twoLeggedPlayoffs = it) } } }
+
+    ScalettaFineStagione(config)
+}
+
+/**
+ * Uno e' un numero di partecipanti impossibile per uno spareggio.
+ *
+ * [dev.mfoot.core.calendar.DivisionRules] lo rifiuta con un'eccezione, e giustamente: uno
+ * spareggio fra una squadra non e' uno spareggio. Ma il passo dello stepper e' uno, quindi
+ * salendo da zero si passa per l'uno e l'app cadrebbe. Si salta.
+ */
+private fun playoffValido(valore: Int): Int = if (valore == 1) 2 else valore
+
+@Composable
+private fun NomiDivisioni(
+    d: DivisionsConfig,
+    edit: Boolean,
+    onChange: (List<String>) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 11.dp)) {
+        Text("Come si chiamano", style = MFootType.rowTitle, color = MFootColors.ink)
+        Spacer(Modifier.height(5.dp))
+        Text(
+            "Dalla massima in giu'. Chiamale come volete: i nomi dei bar dove vi vedete " +
+                "valgono piu' di \"Serie A\".",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+        Spacer(Modifier.height(10.dp))
+
+        (1..d.count).forEach { level ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "$level.",
+                    style = MFootType.value,
+                    color = MFootColors.ink3,
+                    modifier = Modifier.padding(end = 10.dp),
+                )
+                NameField(
+                    value = d.nameOf(level),
+                    enabled = edit,
+                    onChange = { nuovo ->
+                        // La lista si allunga fino al livello toccato: senza, scrivere il
+                        // nome della terza divisione quando ce ne sono due nominate
+                        // finirebbe nel vuoto.
+                        val nomi = MutableList(maxOf(d.names.size, level)) { i ->
+                            d.names.getOrNull(i) ?: d.nameOf(i + 1)
+                        }
+                        nomi[level - 1] = nuovo
+                        onChange(nomi)
+                    },
+                )
+            }
+        }
+    }
+    Hairline()
+}
+
+/**
+ * Posizione per posizione, cosa capita a chi ci arriva.
+ *
+ * Si mostra la **seconda** divisione, perche' con tre o piu' livelli e' di mezzo ed e'
+ * l'unica dove valgono tutte le regole insieme: dalla prima non si sale e dall'ultima non
+ * si scende, quindi mostrare quelle nasconderebbe meta' di cio' che si sta configurando.
+ *
+ * Le divisioni finte sono **tante quante quelle vere**, e non e' un dettaglio: costruendone
+ * sempre tre, con due divisioni configurate la seconda risulterebbe di mezzo e la scaletta
+ * mostrerebbe playout e retrocessioni da un livello da cui non si scende. Una bugia
+ * dettagliata e convincente, che e' il tipo peggiore.
+ */
+@Composable
+private fun ScalettaFineStagione(config: LeagueConfig) {
+    val d = config.divisions
+    val perDivisione = config.setup.totalClubs / d.count
+    if (perDivisione < 2) {
+        Spacer(Modifier.height(MFootSpacing.section))
+        Notice(
+            "${config.setup.totalClubs} club in ${d.count} divisioni fanno $perDivisione " +
+                "squadre a testa: non e' un campionato.",
+            MFootColors.gamble,
+        )
+        return
+    }
+
+    // I club sono finti: serve l'ordine delle posizioni, non chi le occupa.
+    val finte = (1..d.count).map { level ->
+        Division(
+            level = level,
+            name = d.nameOf(level),
+            clubs = (1..perDivisione).map { ClubId((level * 100 + it).toLong()) },
+        )
+    }
+    val esiti = SeasonEnd
+        .settle(finte, finte.associate { it.level to it.clubs }, DivisionRules.of(d))
+        .filter { it.level == 2 }
+        .sortedBy { it.position }
+
+    val rules = DivisionRules.of(d)
+
+    Spacer(Modifier.height(MFootSpacing.section))
+    Text(
+        "A fine stagione, in ${d.nameOf(2)}",
+        style = MFootType.rowTitle,
+        color = MFootColors.ink,
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        if (d.count >= 3) {
+            "$perDivisione squadre per divisione. Dalla ${d.nameOf(1)} non si sale e dalla " +
+                "${d.nameOf(d.count)} non si scende: qui in mezzo valgono tutte le regole."
+        } else {
+            "$perDivisione squadre per divisione. Con due divisioni la ${d.nameOf(2)} e' " +
+                "l'ultima, quindi da qui si sale ma non si scende."
+        },
+        style = MFootType.chip,
+        color = MFootColors.ink3,
+    )
+    Spacer(Modifier.height(12.dp))
+
+    esiti.forEach { fate ->
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "${fate.position}ª",
+                style = MFootType.value,
+                color = MFootColors.ink3,
+                modifier = Modifier.padding(end = 12.dp),
+            )
+            Text(
+                fate.outcome.label,
+                style = MFootType.rowTitle,
+                color = coloreEsito(fate.outcome),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Hairline()
+    }
+
+    Spacer(Modifier.height(MFootSpacing.section))
+    if (rules.isBalanced) {
+        Notice(
+            "Salgono ${rules.totalMoves} e scendono ${rules.totalDrops}: le divisioni " +
+                "restano della stessa dimensione ogni stagione.",
+            MFootColors.elite,
+        )
+    } else {
+        Notice(
+            "Salgono ${rules.totalMoves} e scendono ${rules.totalDrops}. Ogni stagione una " +
+                "divisione si gonfia e un'altra si svuota, e dopo due nessuno sa piu' " +
+                "rimetterle a posto. Ricorda che ogni spareggio assegna un posto solo.",
+            MFootColors.gamble,
+        )
+    }
+}
+
+private fun coloreEsito(outcome: SeasonOutcome) = when (outcome) {
+    SeasonOutcome.CAMPIONE, SeasonOutcome.PROMOSSO -> MFootColors.elite
+    SeasonOutcome.PLAYOFF, SeasonOutcome.PLAYOUT -> MFootColors.gamble
+    SeasonOutcome.RETROCESSO -> MFootColors.low
+    SeasonOutcome.RESTA -> MFootColors.ink2
 }
 
 // ----------------------------------------------------------------------------- economia

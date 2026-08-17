@@ -98,10 +98,6 @@ fun Router(
             onChange = onConfigChange,
             onSave = onConfigSave,
         )
-        is Route.Divisioni -> DaFare(
-            "Divisioni",
-            "Serie A, B, C con promozioni, retrocessioni e spareggi.",
-        )
         is Route.Mercati -> DaFare("Mercati", "Finestre di mercato e asta iniziale.")
         is Route.RegistroAdmin -> DaFare("Registro", "Cosa ha fatto il tick, giro per giro.")
 
