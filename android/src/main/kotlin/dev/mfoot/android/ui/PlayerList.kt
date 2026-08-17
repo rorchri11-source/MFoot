@@ -31,6 +31,7 @@ import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.ListScope
 import dev.mfoot.android.app.PlayerRow
 import dev.mfoot.android.app.RoleFilter
+import dev.mfoot.core.model.Money
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -217,7 +218,7 @@ private fun LeagueBar(
             )
             Text(
                 if (club != null) {
-                    "${club.name} · ${club.available} crediti"
+                    "${club.name} · ${Money(club.available).format()}"
                 } else {
                     "Non hai ancora un club"
                 },
@@ -341,7 +342,7 @@ private fun PlayerListRow(row: PlayerRow, onClick: () -> Unit) {
         Spacer(Modifier.width(MFootSpacing.related))
 
         Text(
-            row.value.toString(),
+            Money(row.value).formatShort(),
             style = MFootType.value,
             color = MFootColors.ink3,
             modifier = Modifier.width(32.dp),

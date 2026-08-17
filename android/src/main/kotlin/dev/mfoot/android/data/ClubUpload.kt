@@ -1,5 +1,6 @@
 package dev.mfoot.android.data
 
+import dev.mfoot.android.ui.kit.Kit
 import dev.mfoot.core.json.JsonWriter
 import dev.mfoot.core.world.CustomPlayerBuilder
 
@@ -17,8 +18,7 @@ object ClubUpload {
         leagueId: Long,
         clubName: String,
         clubShort: String,
-        kitPrimary: Long,
-        kitSecondary: Long,
+        kit: Kit,
         draft: CustomPlayerBuilder.Draft,
     ): String {
         val w = JsonWriter(1024)
@@ -27,9 +27,14 @@ object ClubUpload {
         w.field("p_name", clubName.trim())
         w.field("p_short", clubShort.trim())
 
+        // Il motivo viaggia col nome dell'enum e non con un numero: se un giorno si
+        // aggiunge un motivo in mezzo alla lista, le maglie salvate non cambiano da sole.
         w.objectField("p_kit")
-        w.field("primary", hex(kitPrimary))
-        w.field("secondary", hex(kitSecondary))
+        w.field("pattern", kit.pattern.name)
+        w.field("primary", hex(kit.primary))
+        w.field("secondary", hex(kit.secondary))
+        w.field("detail", hex(kit.detail))
+        kit.number?.let { w.field("number", it) }
         w.endObject()
 
         w.objectField("p_player")

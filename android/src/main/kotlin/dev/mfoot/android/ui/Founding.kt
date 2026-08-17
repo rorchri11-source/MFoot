@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +29,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.FoundingState
+import dev.mfoot.android.ui.kit.Kit
+import dev.mfoot.android.ui.kit.KitEditor
+import dev.mfoot.android.ui.pitch.Pitch
+import dev.mfoot.android.ui.pitch.pitchSlots
+import dev.mfoot.core.match.Formation
+import dev.mfoot.core.match.PitchLayout
 import dev.mfoot.android.app.FoundingStep
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
@@ -134,19 +141,7 @@ private fun ClubStep(state: FoundingState, onChange: ((FoundingState) -> Foundin
     Label("La maglia")
     Spacer(Modifier.height(14.dp))
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Shirt(state.kitPrimary, state.kitSecondary)
-        Spacer(Modifier.width(20.dp))
-        Column(Modifier.weight(1f)) {
-            Label("Colore principale")
-            Spacer(Modifier.height(8.dp))
-            ColorRow(state.kitPrimary) { c -> onChange { it.copy(kitPrimary = c) } }
-            Spacer(Modifier.height(16.dp))
-            Label("Dettaglio")
-            Spacer(Modifier.height(8.dp))
-            ColorRow(state.kitSecondary) { c -> onChange { it.copy(kitSecondary = c) } }
-        }
-    }
+    KitEditor(kit = state.kit, onChange = { nuova -> onChange { it.copy(kit = nuova) } })
 }
 
 @Composable
@@ -235,18 +230,36 @@ private fun PlayerStep(
     }
 
     Spacer(Modifier.height(MFootSpacing.section))
-    Label("Ruolo")
+    Label("Dove giochi")
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Tocca la posizione sul campo.",
+        style = MFootType.chip,
+        color = MFootColors.ink3,
+    )
+    Spacer(Modifier.height(10.dp))
+
+    // Il campo invece della fila di sigle: "TRQ" non dice dove si gioca a chi non
+    // conosce le abbreviazioni, e chi le conosce deve comunque tradurle mentalmente in
+    // una posizione. Qui la posizione **e'** la scelta.
+    val ruoli = remember { PitchLayout.rolePicker() }
+    val posizioni = remember { Formation.F_4_3_3.positions }
+    Pitch(
+        slots = pitchSlots(positions = posizioni, coordinates = ruoli),
+        highlight = posizioni.withIndex()
+            .filter { it.value == draft.position }
+            .map { it.index }
+            .toSet(),
+        showEmptyLabels = false,
+        onSlotClick = { index -> onPosition(posizioni[index]) },
+    )
+
     Spacer(Modifier.height(8.dp))
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Position.entries.forEach { position ->
-            Chip(position.short, position == draft.position) { onPosition(position) }
-        }
-    }
-    Spacer(Modifier.height(6.dp))
-    Text(draft.position.label, style = MFootType.chip, color = MFootColors.ink3)
+    Text(
+        "${draft.position.short} · ${draft.position.label}",
+        style = MFootType.value,
+        color = MFootColors.elite,
+    )
 
     Spacer(Modifier.height(MFootSpacing.section))
     Label("Eta'")

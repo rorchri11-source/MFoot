@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AuctionRow
+import dev.mfoot.core.model.Money
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -173,7 +174,7 @@ private fun AuctionCard(row: AuctionRow, myClubId: Long?, now: Instant, onClick:
 
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                row.auction.currentPrice.toString(),
+                Money(row.auction.currentPrice).formatShort(),
                 style = MFootType.price,
                 color = MFootColors.ink,
             )
@@ -208,7 +209,10 @@ fun BidSheet(
     var amount by remember(row.auction.id) {
         mutableStateOf(maxOf(minimum, row.auction.myMax ?: 0).toString())
     }
-    val value = amount.toIntOrNull() ?: 0
+    // Si accetta quello che la gente scrive: 1,5M, 1500, 700K. Chi viene dal fantacalcio
+    // digita il numero nudo, chi pensa in milioni digita la sigla: rifiutarne una vuol dire
+    // un'offerta che non viene fatta.
+    val value = Money.parse(amount)?.thousands ?: 0
     val tooLow = value < minimum
     val tooMuch = value > available + (row.auction.myMax ?: 0)
 
@@ -243,7 +247,7 @@ fun BidSheet(
             Column(Modifier.weight(1f)) {
                 Label("Prezzo corrente")
                 Text(
-                    row.auction.currentPrice.toString(),
+                    Money(row.auction.currentPrice).format(),
                     style = MFootType.overallLarge,
                     color = MFootColors.ink,
                 )
@@ -251,7 +255,7 @@ fun BidSheet(
             Column(Modifier.weight(1f)) {
                 Label("Disponibili")
                 Text(
-                    available.toString(),
+                    Money(available).format(),
                     style = MFootType.overallLarge,
                     color = if (available > 0) MFootColors.elite else MFootColors.gamble,
                 )
@@ -262,8 +266,8 @@ fun BidSheet(
 
         MFootField(
             value = amount,
-            onValueChange = { amount = it.filter(Char::isDigit).take(6) },
-            placeholder = minimum.toString(),
+            onValueChange = { testo -> amount = testo.filter { c -> c.isDigit() || c in ",.MmKk" }.take(10) },
+            placeholder = Money(minimum).format(),
             label = "La tua offerta massima",
             imeAction = ImeAction.Done,
         )
@@ -281,7 +285,7 @@ fun BidSheet(
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(minimum, minimum + 5, minimum + 15, minimum + 40).forEach { quick ->
                 if (quick <= available + (row.auction.myMax ?: 0)) {
-                    Chip(quick.toString(), value == quick) { amount = quick.toString() }
+                    Chip(Money(quick).formatShort(), value == quick) { amount = quick.toString() }
                 }
             }
         }
@@ -289,7 +293,7 @@ fun BidSheet(
         Spacer(Modifier.height(20.dp))
 
         when {
-            tooLow -> Notice("L'offerta minima e' $minimum crediti.", MFootColors.gamble)
+            tooLow -> Notice("L'offerta minima e' ${Money(minimum).format()}.", MFootColors.gamble)
             tooMuch -> Notice("Non hai abbastanza crediti disponibili.", MFootColors.gamble)
             row.auction.myMax != null -> Notice(
                 "La tua offerta massima ora e' ${row.auction.myMax}. Si puo' solo alzare.",
@@ -299,7 +303,7 @@ fun BidSheet(
 
         Spacer(Modifier.height(MFootSpacing.related))
         PrimaryButton(
-            text = "Offri fino a $value",
+            text = "Offri fino a ${Money(value).format()}",
             onClick = { onBid(value) },
             enabled = !tooLow && !tooMuch,
         )

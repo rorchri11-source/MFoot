@@ -97,6 +97,14 @@ fun Pitch(
     slots: List<PitchSlot>,
     modifier: Modifier = Modifier,
     highlight: Set<Int> = emptySet(),
+    /**
+     * Mostrare "vuoto" sotto le caselle senza giocatore.
+     *
+     * Va spento dove non c'e' niente da riempire — la scelta del ruolo alla fondazione,
+     * per esempio — perche' undici volte la stessa parola non e' informazione, e' rumore
+     * che copre le sigle dei ruoli, che sono l'unica cosa da leggere.
+     */
+    showEmptyLabels: Boolean = true,
     onSlotClick: (Int) -> Unit = {},
 ) {
     Layout(
@@ -110,6 +118,7 @@ fun Pitch(
             slots.forEach { slot ->
                 SlotBadge(
                     slot = slot,
+                    showEmptyLabel = showEmptyLabels,
                     highlighted = slot.index in highlight,
                     onClick = { onSlotClick(slot.index) },
                 )
@@ -164,7 +173,12 @@ private val BADGE_DIAMETER = 42.dp
  * con la scritta "vuoto" costringerebbe a leggere undici etichette.
  */
 @Composable
-private fun SlotBadge(slot: PitchSlot, highlighted: Boolean, onClick: () -> Unit) {
+private fun SlotBadge(
+    slot: PitchSlot,
+    highlighted: Boolean,
+    showEmptyLabel: Boolean,
+    onClick: () -> Unit,
+) {
     val player = slot.player
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -220,6 +234,8 @@ private fun SlotBadge(slot: PitchSlot, highlighted: Boolean, onClick: () -> Unit
                 )
             }
         }
+
+        if (player == null && !showEmptyLabel) return@Column
 
         Spacer(Modifier.height(3.dp))
         Text(

@@ -304,8 +304,7 @@ class AppViewModel : ViewModel() {
                 leagueId = fondazione.lega.league.id,
                 clubName = fondazione.clubName,
                 clubShort = fondazione.clubShort,
-                kitPrimary = fondazione.kitPrimary,
-                kitSecondary = fondazione.kitSecondary,
+                kit = fondazione.kit,
                 draft = fondazione.draft,
             )
 

@@ -122,13 +122,14 @@ object WorldUpload {
      */
     private fun writeAiClubs(w: JsonWriter, config: LeagueConfig) {
         val rng = DeterministicRandom(config.setup.worldSeed * 7L + 13L)
+        val used = mutableSetOf<String>()
 
         w.arrayField("p_ai_clubs")
         repeat(config.setup.aiClubs) { index ->
             val personality = AiPersonalityGenerator.generate(
                 ClubId(index + 1L), config.setup.worldSeed, config.ai,
             )
-            val name = clubName(rng)
+            val name = uniqueClubName(rng, used)
 
             w.beginObject()
             w.field("name", name)
@@ -162,8 +163,35 @@ object WorldUpload {
     )
     private val suffixes = listOf("FC", "United", "Athletic", "Sporting", "1908", "City", "Real", "AC")
 
-    private fun clubName(rng: DeterministicRandom): String =
-        "${rng.pick(prefixes)} ${rng.pick(suffixes)}"
+    /**
+     * Un nome che non e' ancora stato usato in questa lega.
+     *
+     * ## Il difetto che questo risolve
+     *
+     * Diciotto prefissi per otto suffissi fanno centoquarantaquattro nomi, e otto
+     * estrazioni a caso ne pescano due uguali circa una volta su cinque — il paradosso dei
+     * compleanni. Il database ha `unique (league_id, name)` sui club, quindi **una lega su
+     * cinque non nasceva affatto**: la creazione moriva con "duplicate key value violates
+     * unique constraint", un messaggio che non dice niente a chi lo legge sul telefono.
+     *
+     * Con un nome che non basta si aggiunge un numero romano, come i club veri quando due
+     * squadre della stessa citta' condividono il nome.
+     */
+    private fun uniqueClubName(rng: DeterministicRandom, used: MutableSet<String>): String {
+        repeat(40) {
+            val candidate = "${rng.pick(prefixes)} ${rng.pick(suffixes)}"
+            if (used.add(candidate)) return candidate
+        }
+
+        // Tutte le combinazioni tentate sono uscite doppie: si numera, invece di
+        // riprovare all'infinito con lo stesso insieme finito di nomi.
+        var suffix = 2
+        while (true) {
+            val candidate = "${rng.pick(prefixes)} ${rng.pick(suffixes)} $suffix"
+            if (used.add(candidate)) return candidate
+            suffix++
+        }
+    }
 
     private fun shortNameOf(name: String): String =
         name.split(" ").joinToString("") { it.take(1) }.uppercase().take(3)

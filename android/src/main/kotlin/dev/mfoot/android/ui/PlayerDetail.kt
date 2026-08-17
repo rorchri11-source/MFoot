@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.dp
+import dev.mfoot.core.model.Money
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -465,9 +466,9 @@ private fun Footer(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(row.value.toString(), style = MFootType.price, color = MFootColors.ink)
+            Text(Money(row.value).format(), style = MFootType.price, color = MFootColors.ink)
             Spacer(Modifier.width(6.dp))
-            Text("crediti stimati", style = MFootType.chip, color = MFootColors.ink3)
+            Text("valore stimato", style = MFootType.chip, color = MFootColors.ink3)
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {

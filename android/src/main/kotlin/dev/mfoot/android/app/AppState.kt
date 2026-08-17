@@ -3,6 +3,7 @@ package dev.mfoot.android.app
 import dev.mfoot.android.data.AuctionView
 import dev.mfoot.android.data.ClubInfo
 import dev.mfoot.android.data.LeagueSnapshot
+import dev.mfoot.android.ui.kit.Kit
 import dev.mfoot.core.config.CustomPlayerConfig
 import dev.mfoot.core.model.Attributes
 import dev.mfoot.core.model.Player
@@ -101,8 +102,7 @@ data class FoundingState(
     val step: FoundingStep = FoundingStep.CLUB,
     val clubName: String = "",
     val clubShort: String = "",
-    val kitPrimary: Long = 0xFF2BE07E,
-    val kitSecondary: Long = 0xFF07080A,
+    val kit: Kit = Kit.DEFAULT,
     val draft: CustomPlayerBuilder.Draft = CustomPlayerBuilder.Draft(),
     val busy: String? = null,
     val errore: String? = null,
