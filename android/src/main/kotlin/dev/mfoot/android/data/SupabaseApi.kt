@@ -269,6 +269,37 @@ object SupabaseApi {
             request("/rest/v1/rpc/$function", "POST", payload)
         }
 
+    /**
+     * Scrive una riga su una tabella, sostituendola se c'e' gia'.
+     *
+     * ## Perche' non passa da una funzione SQL
+     *
+     * Quasi tutte le scritture del gioco vanno per forza da `security definer`, perche'
+     * toccano cose che il proprietario non deve poter decidere da solo: i crediti, i
+     * contratti, i risultati. La formazione no — e' l'unica cosa che appartiene davvero a
+     * chi ha il club, e le Row Level Security la lasciano scrivere direttamente a lui e a
+     * nessun altro (`write_own_lineup`).
+     *
+     * Resta comunque il server ad avere l'ultima parola: se in formazione finisse un
+     * giocatore altrui, il tick lo scarterebbe perche' non e' nella rosa. Poter scrivere la
+     * riga non vuol dire poter schierare chiunque.
+     */
+    suspend fun upsert(table: String, payload: String): ApiResult<Unit> =
+        withContext(Dispatchers.IO) {
+            request(
+                path = "/rest/v1/$table",
+                method = "POST",
+                body = payload,
+                // `merge-duplicates` trasforma l'insert in un upsert sulla chiave primaria:
+                // senza, salvare due volte la stessa formazione darebbe un errore di
+                // chiave duplicata al secondo salvataggio.
+                extraHeaders = mapOf(
+                    "Prefer" to "resolution=merge-duplicates,return=minimal",
+                    "Content-Profile" to "public",
+                ),
+            ).then { ApiResult.Ok(Unit) }
+        }
+
     /** Quante righe ci sono in una tabella: serve a verificare che il carico sia arrivato. */
     suspend fun count(table: String, leagueId: Long): ApiResult<Int> =
         withContext(Dispatchers.IO) {

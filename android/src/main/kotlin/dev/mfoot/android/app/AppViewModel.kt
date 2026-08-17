@@ -9,6 +9,8 @@ import dev.mfoot.android.data.ClubUpload
 import dev.mfoot.android.data.CompetitionRepository
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
+import dev.mfoot.android.data.LineupRepository
+import dev.mfoot.android.data.SavedLineup
 import dev.mfoot.android.data.Session
 import dev.mfoot.android.data.Supabase
 import dev.mfoot.android.data.TableRepository
@@ -17,7 +19,10 @@ import dev.mfoot.android.data.WorldUpload
 import dev.mfoot.core.config.ConfigPresets
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.market.Valuation
+import dev.mfoot.core.match.AutoLineup
+import dev.mfoot.core.match.Tactics
 import dev.mfoot.core.model.Attr
+import dev.mfoot.core.model.MatchDay
 import dev.mfoot.core.model.Position
 import dev.mfoot.core.world.CustomPlayerBuilder
 import dev.mfoot.core.world.PotentialEstimator
@@ -212,6 +217,7 @@ class AppViewModel : ViewModel() {
                         ),
                         avviso = avviso,
                     )
+                    caricaFormazione(snapshot.value)
                 }
             }
         }
@@ -698,6 +704,108 @@ class AppViewModel : ViewModel() {
     /** La configurazione da mostrare: la bozza se c'e', altrimenti quella della lega. */
     fun configMostrata(): LeagueConfig =
         _config.value.bozza ?: configCorrente()
+
+    // -------------------------------------------------------------------- formazione
+
+    /**
+     * La formazione che si sta componendo.
+     *
+     * Sta accanto allo stato della lega e non dentro, per la stessa ragione del regolamento:
+     * comporre un undici e' un lavoro lungo e la lega si ricarica da sola quando arriva un
+     * risultato o si chiude un'asta. Se la bozza vivesse dentro lo snapshot, un
+     * aggiornamento in arrivo mentre si sposta un terzino cancellerebbe il lavoro fatto.
+     */
+    private val _lineup = MutableStateFlow(LineupEdit())
+    val lineupEdit: StateFlow<LineupEdit> = _lineup
+
+    fun modificaFormazione(nuova: LineupEdit) {
+        _lineup.value = nuova
+    }
+
+    /**
+     * Carica la formazione salvata e la riempie con i giocatori veri della rosa.
+     *
+     * Gli identificativi salvati vengono incrociati con la rosa di adesso, non con quella
+     * di quando si e' salvato: un titolare venduto tre giorni fa semplicemente non compare,
+     * e la sua casella torna vuota. E' la stessa cosa che fa il server quando gioca la
+     * partita, quindi lo schermo dice il vero.
+     */
+    private fun caricaFormazione(snapshot: LeagueSnapshot) {
+        val club = snapshot.myClub ?: run {
+            _lineup.value = LineupEdit()
+            return
+        }
+        val squad = snapshot.squadOf(club.id)
+        val today = MatchDay(snapshot.league.currentMatchDay)
+
+        viewModelScope.launch {
+            val salvata = when (val esito = LineupRepository.read(club.id)) {
+                is ApiResult.Error -> null
+                is ApiResult.Ok -> esito.value
+            }
+
+            // Una riga con zero titolari **non e' una formazione**: e' quella che
+            // `create_club` inserisce vuota alla fondazione. Trattarla come una scelta
+            // mostrerebbe un campo deserto al primo ingresso, e chi lo vede pensa che
+            // senza schierare a mano non si giochi — mentre il server schiera da solo.
+            val composta = salvata?.takeIf { it.eleven.any { id -> id != null } }
+
+            val base = if (composta == null) {
+                LineupEdit(formation = AutoLineup.bestFormation(squad, today))
+                    .completa(squad, today)
+                    // Le tattiche salvate valgono anche senza titolari: chi ha scelto
+                    // "ultra difensivo" e non ha ancora schierato nessuno non deve
+                    // ritrovarsi equilibrato.
+                    .copy(tactics = salvata?.tactics ?: Tactics.DEFAULT)
+            } else {
+                val byId = squad.associateBy { it.id.value }
+                LineupEdit(
+                    formation = composta.formation,
+                    eleven = composta.eleven.map { id -> id?.let { byId[it] } },
+                    tactics = composta.tactics,
+                    captainId = composta.captainId,
+                    penaltyTakerId = composta.penaltyTakerId,
+                ).conPanchina(squad, today)
+            }
+
+            // La copia di riferimento e' quella **appena costruita**: cosi' il pulsante di
+            // salvataggio resta spento fino a una modifica vera. Se fosse quella salvata sul
+            // server, aprire la schermata la mostrerebbe subito come da salvare ogni volta
+            // che un titolare non c'e' piu'.
+            _lineup.value = base.copy(salvata = base.snapshot)
+        }
+    }
+
+    fun salvaFormazione() {
+        val dentro = statoCorrente() ?: return
+        val club = dentro.lega.myClub ?: return
+        val edit = _lineup.value
+        if (!edit.dirty || edit.busy != null) return
+
+        viewModelScope.launch {
+            _lineup.value = edit.copy(busy = "Salvo…", errore = null)
+
+            val esito = LineupRepository.save(
+                leagueId = dentro.lega.league.id,
+                clubId = club.id,
+                lineup = SavedLineup(
+                    formation = edit.formation,
+                    eleven = edit.eleven.map { it?.id?.value },
+                    bench = edit.bench.map { it.id.value },
+                    tactics = edit.tactics,
+                    captainId = edit.captainId,
+                    penaltyTakerId = edit.penaltyTakerId,
+                ),
+            )
+
+            _lineup.value = when (esito) {
+                is ApiResult.Error -> edit.copy(busy = null, errore = esito.message)
+                // Da qui in poi la copia di riferimento e' questa: il pulsante si spegne e
+                // si riaccende solo alla modifica successiva.
+                is ApiResult.Ok -> edit.copy(busy = null, salvata = edit.snapshot)
+            }
+        }
+    }
 
     // ---------------------------------------------------------------- rotte e guscio
 

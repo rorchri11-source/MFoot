@@ -90,6 +90,17 @@ class JsonWriter(initialCapacity: Int = 8 * 1024) {
         separator(); sb.append(number); needsComma = true
     }
 
+    /**
+     * Un intero lungo, scritto senza decimali.
+     *
+     * Passare da [value] con un Double lo trasformerebbe in `1234.0`, che e' JSON valido ma
+     * che Postgres rifiuta quando la colonna e' `bigint[]`: gli identificativi vanno scritti
+     * come interi, sempre.
+     */
+    fun value(number: Long) = apply {
+        separator(); sb.append(number); needsComma = true
+    }
+
     fun value(number: Double) = apply {
         separator(); number(number); needsComma = true
     }

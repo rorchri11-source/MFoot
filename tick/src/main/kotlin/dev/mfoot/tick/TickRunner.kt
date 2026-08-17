@@ -27,6 +27,7 @@ import dev.mfoot.core.market.OfferTerms
 import dev.mfoot.core.match.AutoLineup
 import dev.mfoot.core.match.Formation
 import dev.mfoot.core.match.Lineup
+import dev.mfoot.core.match.LineupFitter
 import dev.mfoot.core.match.LineupSlot
 import dev.mfoot.core.match.MatchEngine
 import dev.mfoot.core.match.MatchResult
@@ -77,14 +78,6 @@ data class TickSummary(val leagues: List<LeagueSummary>, val failures: List<Stri
         failures.forEach { appendLine("  FALLITA: $it") }
     }.trimEnd()
 }
-
-/**
- * Quante riserve si portano in panchina.
- *
- * E' lo stesso numero che usa [AutoLineup]: cambiarlo solo qui vorrebbe dire una panchina
- * diversa a seconda che la formazione l'abbia scelta il proprietario o il server.
- */
-private const val BENCH_SIZE = 7
 
 /**
  * Esegue un giro di tick su tutte le leghe attive.
@@ -1300,43 +1293,30 @@ class TickRunner(
             problems += "$scartati titolari salvati non sono piu' disponibili"
         }
 
-        val buchi = chosen.indices.filter { chosen[it] == null }
-        if (buchi.isNotEmpty()) {
-            problems += "${buchi.size} caselle completate automaticamente"
+        val buchi = chosen.count { it == null }
+        if (buchi > 0) problems += "$buchi caselle completate automaticamente"
 
-            // I ruoli con meno candidati veri vanno riempiti per primi, come fa
-            // [AutoLineup]: assegnare il portiere per ultimo vorrebbe dire mettere fra i
-            // pali chi e' rimasto, e un giocatore di movimento in porta vale quaranta
-            // punti di malus.
-            val ordine = buchi.sortedBy { index ->
-                available.count { it.canPlay(formation.positions[index]) }
-            }
-            for (index in ordine) {
-                val position = formation.positions[index]
-                val best = available
-                    .filterNot { it.id.value in taken }
-                    .maxByOrNull { fitness(it, position) }
-                    ?: return null
-                chosen[index] = best
-                taken += best.id.value
-            }
-        }
-
-        val slots = chosen.withIndex().mapNotNull { (index, player) ->
+        // Il completamento lo fa [LineupFitter], che e' lo stesso codice che gira sul
+        // telefono quando si preme "completa": se lo rifacessimo qui, il campo mostrerebbe
+        // una squadra e il tabellino ne racconterebbe un'altra.
+        val completata = LineupFitter.fillHoles(formation, chosen.toList(), available, today)
+        val slots = completata.withIndex().mapNotNull { (index, player) ->
             player?.let { LineupSlot(it, formation.positions[index]) }
         }
+        if (slots.size < Formation.PLAYERS_ON_PITCH) return null
         val eleven = slots.map { it.player }
 
         // La panchina salvata prima, poi i migliori che restano: senza riserve gli ordini
         // condizionali e le sostituzioni per stanchezza non avrebbero nessuno da fare
         // entrare, e chi si e' dimenticato di comporla giocherebbe in dieci al 60'.
+        val inCampo = eleven.mapTo(HashSet()) { it.id.value }
         val bench = (
             saved.bench.mapNotNull { byId[it] } +
-                available.sortedByDescending { fitness(it, it.primaryPosition) }
+                LineupFitter.bench(completata, available, LineupFitter.DEFAULT_BENCH, today)
             )
-            .filterNot { it.id.value in taken }
+            .filterNot { it.id.value in inCampo }
             .distinctBy { it.id.value }
-            .take(BENCH_SIZE)
+            .take(LineupFitter.DEFAULT_BENCH)
 
         return RepairedLineup(
             lineup = Lineup(
@@ -1377,17 +1357,6 @@ class TickRunner(
         }
         return chosen.indices.firstOrNull { chosen[it] == null }
     }
-
-    /**
-     * Quanto rende questo giocatore in questo ruolo, adesso.
-     *
-     * La stanchezza pesa nella scelta e non solo in campo: prendendo il piu' forte e
-     * guardando la stamina dopo, si finirebbe per rimettere in campo sempre gli stessi
-     * fino a bruciarli. E' la stessa curva di [AutoLineup], ripetuta qui perche' quella
-     * costruisce un undici da zero e non sa tappare i buchi di uno esistente.
-     */
-    private fun fitness(player: Player, position: Position): Double =
-        player.overallAt(position) * (0.75 + 0.25 * player.stamina / 100.0)
 
     private fun loadSquad(leagueId: Long, clubId: ClubId): List<Player> {
         val out = mutableListOf<Player>()

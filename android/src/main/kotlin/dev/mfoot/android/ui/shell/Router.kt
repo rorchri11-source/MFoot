@@ -15,6 +15,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AuctionRow
+import dev.mfoot.android.app.LineupEdit
 import dev.mfoot.android.app.ListScope
 import dev.mfoot.android.app.PlayerRow
 import dev.mfoot.android.app.RoleFilter
@@ -25,6 +26,7 @@ import dev.mfoot.android.ui.settings.SettingsScreen
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.PlayerListScreen
+import dev.mfoot.android.ui.screens.CampoScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
 import dev.mfoot.android.ui.screens.SquadreScreen
 import dev.mfoot.android.ui.theme.MFootColors
@@ -53,6 +55,9 @@ fun Router(
     settings: SettingsEdit,
     onConfigChange: (LeagueConfig) -> Unit,
     onConfigSave: () -> Unit,
+    lineup: LineupEdit,
+    onLineupChange: (LineupEdit) -> Unit,
+    onLineupSave: () -> Unit,
 ) {
     when (val route = state.route) {
         is Route.Dashboard -> DashboardScreen(state, onNavigate, onFoundClub, onDismissNotice)
@@ -74,11 +79,7 @@ fun Router(
         is Route.Classifica, is Route.Calendario, is Route.Competizioni ->
             DaFare(route.label, "Si apre da qui a schermo pieno.")
 
-        is Route.Campo -> DaFare(
-            "Campo",
-            "Il componente del campo e' pronto e lo usa gia' la fondazione. " +
-                "Qui manca il collegamento alla rosa e il salvataggio della formazione.",
-        )
+        is Route.Campo -> CampoScreen(state, lineup, onLineupChange, onLineupSave)
 
         is Route.ProfiloLega -> DaFare("Profilo lega", "Nome, codice, stato, giornata.")
         is Route.Partecipanti -> DaFare("Partecipanti", "Chi c'e', con quale club, chi e' admin.")

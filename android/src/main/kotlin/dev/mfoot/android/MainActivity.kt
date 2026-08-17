@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
 private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val settings by viewModel.configEdit.collectAsStateWithLifecycle()
+    val lineup by viewModel.lineupEdit.collectAsStateWithLifecycle()
 
     Box(
         Modifier
@@ -152,6 +153,9 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         settings = settings,
                         onConfigChange = viewModel::modificaRegolamento,
                         onConfigSave = viewModel::salvaRegolamento,
+                        lineup = lineup,
+                        onLineupChange = viewModel::modificaFormazione,
+                        onLineupSave = viewModel::salvaFormazione,
                     )
                 }
 

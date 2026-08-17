@@ -30,15 +30,6 @@ import dev.mfoot.core.model.Position
 object AutoLineup {
 
     /**
-     * Sotto questa stamina un giocatore viene schierato solo se non c'e' nessun altro.
-     *
-     * Non e' un divieto ma una penalita' forte: con una rosa decimata da infortuni e
-     * squalifiche bisogna comunque poter scendere in campo.
-     */
-    private const val TIRED_THRESHOLD = 45
-    private const val TIRED_PENALTY = 0.75
-
-    /**
      * Il modulo che meglio si adatta a chi si ha davvero.
      *
      * Imporre il 4-3-3 a una rosa senza ali produce due terzini schierati larghi in
@@ -88,10 +79,12 @@ object AutoLineup {
         val slots = chosen.filterNotNull()
         if (slots.size < Formation.PLAYERS_ON_PITCH) return null
 
-        val bench = available
-            .filterNot { it.id.value in taken }
-            .sortedByDescending { it.overall * (0.75 + 0.25 * freshness(it)) }
-            .take(benchSize)
+        val bench = LineupFitter.bench(
+            eleven = slots.map { it.player },
+            squad = available,
+            size = benchSize,
+            today = today,
+        )
 
         return Lineup(
             formation = formation,
@@ -127,17 +120,12 @@ object AutoLineup {
     /**
      * Quanto vale questo giocatore in questo ruolo, adesso.
      *
-     * La stanchezza pesa gia' nella scelta e non solo in campo: scegliendo per overall e
-     * guardando la stamina dopo, si finirebbe per schierare sempre gli stessi undici fino
-     * a bruciarli.
+     * La definizione sta in [LineupFitter] e non qui: e' la stessa domanda che si fa il
+     * campo sul telefono quando si preme "completa", e due risposte diverse vorrebbero dire
+     * una squadra sullo schermo e un'altra nel tabellino.
      */
-    private fun score(player: Player, position: Position): Double {
-        val base = player.overallAt(position).toDouble()
-        val tired = if (player.stamina < TIRED_THRESHOLD) TIRED_PENALTY else 1.0
-        return base * (0.75 + 0.25 * freshness(player)) * tired
-    }
-
-    private fun freshness(player: Player): Double = player.stamina / 100.0
+    private fun score(player: Player, position: Position): Double =
+        LineupFitter.fitness(player, position)
 
     /**
      * Quanti giocatori sanno davvero fare quel ruolo.
