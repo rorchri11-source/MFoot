@@ -31,7 +31,21 @@ object Valuation {
     private const val CEILING_OVERALL = 93.0
 
     /** Frazione del budget iniziale che costa il miglior giocatore del mondo. */
-    private const val TOP_PLAYER_BUDGET_SHARE = 0.22
+    /**
+     * Quanto ripida e' la curva del prezzo.
+     *
+     * ## Perche' sette e mezzo e non tre
+     *
+     * Con l'esponente 3 un giocatore da 71 costava il **15% del budget**: un club AI ne
+     * pagava cinquanta su trecentoventi per un onesto gregario. Non era sfortuna, era la
+     * curva: troppo piatta, quindi a meta' classifica i prezzi erano già quelli di un
+     * titolare, e con dodici gregari da comprare la rosa non si completava mai.
+     *
+     * Sette e mezzo e' **misurato**, non scelto: `PriceScaleTest` stampa il listino e
+     * fallisce se un prezzo esce dalla sua fascia. Chi cambia questo numero lo scopre
+     * subito, insieme al perche'.
+     */
+    private const val PRICE_EXPONENT = 7.5
 
     /**
      * Valore di mercato "oggettivo", senza incertezza sul potenziale.
@@ -69,7 +83,7 @@ object Valuation {
 
     /** Quanti crediti costa il miglior giocatore possibile, dato il budget della lega. */
     fun priceScale(config: LeagueConfig): Double =
-        config.economy.startingCredits * TOP_PLAYER_BUDGET_SHARE
+        config.economy.startingCredits * config.economy.topPlayerBudgetShare
 
     /**
      * Da overall a punteggio 0..1, con curva cubica.
@@ -78,7 +92,7 @@ object Valuation {
      */
     fun overallScore(overall: Double): Double {
         val t = ((overall - FLOOR_OVERALL) / (CEILING_OVERALL - FLOOR_OVERALL)).coerceIn(0.0, 1.0)
-        return MathX.pow(t, 3.0)
+        return MathX.pow(t, PRICE_EXPONENT)
     }
 
     /**

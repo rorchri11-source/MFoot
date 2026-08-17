@@ -262,16 +262,43 @@ object WorldTick {
         }
     }
 
-    /** La cadenza delle entrate la decide l'admin: per giornata, a settimana, o mai. */
+    /**
+     * La cadenza delle entrate la decide l'admin.
+     *
+     * Settimana e mese sono **di calendario reale**, non giornate di gioco: e' cosi' che
+     * la gente pensa a uno stipendio, e tradurlo in giornate farebbe arrivare l'accredito
+     * quando capita invece che il lunedi'. Sono anche le uniche due misure del sistema che
+     * guardano l'orologio invece del contatore delle giornate, ed e' voluto.
+     *
+     * Il confine si riconosce dal giorno: si paga il primo tick del lunedi', o il primo
+     * tick del primo del mese. Chi non c'era trova comunque l'accredito, perche' il tick
+     * recupera la finestra perduta.
+     */
     private fun shouldPayIncome(input: TickInput): Boolean {
         val economy = input.config.economy
         if (economy.recurringIncome <= 0) return false
+
+        val from = windowStart(input).atZone(ZoneOffset.UTC).toLocalDate()
+        val to = input.now.atZone(ZoneOffset.UTC).toLocalDate()
+
         return when (economy.incomeCadence) {
             IncomeCadence.PER_GIORNATA -> true
-            // Sette giornate di gioco, non sette giorni reali.
-            IncomeCadence.PER_SETTIMANA -> input.today.value % 7 == 0
+            IncomeCadence.PER_SETTIMANA -> crossedWeek(from, to)
+            IncomeCadence.PER_MESE -> from.month != to.month || from.year != to.year
             IncomeCadence.FINE_COMPETIZIONE -> false
+            IncomeCadence.MAI -> false
         }
+    }
+
+    /** Si e' passato un lunedi' fra l'ultimo giro e adesso? */
+    private fun crossedWeek(from: java.time.LocalDate, to: java.time.LocalDate): Boolean {
+        if (from == to) return false
+        var day = from.plusDays(1)
+        while (!day.isAfter(to)) {
+            if (day.dayOfWeek == java.time.DayOfWeek.MONDAY) return true
+            day = day.plusDays(1)
+        }
+        return false
     }
 
     /**

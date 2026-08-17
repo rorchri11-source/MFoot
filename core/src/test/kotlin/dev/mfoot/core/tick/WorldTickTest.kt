@@ -324,20 +324,81 @@ class WorldTickTest {
         assertEquals(0, output.count<TickEffect.PagaStipendi>())
     }
 
+    /**
+     * La settimana è di calendario, non di giornate.
+     *
+     * È l'unica misura del sistema che guarda l'orologio invece del contatore delle
+     * giornate, ed è voluto: uno stipendio "a settimana" lo si pensa in lunedì, e
+     * tradurlo in sette giornate di gioco lo farebbe arrivare quando capita.
+     */
     @Test
-    fun `la cadenza settimanale paga solo ogni sette giornate`() {
+    fun `la cadenza settimanale paga quando si attraversa un lunedì`() {
         val settimanale = config.copy(
             economy = config.economy.copy(incomeCadence = IncomeCadence.PER_SETTIMANA),
         )
-        val giornataQualsiasi = WorldTick.run(
-            input(today = MatchDay(3), settled = emptySet()) { copy(config = settimanale) },
-        )
-        val settimaGiornata = WorldTick.run(
-            input(today = MatchDay(7), settled = emptySet()) { copy(config = settimanale) },
+
+        // Domenica 6 settembre 2026 alle 23:50 → lunedì 7 alle 00:10.
+        val attraversaLunedi = WorldTick.run(
+            input(settled = emptySet()) {
+                copy(
+                    config = settimanale,
+                    lastProcessedAt = Instant.parse("2026-09-06T23:50:00Z"),
+                    now = Instant.parse("2026-09-07T00:10:00Z"),
+                )
+            },
         )
 
-        assertEquals(0, giornataQualsiasi.count<TickEffect.DistribuisciCrediti>())
-        assertEquals(1, settimaGiornata.count<TickEffect.DistribuisciCrediti>())
+        // Martedì 8, cinque minuti: nessun confine attraversato.
+        val dentroLaSettimana = WorldTick.run(
+            input(settled = emptySet()) {
+                copy(
+                    config = settimanale,
+                    lastProcessedAt = Instant.parse("2026-09-08T10:00:00Z"),
+                    now = Instant.parse("2026-09-08T10:05:00Z"),
+                )
+            },
+        )
+
+        assertEquals(1, attraversaLunedi.count<TickEffect.DistribuisciCrediti>())
+        assertEquals(0, dentroLaSettimana.count<TickEffect.DistribuisciCrediti>())
+    }
+
+    @Test
+    fun `la cadenza mensile paga quando cambia il mese`() {
+        val mensile = config.copy(
+            economy = config.economy.copy(incomeCadence = IncomeCadence.PER_MESE),
+        )
+
+        val cambiaMese = WorldTick.run(
+            input(settled = emptySet()) {
+                copy(
+                    config = mensile,
+                    lastProcessedAt = Instant.parse("2026-09-30T23:55:00Z"),
+                    now = Instant.parse("2026-10-01T00:05:00Z"),
+                )
+            },
+        )
+        val stessoMese = WorldTick.run(
+            input(settled = emptySet()) {
+                copy(
+                    config = mensile,
+                    lastProcessedAt = Instant.parse("2026-10-15T10:00:00Z"),
+                    now = Instant.parse("2026-10-15T10:05:00Z"),
+                )
+            },
+        )
+
+        assertEquals(1, cambiaMese.count<TickEffect.DistribuisciCrediti>())
+        assertEquals(0, stessoMese.count<TickEffect.DistribuisciCrediti>())
+    }
+
+    /** `MAI` esiste per le leghe dove i soldi si guadagnano solo sul campo. */
+    @Test
+    fun `la cadenza mai non paga niente`() {
+        val mai = config.copy(economy = config.economy.copy(incomeCadence = IncomeCadence.MAI))
+        val output = WorldTick.run(input(settled = emptySet()) { copy(config = mai) })
+
+        assertEquals(0, output.count<TickEffect.DistribuisciCrediti>())
     }
 
     @Test

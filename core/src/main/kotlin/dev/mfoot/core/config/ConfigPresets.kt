@@ -67,8 +67,8 @@ object ConfigPresets {
                 maxSquadSize = 30,
             ),
             economy = EconomyConfig(
-                startingCredits = 320,
-                recurringIncome = 10,
+                startingCredits = 100_000,
+                recurringIncome = 2_500,
                 incomeCadence = IncomeCadence.PER_GIORNATA,
             ),
             market = MarketConfig(
@@ -108,8 +108,8 @@ object ConfigPresets {
                 maxSquadSize = 26,
             ),
             economy = EconomyConfig(
-                startingCredits = 260,
-                recurringIncome = 12,
+                startingCredits = 80_000,
+                recurringIncome = 3_000,
                 incomeCadence = IncomeCadence.PER_GIORNATA,
             ),
             market = MarketConfig(
@@ -148,10 +148,10 @@ object ConfigPresets {
                 maxSquadSize = 25,
             ),
             economy = EconomyConfig(
-                startingCredits = 200,
-                recurringIncome = 6,
+                startingCredits = 50_000,
+                recurringIncome = 1_500,
                 incomeCadence = IncomeCadence.PER_GIORNATA,
-                placementPrizes = listOf(150, 90, 55, 30, 15),
+                placementPrizes = listOf(12_000, 7_000, 4_000, 2_000, 1_000),
             ),
             market = MarketConfig(
                 initialAuctionMode = InitialAuctionMode.SERATA_ASTA,

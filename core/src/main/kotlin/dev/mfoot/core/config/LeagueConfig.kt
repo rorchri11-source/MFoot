@@ -56,19 +56,45 @@ data class SetupConfig(
 
 // -------------------------------------------------------------------------- economia
 
-enum class IncomeCadence { PER_GIORNATA, PER_SETTIMANA, FINE_COMPETIZIONE }
+/**
+ * Ogni quanto arrivano le entrate.
+ *
+ * `PER_SETTIMANA` e `PER_MESE` sono settimane e mesi **di calendario reale**, non giornate
+ * di gioco. Tutto il resto del sistema conta in giornate — contratti, stipendi, crescita —
+ * ma un'entrata "a settimana" e' una cosa che si pensa in giorni veri, e tradurla in
+ * giornate produrrebbe un accredito che arriva quando capita invece che il lunedi'.
+ */
+enum class IncomeCadence { PER_GIORNATA, PER_SETTIMANA, PER_MESE, FINE_COMPETIZIONE, MAI }
 
 data class EconomyConfig(
-    val startingCredits: Int = 300,
-    val recurringIncome: Int = 8,
+    /**
+     * Il budget iniziale di ogni club, in migliaia. 100_000 = 100M.
+     *
+     * Da qui deriva **tutto il listino**: nessun prezzo del gioco e' scritto in cifre
+     * assolute, sono tutti frazioni di questo numero. Cambiarlo riscala il mercato intero
+     * senza toccare altro, ed e' il motivo per cui l'AI ragiona sempre in percentuale del
+     * disponibile invece che in milioni.
+     */
+    val startingCredits: Int = 100_000,
+    val recurringIncome: Int = 2_000,
     val incomeCadence: IncomeCadence = IncomeCadence.PER_GIORNATA,
-    /** Premi per posizione finale, dal primo in giu'. */
-    val placementPrizes: List<Int> = listOf(120, 70, 45, 30, 20, 15, 10, 5),
-    val winPrize: Int = 4,
-    val drawPrize: Int = 1,
+    /** Premi per posizione finale, dal primo in giu'. In migliaia. */
+    val placementPrizes: List<Int> = listOf(20_000, 12_000, 8_000, 5_000, 3_000, 2_000, 1_000, 500),
+    val winPrize: Int = 500,
+    val drawPrize: Int = 150,
     val wagesEnabled: Boolean = true,
     /** Stipendio per giornata = overall^2 * questo fattore. Cresce piu' che linearmente. */
     val wageFactor: Double = 0.0009,
+
+    /**
+     * Quanto costa il miglior giocatore del mondo, in frazione del budget iniziale.
+     *
+     * E' la manopola che riscala **tutto il listino** insieme: cambia il budget e i prezzi
+     * lo seguono da soli, perche' nessun valore e' scritto in crediti assoluti. Alzarla
+     * rende i fuoriclasse un lusso da mezza rosa; abbassarla li mette alla portata di
+     * tutti e toglie la scelta.
+     */
+    val topPlayerBudgetShare: Double = 0.65,
     /** Il rinnovo costa questa frazione di quanto era stato pagato. */
     val renewalCostFraction: Double = 0.5,
     val negativeBalanceAllowed: Boolean = false,
@@ -98,7 +124,8 @@ enum class InitialAuctionMode {
 data class MarketConfig(
     val initialAuctionMode: InitialAuctionMode = InitialAuctionMode.SERATA_ASTA,
     val auctionDurationMinutes: Int = 60,
-    val minimumRaise: Int = 1,
+    /** Rilancio minimo, in migliaia: 100 = 100K. */
+    val minimumRaise: Int = 100,
     val antiSnipeEnabled: Boolean = true,
     val antiSnipeSeconds: Int = 60,
     /**
@@ -110,6 +137,21 @@ data class MarketConfig(
      */
     val proxyBiddingEnabled: Boolean = true,
     val maxParallelAuctionsPerClub: Int = 3,
+
+    /**
+     * Aste in parallelo e durata **durante l'allestimento**, quando le rose sono vuote.
+     *
+     * Il tetto di regime esiste per proteggere l'umano dai rilanci a raffica a stagione in
+     * corso. Applicarlo anche all'inizio significa dieci club AI con tre aste a testa che
+     * devono riempire centottanta caselle: nove giorni prima di poter giocare la prima
+     * partita. Con sei aste da un quarto d'ora bastano tre quarti d'ora.
+     *
+     * La difesa contro lo sciame non passa da qui: e' l'affollamento sullo stesso
+     * obiettivo a spegnere l'interesse, e resta intero. Sei aste sono su sei ruoli
+     * diversi, non sei offerte sullo stesso giocatore.
+     */
+    val initialParallelAuctionsPerClub: Int = 6,
+    val initialAuctionDurationMinutes: Int = 15,
     val windowMode: MarketWindowMode = MarketWindowMode.SOLO_CALENDARIO_VUOTO,
     val windowSlots: List<ClosedRange<LocalTime>> = emptyList(),
     val loansEnabled: Boolean = true,
@@ -185,6 +227,17 @@ data class RulesConfig(
     val friendliesCountForGrowth: Boolean = false,
 
     val injuriesEnabled: Boolean = true,
+
+    /**
+     * Moltiplicatore sul tasso di infortunio del motore. 0 = non si infortuna nessuno.
+     *
+     * Separato da [injuriesEnabled] perche' sono due domande diverse: se gli infortuni
+     * esistono, e quanto sono frequenti. Chi vuole una lega senza sfortuna spegne il primo;
+     * chi la vuole solo piu' clemente abbassa il secondo.
+     */
+    val injuryRateMultiplier: Double = 1.0,
+
+    val yellowCardsEnabled: Boolean = true,
     val injurySeverity: InjurySeverity = InjurySeverity.NORMALE,
     val suspensionsEnabled: Boolean = true,
     val yellowCardsForSuspension: Int = 5,

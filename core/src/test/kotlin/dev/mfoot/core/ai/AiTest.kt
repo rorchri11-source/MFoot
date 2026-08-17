@@ -228,12 +228,24 @@ class AiManagerTest {
         T0,
     )
 
-    private fun club(credits: Int = 300, committed: Int = 0) = Club(
+    /** Le cifre sono in migliaia: 100_000 = 100M, la scala della lega di riferimento. */
+    private fun club(credits: Int = 100_000, committed: Int = 0) = Club(
         id = ClubId(1), name = "Verdemar", shortName = "VDM",
         isAi = true, credits = credits, committedCredits = committed,
     )
 
     private fun squadOf(size: Int): List<Player> = world.players.take(size)
+
+    /**
+     * Una rosa che **non ha nessuno** nel ruolo indicato.
+     *
+     * Serve ai test che verificano cosa fa l'AI quando un giocatore le interessa: con la
+     * rosa dei sedici piu' forti il centrocampo e' gia' pieno, l'appetibilita' scende sotto
+     * la soglia di interesse, e il test finirebbe per misurare il disinteresse invece della
+     * decisione. Il buco in rosa e' la premessa, non un dettaglio.
+     */
+    private fun squadWithout(position: Position, size: Int): List<Player> =
+        world.players.filter { it.primaryPosition != position }.take(size)
 
     private fun someTarget(): Player =
         world.players.first { it.overall in 74..80 && !it.isGoalkeeper }
@@ -280,7 +292,7 @@ class AiManagerTest {
     @Test
     fun `il tetto non supera mai i crediti disponibili`() {
         val s = state()
-        val c = club(credits = 100, committed = 70)
+        val c = club(credits = 30_000, committed = 21_000)
 
         world.players.take(50).forEach { player ->
             val appeal = AiManager.evaluate(s, c, squadOf(16), player, config)
@@ -294,7 +306,7 @@ class AiManagerTest {
     @Test
     fun `un club senza crediti non punta a niente`() {
         val s = state()
-        val c = club(credits = 50, committed = 50)
+        val c = club(credits = 15_000, committed = 15_000)
         val appeal = AiManager.evaluate(s, c, squadOf(16), someTarget(), config)
         assertEquals(0, appeal.ceiling)
         assertTrue(!appeal.isInterested)
@@ -309,11 +321,11 @@ class AiManagerTest {
         val s = state()
         val target = someTarget()
 
-        val ricca = config.copy(economy = config.economy.copy(startingCredits = 2000))
-        val povera = config.copy(economy = config.economy.copy(startingCredits = 100))
+        val ricca = config.copy(economy = config.economy.copy(startingCredits = 400_000))
+        val povera = config.copy(economy = config.economy.copy(startingCredits = 20_000))
 
-        val tettoRicco = AiManager.evaluate(s, club(credits = 2000), squadOf(16), target, ricca).ceiling
-        val tettoPovero = AiManager.evaluate(s, club(credits = 100), squadOf(16), target, povera).ceiling
+        val tettoRicco = AiManager.evaluate(s, club(credits = 400_000), squadOf(16), target, ricca).ceiling
+        val tettoPovero = AiManager.evaluate(s, club(credits = 20_000), squadOf(16), target, povera).ceiling
 
         assertTrue(tettoRicco > tettoPovero * 5, "ricco $tettoRicco, povero $tettoPovero")
     }
@@ -367,7 +379,9 @@ class AiManagerTest {
         val s = state()
         val c = club()
         val target = someTarget()
-        val appeal = AiManager.evaluate(s, c, squadOf(16), target, config)
+        // La rosa non ha nessuno in quel ruolo: e' la premessa perche' il giocatore
+        // interessi davvero. Con il centrocampo pieno il test misurerebbe il disinteresse.
+        val appeal = AiManager.evaluate(s, c, squadWithout(target.primaryPosition, 16), target, config)
 
         val auction = AuctionRules.open(
             1L, AuctionTarget.ForPlayer(target.id), ClubId(2), T0, config.market,
@@ -383,20 +397,20 @@ class AiManagerTest {
         val s = state()
         val c = club()
         val target = someTarget()
-        val appeal = AiManager.evaluate(s, c, squadOf(16), target, config)
+        val appeal = AiManager.evaluate(s, c, squadWithout(target.primaryPosition, 16), target, config)
 
         var auction = AuctionRules.open(
             1L, AuctionTarget.ForPlayer(target.id), ClubId(2), T0, config.market,
         )
         // Un umano dichiara molto piu' del tetto dell'AI.
         val rilancio = AuctionRules.placeBid(
-            auction, ClubId(9), appeal.ceiling + 50, 10_000, T0.plusSeconds(60), config.market,
+            auction, ClubId(9), appeal.ceiling + 5_000, 400_000, T0.plusSeconds(60), config.market,
         )
         assertTrue(rilancio is dev.mfoot.core.market.BidResult.Accepted)
         auction = rilancio.auction
         // Un secondo umano spinge il prezzo corrente oltre il tetto dell'AI.
         val secondo = AuctionRules.placeBid(
-            auction, ClubId(10), appeal.ceiling + 20, 10_000, T0.plusSeconds(120), config.market,
+            auction, ClubId(10), appeal.ceiling + 2_000, 400_000, T0.plusSeconds(120), config.market,
         )
         assertTrue(secondo is dev.mfoot.core.market.BidResult.Accepted)
 
