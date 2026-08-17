@@ -5,6 +5,7 @@ import android.util.JsonToken
 import dev.mfoot.core.config.ConfigJson
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.json.JsonNode
+import dev.mfoot.core.json.JsonWriter
 import dev.mfoot.core.model.Attr
 import dev.mfoot.core.model.Attributes
 import dev.mfoot.core.model.MatchDay
@@ -182,6 +183,27 @@ object LeagueRepository {
                 },
             )
         }
+    }
+
+    /**
+     * Salva le regole della lega.
+     *
+     * Passa da una funzione SQL e non da un update diretto: le Row Level Security su
+     * `leagues` non permettono la scrittura a nessun client, e a ragione — la
+     * configurazione decide budget, premi e infortuni, cioe' l'equilibrio della stagione.
+     * Se il telefono potesse scriverla, chiunque sappia comporre una richiesta HTTP si
+     * darebbe un budget da un miliardo senza che gli altri lo sapessero mai.
+     */
+    suspend fun updateConfig(leagueId: Long, config: LeagueConfig): ApiResult<Unit> {
+        val w = JsonWriter(8 * 1024)
+        w.beginObject()
+        w.field("p_league_id", leagueId)
+        w.objectField("p_config")
+        ConfigJson.writeInto(w, config)
+        w.endObject()
+        w.endObject()
+
+        return SupabaseApi.rpc("update_league_config", w.toString()).then { ApiResult.Ok(Unit) }
     }
 
     private suspend fun readContracts(leagueId: Long): ApiResult<Map<Long, Long>> {

@@ -19,6 +19,10 @@ import dev.mfoot.android.app.ListScope
 import dev.mfoot.android.app.PlayerRow
 import dev.mfoot.android.app.RoleFilter
 import dev.mfoot.android.app.Route
+import dev.mfoot.android.app.SettingsEdit
+import dev.mfoot.android.ui.settings.SettingsIndexScreen
+import dev.mfoot.android.ui.settings.SettingsScreen
+import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.PlayerListScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
@@ -46,6 +50,9 @@ fun Router(
     onRefreshAuctions: () -> Unit,
     onFoundClub: () -> Unit,
     onDismissNotice: () -> Unit,
+    settings: SettingsEdit,
+    onConfigChange: (LeagueConfig) -> Unit,
+    onConfigSave: () -> Unit,
 ) {
     when (val route = state.route) {
         is Route.Dashboard -> DashboardScreen(state, onNavigate, onFoundClub, onDismissNotice)
@@ -75,14 +82,24 @@ fun Router(
 
         is Route.ProfiloLega -> DaFare("Profilo lega", "Nome, codice, stato, giornata.")
         is Route.Partecipanti -> DaFare("Partecipanti", "Chi c'e', con quale club, chi e' admin.")
-        is Route.Opzioni, is Route.Regolamento -> DaFare(
-            "Regolamento e opzioni",
-            "Le sei sezioni con tutte le manopole: squadre, economia, mercato, partita, " +
-                "crescita, giocatore custom.",
+
+        is Route.Opzioni -> SettingsIndexScreen(state.lega.league.isAdmin) {
+            onNavigate(Route.Regolamento(it))
+        }
+
+        is Route.Regolamento -> SettingsScreen(
+            section = route.sezione,
+            config = settings.bozza ?: state.lega.league.config,
+            canEdit = state.lega.league.isAdmin,
+            dirty = settings.dirty,
+            busy = settings.busy,
+            errore = settings.errore,
+            onChange = onConfigChange,
+            onSave = onConfigSave,
         )
         is Route.Divisioni -> DaFare(
             "Divisioni",
-            "Serie A, B, C con promozioni, retrocessioni e spareggi. Serve la migrazione 0006.",
+            "Serie A, B, C con promozioni, retrocessioni e spareggi.",
         )
         is Route.Mercati -> DaFare("Mercati", "Finestre di mercato e asta iniziale.")
         is Route.RegistroAdmin -> DaFare("Registro", "Cosa ha fatto il tick, giro per giro.")

@@ -6,6 +6,7 @@ import dev.mfoot.android.data.TableView
 import dev.mfoot.core.calendar.CompetitionType
 import dev.mfoot.core.calendar.Schedule
 import dev.mfoot.core.config.CalendarConfig
+import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.config.ConfigValidator
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -138,4 +139,18 @@ data class CompetitionsState(
     val errore: String? = null,
 ) {
     fun clubName(id: Long): String = clubs.firstOrNull { it.id == id }?.name ?: "Club #$id"
+}
+
+/**
+ * Le modifiche al regolamento in attesa di essere salvate.
+ *
+ * [bozza] null significa nessuna modifica pendente, ed e' anche cio' che tiene spento il
+ * pulsante di salvataggio: un pulsante attivo che non fa niente insegna a non fidarsi.
+ */
+data class SettingsEdit(
+    val bozza: LeagueConfig? = null,
+    val busy: String? = null,
+    val errore: String? = null,
+) {
+    val dirty: Boolean get() = bozza != null
 }

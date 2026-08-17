@@ -656,6 +656,49 @@ class AppViewModel : ViewModel() {
         _state.value = dentro.copy(errore = null)
     }
 
+    // ------------------------------------------------------------------ regolamento
+
+    /**
+     * Le modifiche al regolamento vivono qui finche' non si salvano.
+     *
+     * Separare la modifica dal salvataggio permette di sistemare tre campi e confermare una
+     * volta, e soprattutto di cambiare idea senza aver gia' alterato una lega in corso.
+     * Null significa "nessuna modifica pendente": e' anche quello che spegne il pulsante.
+     */
+    private val _config = MutableStateFlow(SettingsEdit())
+    val configEdit: StateFlow<SettingsEdit> = _config
+
+    fun modificaRegolamento(nuova: LeagueConfig) {
+        _config.value = _config.value.copy(bozza = nuova, errore = null)
+    }
+
+    fun salvaRegolamento() {
+        val bozza = _config.value.bozza ?: return
+        val leagueId = Session.leagueId ?: return
+
+        viewModelScope.launch {
+            _config.value = _config.value.copy(busy = "Salvo le regole…")
+
+            when (val esito = LeagueRepository.updateConfig(leagueId, bozza)) {
+                is ApiResult.Error ->
+                    _config.value = _config.value.copy(busy = null, errore = esito.message)
+
+                is ApiResult.Ok -> {
+                    _config.value = SettingsEdit()
+                    ultimaConfig = bozza
+                    // Si rilegge la lega: le regole nuove cambiano valutazioni e prezzi,
+                    // e lasciare a schermo numeri calcolati con quelle vecchie sarebbe
+                    // peggio di non aver salvato.
+                    carica(leagueId, avviso = "Regole aggiornate.")
+                }
+            }
+        }
+    }
+
+    /** La configurazione da mostrare: la bozza se c'e', altrimenti quella della lega. */
+    fun configMostrata(): LeagueConfig =
+        _config.value.bozza ?: configCorrente()
+
     // ---------------------------------------------------------------- rotte e guscio
 
     /**

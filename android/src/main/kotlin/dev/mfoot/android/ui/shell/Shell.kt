@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.Route
-import dev.mfoot.android.app.SettingsSection
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootMotion
@@ -243,7 +242,7 @@ private fun Drawer(
             Section("Setup")
             Item("Profilo lega", Route.ProfiloLega, route, onNavigate)
             Item("Partecipanti", Route.Partecipanti, route, onNavigate)
-            Item("Regolamento e opzioni", Route.Regolamento(SettingsSection.SQUADRE), route, onNavigate)
+            Item("Regolamento e opzioni", Route.Opzioni, route, onNavigate)
             Item("Competizioni", Route.Competizioni, route, onNavigate)
             Item("Divisioni", Route.Divisioni, route, onNavigate)
             Item("Mercati", Route.Mercati, route, onNavigate)

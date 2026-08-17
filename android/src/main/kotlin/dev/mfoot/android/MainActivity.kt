@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val settings by viewModel.configEdit.collectAsStateWithLifecycle()
 
     Box(
         Modifier
@@ -148,6 +149,9 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onRefreshAuctions = { viewModel.aggiornaAste() },
                         onFoundClub = viewModel::fondaClub,
                         onDismissNotice = viewModel::chiudiAvviso,
+                        settings = settings,
+                        onConfigChange = viewModel::modificaRegolamento,
+                        onConfigSave = viewModel::salvaRegolamento,
                     )
                 }
 
