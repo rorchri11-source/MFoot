@@ -44,9 +44,45 @@ android {
         buildConfigField("String", "SUPABASE_KEY", "\"${secret("supabase.key")}\"")
     }
 
+    /**
+     * La firma di rilascio.
+     *
+     * Un APK firmato con la chiave di debug e' marcato `debuggable`, e Android lo tratta
+     * di conseguenza: avvisi piu' insistenti, e su alcune versioni il rifiuto di
+     * installarlo del tutto. Con una chiave propria l'app risulta una normale
+     * applicazione firmata.
+     *
+     * Il keystore vive **fuori dal repository**, che e' pubblico, e il percorso arriva da
+     * `local.properties`. Chi non ce l'ha puo' comunque compilare la versione di debug:
+     * la configurazione si applica solo se il file esiste davvero, altrimenti Gradle
+     * fallirebbe per chiunque cloni il progetto.
+     */
+    val keystorePath = secret("keystore.file")
+    val hasKeystore = keystorePath.isNotBlank() && File(keystorePath).exists()
+
+    if (hasKeystore) {
+        signingConfigs {
+            create("release") {
+                storeFile = File(keystorePath)
+                storePassword = secret("keystore.password")
+                keyAlias = secret("keystore.alias", "mfoot")
+                keyPassword = secret("keystore.password")
+
+                // Schema V2 e V3: dalla verifica dell'intero archivio in poi Android
+                // controlla molto piu' in fretta e con piu' certezza chi ha firmato.
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

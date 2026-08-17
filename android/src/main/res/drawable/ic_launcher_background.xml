@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lo sfondo dell'icona.
+
+  Non un colore piatto: una diagonale appena piu' chiara, dello stesso nero del fondo
+  dell'app. A icona piccola non si distingue come motivo, ma toglie quella sensazione di
+  ritaglio piatto che hanno le icone fatte in fretta.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#07080A"
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
+
+    <path
+        android:fillColor="#14171C"
+        android:pathData="M0,108 L108,0 L108,52 L52,108 Z" />
+</vector>
