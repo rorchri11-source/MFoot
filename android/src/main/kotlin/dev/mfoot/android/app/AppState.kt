@@ -146,10 +146,25 @@ sealed interface AppState {
         val auctions: List<AuctionRow> = emptyList(),
         /** L'asta aperta a schermo pieno per fare un'offerta. */
         val bidding: AuctionRow? = null,
+        /**
+         * La pila delle schermate visitate, l'ultima in cima.
+         *
+         * Una pila e non una sola rotta: il tasto indietro deve tornare da dove si e'
+         * arrivati. Chi apre un giocatore dal Listone vuole tornare al Listone, non alla
+         * Dashboard — e con una rotta sola l'unico ritorno possibile sarebbe una scelta
+         * fissa, sbagliata meta' delle volte.
+         */
+        val stack: List<Route> = listOf(Route.Dashboard),
+        val drawerOpen: Boolean = false,
         /** Un messaggio temporaneo in cima, tipo "lega creata". */
         val avviso: String? = null,
         val errore: String? = null,
     ) : AppState {
+
+        val route: Route get() = stack.last()
+
+        /** C'e' una schermata sotto a cui tornare, o il tasto indietro chiude l'app? */
+        val canGoBack: Boolean get() = stack.size > 1 || drawerOpen || bidding != null
 
         /** Le aste su cui si e' impegnati: sono quelle che vanno tenute d'occhio. */
         val myAuctions: List<AuctionRow> get() = auctions.filter { it.auction.hasMyBid }

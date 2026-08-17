@@ -37,6 +37,8 @@ data class ClubInfo(
     val shortName: String,
     val isAi: Boolean,
     val isMine: Boolean,
+    /** L'identificativo del proprietario: serve a legare un club alla persona. */
+    val ownerUserId: String? = null,
     val ownerName: String?,
     val credits: Int,
     val committedCredits: Int,
@@ -171,6 +173,7 @@ object LeagueRepository {
                         shortName = row["short_name"].str("?"),
                         isAi = row["is_ai"].bool(false),
                         isMine = owner != null && owner == me,
+                        ownerUserId = owner,
                         ownerName = row["owner_name"].strOrNull(),
                         credits = row["credits"].int(0),
                         committedCredits = row["committed_credits"].int(0),

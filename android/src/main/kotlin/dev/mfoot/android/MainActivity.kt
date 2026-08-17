@@ -32,6 +32,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AppViewModel
 import dev.mfoot.android.app.DoorMode
+import dev.mfoot.android.app.Route
+import dev.mfoot.android.data.Session
+import dev.mfoot.android.ui.shell.Router
+import dev.mfoot.android.ui.shell.Shell
 import dev.mfoot.android.ui.BidSheet
 import dev.mfoot.android.ui.CompetitionsScreen
 import dev.mfoot.android.ui.DoorScreen
@@ -112,20 +116,40 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
             )
 
             is AppState.Dentro -> {
-                PlayerListScreen(
-                    state = current,
-                    onQuery = viewModel::onQuery,
-                    onFilter = viewModel::onFilter,
-                    onScope = viewModel::onScope,
-                    onSelect = viewModel::select,
-                    onDismissNotice = viewModel::chiudiAvviso,
-                    onLeave = viewModel::lasciaLega,
-                    onFoundClub = viewModel::fondaClub,
-                    onOpenBid = viewModel::apriOfferta,
-                    onRefreshAuctions = { viewModel.aggiornaAste() },
-                    onCompetitions = viewModel::apriCompetizioni,
-                    onTable = viewModel::apriClassifica,
-                )
+                Shell(
+                    title = current.lega.league.name,
+                    subtitle = current.route.label,
+                    nickname = Session.nickname ?: "giocatore",
+                    clubName = current.lega.myClub?.name,
+                    isAdmin = current.lega.league.isAdmin,
+                    route = current.route,
+                    drawerOpen = current.drawerOpen,
+                    onToggleDrawer = viewModel::apriChiudiMenu,
+                    onNavigate = { route ->
+                        // Classifica, calendario e competizioni hanno gia' una schermata
+                        // intera loro, con caricamenti propri: si aprono da fuori dal
+                        // guscio invece di essere infilate dentro il contenuto.
+                        when (route) {
+                            is Route.Classifica, is Route.Calendario -> viewModel.apriClassifica()
+                            is Route.Competizioni -> viewModel.apriCompetizioni()
+                            else -> viewModel.vai(route)
+                        }
+                    },
+                    onLeaveLeague = viewModel::lasciaLega,
+                ) {
+                    Router(
+                        state = current,
+                        onNavigate = viewModel::vai,
+                        onQuery = viewModel::onQuery,
+                        onFilter = viewModel::onFilter,
+                        onScope = viewModel::onScope,
+                        onSelect = viewModel::select,
+                        onOpenBid = viewModel::apriOfferta,
+                        onRefreshAuctions = { viewModel.aggiornaAste() },
+                        onFoundClub = viewModel::fondaClub,
+                        onDismissNotice = viewModel::chiudiAvviso,
+                    )
+                }
 
                 // Il foglio dell'offerta copre tutto: si sta decidendo quanto spendere, e
                 // ogni altra cosa a schermo in quel momento e' una distrazione.
@@ -183,11 +207,11 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
     BackHandler(enabled = state.canGoBack()) {
         when (val current = state) {
-            is AppState.Dentro -> when {
-                // L'offerta sta sopra la scheda: il tasto indietro chiude prima quella.
-                current.bidding != null -> viewModel.apriOfferta(null)
-                current.browse.selected != null -> viewModel.select(null)
-                else -> Unit
+            // Dentro la lega il ritorno lo gestisce il ViewModel, che conosce la pila
+            // delle schermate: menu aperto, foglio dell'offerta, scheda, poi la pila.
+            is AppState.Dentro -> {
+                if (current.browse.selected != null) viewModel.select(null)
+                else viewModel.indietro()
             }
 
             is AppState.Porta ->
@@ -200,7 +224,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
 /** C'e' un passo indietro possibile dentro l'app, o il tasto deve chiuderla? */
 private fun AppState.canGoBack(): Boolean = when (this) {
-    is AppState.Dentro -> browse.selected != null || bidding != null
+    is AppState.Dentro -> browse.selected != null || canGoBack
     is AppState.Porta -> mode != DoorMode.SCELTA
     else -> false
 }

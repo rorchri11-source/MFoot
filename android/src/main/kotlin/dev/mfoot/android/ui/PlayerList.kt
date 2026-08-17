@@ -52,19 +52,15 @@ fun PlayerListScreen(
     onScope: (ListScope) -> Unit,
     onSelect: (PlayerRow) -> Unit,
     onDismissNotice: () -> Unit,
-    onLeave: () -> Unit,
-    onFoundClub: () -> Unit,
     onOpenBid: (dev.mfoot.android.app.AuctionRow) -> Unit,
     onRefreshAuctions: () -> Unit,
-    onCompetitions: () -> Unit,
-    onTable: () -> Unit,
 ) {
     Column(
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg),
     ) {
-        ListHeader(state, onQuery, onFilter, onScope, onDismissNotice, onLeave, onFoundClub, onCompetitions, onTable)
+        ListHeader(state, onQuery, onFilter, onScope, onDismissNotice)
 
         if (state.browse.scope == ListScope.ASTE) {
             AuctionList(state, onOpenBid, onRefreshAuctions)
@@ -91,10 +87,6 @@ private fun ListHeader(
     onFilter: (RoleFilter) -> Unit,
     onScope: (ListScope) -> Unit,
     onDismissNotice: () -> Unit,
-    onLeave: () -> Unit,
-    onFoundClub: () -> Unit,
-    onCompetitions: () -> Unit,
-    onTable: () -> Unit,
 ) {
     val browse = state.browse
 
@@ -103,15 +95,6 @@ private fun ListHeader(
             .fillMaxWidth()
             .padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 14.dp),
     ) {
-        LeagueBar(state, onLeave, onCompetitions, onTable)
-
-        // Senza club non si puo' fare niente: comprare, schierare, giocare. L'invito sta
-        // in cima e non in un menu, perche' e' l'unica cosa sensata da fare adesso.
-        if (state.lega.myClub == null) {
-            Spacer(Modifier.height(MFootSpacing.related))
-            PrimaryButton("Fonda il tuo club", onFoundClub)
-        }
-
         if (state.errore != null) {
             Spacer(Modifier.height(MFootSpacing.related))
             Notice(state.errore, MFootColors.gamble)
@@ -190,75 +173,6 @@ private fun ListHeader(
 
     Hairline()
 }
-
-/**
- * La riga di intestazione della lega.
- *
- * I crediti disponibili stanno qui e non nascosti in una schermata di riepilogo, perche'
- * sono l'unico numero che serve sapere **mentre** si guarda un giocatore: senza, ogni
- * valutazione va fatta a memoria.
- */
-@Composable
-private fun LeagueBar(
-    state: AppState.Dentro,
-    onLeave: () -> Unit,
-    onCompetitions: () -> Unit,
-    onTable: () -> Unit,
-) {
-    val club = state.lega.myClub
-
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                state.lega.league.name,
-                style = MFootType.rowTitle,
-                color = MFootColors.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                if (club != null) {
-                    "${club.name} · ${Money(club.available).format()}"
-                } else {
-                    "Non hai ancora un club"
-                },
-                style = MFootType.chip,
-                color = if (club != null) MFootColors.ink3 else MFootColors.gamble,
-            )
-        }
-        Text(
-            "classifica",
-            style = MFootType.chip,
-            color = MFootColors.ink2,
-            modifier = Modifier
-                .clickable(onClick = onTable)
-                .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
-        )
-
-        // Solo l'admin: la difesa vera la fa il database, ma un pulsante che darebbe
-        // sempre errore fa sembrare l'app rotta a chi non e' admin.
-        if (state.lega.league.isAdmin) {
-            Text(
-                "competizioni",
-                style = MFootType.chip,
-                color = MFootColors.elite,
-                modifier = Modifier
-                    .clickable(onClick = onCompetitions)
-                    .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
-            )
-        }
-
-        Text(
-            "esci",
-            style = MFootType.chip,
-            color = MFootColors.ink3,
-            modifier = Modifier
-                .clickable(onClick = onLeave)
-                .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
-        )
-    }
-}
-
 /** Una lista vuota deve dire **perche'** e' vuota, o sembra che l'app sia rotta. */
 @Composable
 private fun EmptyState(state: AppState.Dentro) {

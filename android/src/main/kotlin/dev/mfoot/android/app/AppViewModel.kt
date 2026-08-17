@@ -656,6 +656,49 @@ class AppViewModel : ViewModel() {
         _state.value = dentro.copy(errore = null)
     }
 
+    // ---------------------------------------------------------------- rotte e guscio
+
+    /**
+     * Va a una schermata.
+     *
+     * Le cinque voci della barra in basso **azzerano la pila** invece di impilarsi: sono
+     * destinazioni, non passi di un percorso, e con venti tocchi sulla barra il tasto
+     * indietro dovrebbe ripercorrere venti schermate per uscire.
+     */
+    fun vai(route: Route) {
+        val dentro = statoCorrente() ?: return
+        val nuova = if (route.isTab) {
+            listOf(route)
+        } else if (dentro.route == route) {
+            dentro.stack
+        } else {
+            dentro.stack + route
+        }
+        _state.value = dentro.copy(stack = nuova, drawerOpen = false, errore = null)
+    }
+
+    /** Torna indietro. Restituisce false se non c'era dove tornare: allora l'app si chiude. */
+    fun indietro(): Boolean {
+        val dentro = statoCorrente() ?: return false
+        return when {
+            dentro.drawerOpen -> {
+                _state.value = dentro.copy(drawerOpen = false); true
+            }
+            dentro.bidding != null -> {
+                _state.value = dentro.copy(bidding = null); true
+            }
+            dentro.stack.size > 1 -> {
+                _state.value = dentro.copy(stack = dentro.stack.dropLast(1)); true
+            }
+            else -> false
+        }
+    }
+
+    fun apriChiudiMenu() {
+        val dentro = statoCorrente() ?: return
+        _state.value = dentro.copy(drawerOpen = !dentro.drawerOpen)
+    }
+
     // ---------------------------------------------------------------------- navigazione
 
     fun onQuery(text: String) = aggiornaBrowse { it.copy(query = text) }
