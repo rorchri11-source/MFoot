@@ -26,8 +26,11 @@ import dev.mfoot.core.market.OfferStatus
 import dev.mfoot.core.market.OfferTerms
 import dev.mfoot.core.match.AutoLineup
 import dev.mfoot.core.match.Formation
+import dev.mfoot.core.match.Lineup
+import dev.mfoot.core.match.LineupSlot
 import dev.mfoot.core.match.MatchEngine
 import dev.mfoot.core.match.MatchResult
+import dev.mfoot.core.match.Tactics
 import dev.mfoot.core.match.TeamSetup
 import dev.mfoot.core.model.Attr
 import dev.mfoot.core.model.Attributes
@@ -74,6 +77,14 @@ data class TickSummary(val leagues: List<LeagueSummary>, val failures: List<Stri
         failures.forEach { appendLine("  FALLITA: $it") }
     }.trimEnd()
 }
+
+/**
+ * Quante riserve si portano in panchina.
+ *
+ * E' lo stesso numero che usa [AutoLineup]: cambiarlo solo qui vorrebbe dire una panchina
+ * diversa a seconda che la formazione l'abbia scelta il proprietario o il server.
+ */
+private const val BENCH_SIZE = 7
 
 /**
  * Esegue un giro di tick su tutte le leghe attive.
@@ -148,7 +159,7 @@ class TickRunner(
                 }
 
                 is TickEffect.SimulaPartita -> {
-                    if (playMatch(league, effect.fixture)) {
+                    if (playMatch(league, effect.fixture, notes)) {
                         applied++
                     } else {
                         // La partita resta da giocare: al prossimo giro ci si riprova.
@@ -354,12 +365,19 @@ class TickRunner(
      * stesso risultato. Se una transazione fallisce a meta' e il tick ripassa, non esce
      * un risultato diverso.
      *
+     * @param notes il registro del giro: ci finisce ogni formazione salvata che e' stata
+     *   corretta d'ufficio, cosi' chi apre il registro admin capisce perche' e' scesa in
+     *   campo una squadra diversa da quella che aveva impostato.
      * @return false se la partita non si e' potuta giocare: rosa insufficiente, tipicamente.
      */
-    private fun playMatch(league: LeagueRow, fixture: Fixture): Boolean {
+    private fun playMatch(
+        league: LeagueRow,
+        fixture: Fixture,
+        notes: MutableList<String>,
+    ): Boolean {
         val today = MatchDay(fixture.matchDay.value)
-        val home = buildTeam(league, fixture.home, today) ?: return false
-        val away = buildTeam(league, fixture.away, today) ?: return false
+        val home = buildTeam(league, fixture.home, today, notes) ?: return false
+        val away = buildTeam(league, fixture.away, today, notes) ?: return false
 
         val seed = league.config.setup.worldSeed * 31L + fixture.id
         val result = MatchEngine.simulate(home, away, league.config, seed)
@@ -535,8 +553,20 @@ class TickRunner(
          * giorno: nove giorni prima che il campionato possa cominciare. La difesa contro
          * lo sciame resta comunque intera, perche' e' l'affollamento a spegnere
          * l'interesse, non il conteggio delle azioni.
+         *
+         * ## Perche' la rosa e non lo stato della lega
+         *
+         * Sembrerebbe naturale legare tutto questo a `status = 'mercato'`, e sarebbe un
+         * errore: la lega passa a `in_corso` **quando l'admin crea la prima competizione**,
+         * che e' esattamente il momento in cui le rose devono riempirsi in fretta. Legato
+         * allo stato, il mercato veloce si spegnerebbe proprio al fischio d'inizio e i club
+         * arriverebbero alla prima giornata in nove.
+         *
+         * Legato alla rosa, invece, la regola si spiega da sola: un club che non puo'
+         * schierare una squadra legale ha il mercato veloce, chiunque sia e in qualunque
+         * momento della stagione — anche a marzo, dopo aver venduto mezza rosa.
          */
-        val allestimento = league.inMarketPhase && squad.size < Formation.PLAYERS_ON_PITCH
+        val allestimento = squad.size < league.config.setup.minSquadSize
 
         if (!allestimento && !AiScheduler.hasActionsLeft(state, now, league.config.ai)) {
             saveAiState(clubId, AiScheduler.scheduleNext(state, now, league.config.setup.worldSeed))
@@ -633,6 +663,25 @@ class TickRunner(
      *
      * Qui il tick scrive direttamente, perche' e' lui l'autorita': gli stessi controlli
      * che la funzione fa per gli umani sono rifatti in Kotlin.
+     *
+     * ## Due mercati, non uno
+     *
+     * Il tetto di tre aste per club e la durata di un'ora esistono per una ragione buona:
+     * a stagione in corso proteggono l'umano dalle notifiche e dai duelli a raffica.
+     * Durante l'allestimento servono i numeri opposti, perche' dieci club AI con tre aste
+     * a testa da un'ora non riempiranno mai centottanta caselle: sarebbero nove giorni di
+     * attesa prima che il campionato possa cominciare, e nessuno arriva a vederlo.
+     *
+     * Con i valori dell'allestimento il conto e' un altro: 10 club AI per 6 aste da 15
+     * minuti fanno 60 aggiudicazioni ogni quarto d'ora, cioe' 180 caselle in tre quarti
+     * d'ora. La penalita' di affollamento resta intera e non e' toccata qui: e' quella a
+     * impedire che venti AI si buttino sullo stesso giocatore, e non ha niente a che
+     * vedere con quante aste sono aperte. Un'AI apre sei aste su sei ruoli scoperti, non
+     * sei offerte sullo stesso obiettivo.
+     *
+     * Il confine fra i due mercati e' la rosa, non lo stato della lega: chi non arriva al
+     * minimo compra in fretta, chiunque sia e in qualunque mese. Il perche' e' spiegato per
+     * esteso in [wakeAi].
      */
     private fun tryOpenAuction(
         league: LeagueRow,
@@ -644,8 +693,13 @@ class TickRunner(
         if (squad.size >= league.config.setup.minSquadSize) return false
         if (club.availableCredits < 1) return false
 
+        // Arrivati qui la rosa e' sotto il minimo per costruzione (la riga sopra): questo
+        // club non puo' schierare una squadra legale, quindi valgono i numeri
+        // dell'allestimento e non quelli del mercato a regime.
+        val market = league.config.market
         val aperte = countOpenAuctionsBy(club.id)
-        if (aperte >= league.config.market.maxParallelAuctionsPerClub) return false
+        if (aperte >= market.initialParallelAuctionsPerClub) return false
+        val durataMinuti = market.initialAuctionDurationMinutes
 
         // Un giocatore per cui esiste gia' un'asta non si rimette all'asta.
         val giaInAsta = loadOpenAuctions(league.id)
@@ -673,13 +727,16 @@ class TickRunner(
             st.setLong(1, league.id)
             st.setLong(2, player.id.value)
             st.setLong(3, club.id.value)
-            st.setInt(4, league.config.market.auctionDurationMinutes)
+            st.setInt(4, durataMinuti)
             st.setInt(5, base)
             st.setInt(6, base)
             st.executeUpdate()
         }
 
-        log("Lega ${league.id}: ${club.name} mette all'asta ${player.shortName}, base $base.")
+        log(
+            "Lega ${league.id}: ${club.name} mette all'asta ${player.shortName}, " +
+                "base $base, durata $durataMinuti minuti.",
+        )
         return true
     }
 
@@ -1006,10 +1063,7 @@ class TickRunner(
         val config: LeagueConfig,
         val currentMatchDay: Int,
         val status: String,
-    ) {
-        /** Il campionato non e' ancora cominciato: si sta ancora componendo le rose. */
-        val inMarketPhase: Boolean get() = status == "mercato"
-    }
+    )
 
     private data class TickStateRow(
         val lastProcessedAt: Instant?,
@@ -1113,26 +1167,227 @@ class TickRunner(
     /**
      * La squadra pronta a giocare.
      *
-     * La formazione la sceglie [AutoLineup]: non e' il ripiego per l'AI, e' la rete che
-     * tiene in piedi il calendario. Con due partite al giorno prima o poi qualcuno si
-     * dimentica di schierare, e il campionato non puo' fermarsi perche' una persona e'
-     * andata a cena.
+     * ## Prima quella salvata, poi quella automatica
      *
-     * Restituisce null se la rosa non basta: la partita resta da giocare e il tick lo
-     * segnala, invece di far uscire un risultato inventato.
+     * Chi ha impostato la formazione a mano deve vedere in campo la sua, altrimenti la
+     * schermata del campo e' un giocattolo. Ma [AutoLineup] non e' il ripiego per l'AI:
+     * e' la rete che tiene in piedi il calendario. Con due partite al giorno prima o poi
+     * qualcuno si dimentica di schierare, e il campionato non puo' fermarsi perche' una
+     * persona e' andata a cena.
+     *
+     * Le due cose convivono: si parte da quella salvata e si tappano i buchi. Una
+     * formazione vecchia — con un titolare venduto tre giorni fa o infortunato ieri —
+     * **non** e' un motivo per rifiutare di giocare. Sarebbe il difetto peggiore
+     * possibile: un club che perde a tavolino per una cessione andata a buon fine.
+     *
+     * Restituisce null solo se la rosa non basta davvero: la partita resta da giocare e
+     * il tick lo segnala, invece di far uscire un risultato inventato.
      */
-    private fun buildTeam(league: LeagueRow, clubId: ClubId, today: MatchDay): TeamSetup? {
+    private fun buildTeam(
+        league: LeagueRow,
+        clubId: ClubId,
+        today: MatchDay,
+        notes: MutableList<String>,
+    ): TeamSetup? {
         val squad = loadSquad(league.id, clubId)
         if (squad.size < Formation.PLAYERS_ON_PITCH) return null
 
-        return AutoLineup.setup(
+        val name = clubNameOf(clubId)
+        val coachStars = coachStarsOf(clubId)
+
+        val saved = loadSavedLineup(clubId)
+            ?: return AutoLineup.setup(clubId, name, squad, today, coachStars)
+
+        // Qualunque cosa vada storta dentro la riparazione si traduce nella formazione
+        // automatica, non in un'eccezione: un'eccezione qui annullerebbe la transazione
+        // dell'intera lega, e il campionato di venti club si fermerebbe per il file JSON
+        // di uno solo.
+        val repaired = runCatching { repairLineup(saved, squad, today) }
+            .getOrElse { failure ->
+                notes += "$name: formazione salvata illeggibile (${failure.message}), " +
+                    "schierata quella automatica."
+                null
+            }
+            ?: return AutoLineup.setup(clubId, name, squad, today, coachStars)
+
+        repaired.problems.forEach { notes += "$name: $it" }
+
+        return TeamSetup(
             clubId = clubId,
-            name = clubNameOf(clubId),
-            squad = squad,
-            today = today,
-            coachStars = coachStarsOf(clubId),
+            name = name,
+            lineup = repaired.lineup,
+            tactics = repaired.tactics,
+            coachStars = coachStars,
         )
     }
+
+    private data class SavedLineupRow(
+        val formation: String?,
+        val slots: String?,
+        val bench: List<Long>,
+        val tactics: String?,
+        val captainId: Long?,
+        val penaltyTakerId: Long?,
+    )
+
+    /** Quello che si e' riusciti a ricostruire, piu' cosa e' stato corretto d'ufficio. */
+    private data class RepairedLineup(
+        val lineup: Lineup,
+        val tactics: Tactics,
+        val problems: List<String>,
+    )
+
+    private fun loadSavedLineup(clubId: ClubId): SavedLineupRow? =
+        connection.prepareStatement(
+            "select formation, slots, bench, tactics, captain_id, penalty_taker_id " +
+                "from lineups where club_id = ?",
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs ->
+                if (!rs.next()) return null
+                SavedLineupRow(
+                    formation = rs.getString("formation"),
+                    slots = rs.getString("slots"),
+                    bench = (rs.getArray("bench")?.array as? Array<*>)
+                        ?.mapNotNull { (it as? Number)?.toLong() } ?: emptyList(),
+                    tactics = rs.getString("tactics"),
+                    captainId = rs.getLong("captain_id").takeIf { !rs.wasNull() },
+                    penaltyTakerId = rs.getLong("penalty_taker_id").takeIf { !rs.wasNull() },
+                )
+            }
+        }
+
+    /**
+     * Trasforma la formazione salvata in una schierabile, completando quello che manca.
+     *
+     * Null solo se non ci sono undici giocatori sani: e' lo stesso caso in cui
+     * [AutoLineup] si arrende, e vale il rinvio della partita.
+     */
+    private fun repairLineup(
+        saved: SavedLineupRow,
+        squad: List<Player>,
+        today: MatchDay,
+    ): RepairedLineup? {
+        val available = squad.filterNot { it.isInjured(today) }
+        if (available.size < Formation.PLAYERS_ON_PITCH) return null
+
+        val problems = mutableListOf<String>()
+        val formation = LineupJson.formation(saved.formation)
+            ?: AutoLineup.bestFormation(squad, today).also {
+                problems += "modulo salvato non riconosciuto, usato ${it.label}"
+            }
+
+        val byId = available.associateBy { it.id.value }
+        val chosen = arrayOfNulls<Player>(formation.positions.size)
+        val taken = HashSet<Long>(Formation.PLAYERS_ON_PITCH)
+        var scartati = 0
+
+        for (slot in LineupJson.slots(saved.slots)) {
+            // Venduto, svincolato, in prestito altrove o infortunato: in tutti i casi non
+            // c'e' e non serve distinguere, serve rimpiazzarlo.
+            val player = byId[slot.playerId]
+            if (player == null || slot.playerId in taken) {
+                if (player == null) scartati++
+                continue
+            }
+
+            val index = freeSlotFor(formation, chosen, slot.position) ?: continue
+            chosen[index] = player
+            taken += slot.playerId
+        }
+
+        if (scartati > 0) {
+            problems += "$scartati titolari salvati non sono piu' disponibili"
+        }
+
+        val buchi = chosen.indices.filter { chosen[it] == null }
+        if (buchi.isNotEmpty()) {
+            problems += "${buchi.size} caselle completate automaticamente"
+
+            // I ruoli con meno candidati veri vanno riempiti per primi, come fa
+            // [AutoLineup]: assegnare il portiere per ultimo vorrebbe dire mettere fra i
+            // pali chi e' rimasto, e un giocatore di movimento in porta vale quaranta
+            // punti di malus.
+            val ordine = buchi.sortedBy { index ->
+                available.count { it.canPlay(formation.positions[index]) }
+            }
+            for (index in ordine) {
+                val position = formation.positions[index]
+                val best = available
+                    .filterNot { it.id.value in taken }
+                    .maxByOrNull { fitness(it, position) }
+                    ?: return null
+                chosen[index] = best
+                taken += best.id.value
+            }
+        }
+
+        val slots = chosen.withIndex().mapNotNull { (index, player) ->
+            player?.let { LineupSlot(it, formation.positions[index]) }
+        }
+        val eleven = slots.map { it.player }
+
+        // La panchina salvata prima, poi i migliori che restano: senza riserve gli ordini
+        // condizionali e le sostituzioni per stanchezza non avrebbero nessuno da fare
+        // entrare, e chi si e' dimenticato di comporla giocherebbe in dieci al 60'.
+        val bench = (
+            saved.bench.mapNotNull { byId[it] } +
+                available.sortedByDescending { fitness(it, it.primaryPosition) }
+            )
+            .filterNot { it.id.value in taken }
+            .distinctBy { it.id.value }
+            .take(BENCH_SIZE)
+
+        return RepairedLineup(
+            lineup = Lineup(
+                formation = formation,
+                slots = slots,
+                bench = bench,
+                // Un capitano ceduto non blocca la partita: si ricade sulla stessa scelta
+                // che farebbe la formazione automatica.
+                captainId = saved.captainId
+                    ?.let { id -> eleven.firstOrNull { it.id.value == id }?.id }
+                    ?: eleven.maxByOrNull { it.overall + it.age }?.id,
+                penaltyTakerId = saved.penaltyTakerId
+                    ?.let { id -> eleven.firstOrNull { it.id.value == id }?.id }
+                    ?: eleven.maxByOrNull { it.attributes[Attr.TIRO] }?.id,
+            ),
+            tactics = LineupJson.tactics(saved.tactics),
+            problems = problems,
+        )
+    }
+
+    /**
+     * La casella libera dove mettere un titolare salvato.
+     *
+     * Si cerca prima una casella del ruolo indicato, poi qualunque casella libera. Il
+     * ruolo del modulo vince su quello salvato perche' e' il modulo a dire quante caselle
+     * esistono: un salvataggio con tre attaccanti in un 4-4-2 va accomodato, non rifiutato.
+     */
+    private fun freeSlotFor(
+        formation: Formation,
+        chosen: Array<Player?>,
+        position: Position?,
+    ): Int? {
+        if (position != null) {
+            val exact = formation.positions.indices.firstOrNull { index ->
+                chosen[index] == null && formation.positions[index] == position
+            }
+            if (exact != null) return exact
+        }
+        return chosen.indices.firstOrNull { chosen[it] == null }
+    }
+
+    /**
+     * Quanto rende questo giocatore in questo ruolo, adesso.
+     *
+     * La stanchezza pesa nella scelta e non solo in campo: prendendo il piu' forte e
+     * guardando la stamina dopo, si finirebbe per rimettere in campo sempre gli stessi
+     * fino a bruciarli. E' la stessa curva di [AutoLineup], ripetuta qui perche' quella
+     * costruisce un undici da zero e non sa tappare i buchi di uno esistente.
+     */
+    private fun fitness(player: Player, position: Position): Double =
+        player.overallAt(position) * (0.75 + 0.25 * player.stamina / 100.0)
 
     private fun loadSquad(leagueId: Long, clubId: ClubId): List<Player> {
         val out = mutableListOf<Player>()

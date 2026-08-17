@@ -325,6 +325,92 @@ class ConfigValidatorTest {
         assertTrue(hasErrorOn(result, "market.minLoanMatchDays"))
     }
 
+    // --------------------------------------------------------------- mercato iniziale
+
+    /**
+     * Il difetto che ha tenuto ferma una lega vera: tre aste per club da un'ora l'una.
+     *
+     * Con quei numeri servono piu' di cinque ore di sole aggiudicazioni per arrivare a
+     * sedici giocatori, e sono cinque ore *ottimistiche*, senza un'asta andata deserta ne'
+     * un duello perso. Nella lega vera erano giorni, e nessuno ha mai visto una partita.
+     */
+    @Test
+    fun `un mercato iniziale lento come quello a regime viene segnalato`() {
+        val config = LeagueConfig(
+            market = MarketConfig(
+                initialParallelAuctionsPerClub = 3,
+                initialAuctionDurationMinutes = 60,
+            ),
+        )
+        val result = ConfigValidator.validate(config)
+        assertTrue(
+            hasWarningOn(result, "market.initialAuctionDurationMinutes"),
+            "tre aste da un'ora non riempiono una rosa in una serata:\n${result.describe()}",
+        )
+    }
+
+    /** I valori predefiniti devono stare dentro la serata, o l'avviso non serve a niente. */
+    @Test
+    fun `il mercato iniziale predefinito riempie le rose nella stessa serata`() {
+        val result = ConfigValidator.validate(LeagueConfig())
+        assertTrue(
+            !hasWarningOn(result, "market.initialAuctionDurationMinutes"),
+            "i valori predefiniti non riempiono le rose in tempo:\n${result.describe()}",
+        )
+    }
+
+    @Test
+    fun `zero aste iniziali per club e un errore, non un avviso`() {
+        val result = ConfigValidator.validate(
+            LeagueConfig(market = MarketConfig(initialParallelAuctionsPerClub = 0)),
+        )
+        assertTrue(hasErrorOn(result, "market.initialParallelAuctionsPerClub"))
+    }
+
+    /**
+     * Alzare il minimo rosa allunga l'allestimento, e a un certo punto va detto.
+     *
+     * E' il legame che rende l'avviso utile: non giudica le aste in astratto, ma le aste
+     * *rispetto a quante caselle ci sono da riempire*. Quaranta titolari con le aste
+     * predefinite non ci stanno piu' in una serata.
+     */
+    @Test
+    fun `un minimo rosa molto alto allunga l allestimento oltre la serata`() {
+        val stretta = LeagueConfig(setup = SetupConfig(minSquadSize = 40, maxSquadSize = 45))
+        assertTrue(
+            hasWarningOn(
+                ConfigValidator.validate(stretta),
+                "market.initialAuctionDurationMinutes",
+            ),
+            "quaranta caselle a dodici l'ora non stanno in due ore",
+        )
+    }
+
+    /**
+     * Il soffitto del tick esiste e va detto: aste sempre piu' corte non velocizzano oltre.
+     *
+     * Un club agisce una volta per risveglio e i risvegli li conta il tick, che gira ogni
+     * cinque minuti: dodici acquisti l'ora e non uno di piu'. Chi mettesse cento aste da
+     * un minuto si aspetterebbe di finire in un lampo, e resterebbe a guardare.
+     */
+    @Test
+    fun `aste iniziali fulminee non superano il ritmo del tick`() {
+        val impaziente = LeagueConfig(
+            setup = SetupConfig(minSquadSize = 40, maxSquadSize = 45),
+            market = MarketConfig(
+                initialParallelAuctionsPerClub = 100,
+                initialAuctionDurationMinutes = 1,
+            ),
+        )
+        assertTrue(
+            hasWarningOn(
+                ConfigValidator.validate(impaziente),
+                "market.initialAuctionDurationMinutes",
+            ),
+            "il tick ogni cinque minuti resta il soffitto anche con cento aste da un minuto",
+        )
+    }
+
     // ------------------------------------------------------------------------ utility
 
     @Test

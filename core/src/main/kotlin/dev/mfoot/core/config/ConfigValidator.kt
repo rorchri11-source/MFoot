@@ -42,6 +42,26 @@ data class ValidationResult(val issues: List<ConfigIssue>) {
  */
 object ConfigValidator {
 
+    /**
+     * Ogni quanti minuti gira il tick.
+     *
+     * Cinque e' il minimo che concede il cron di GitHub, quindi non e' una scelta ma un
+     * dato di fatto dell'ambiente in cui questo gioco vive. Sta qui perche' e' il soffitto
+     * vero di quanto in fretta puo' muoversi il mercato, e una configurazione che lo ignora
+     * promette una velocita' che non esiste.
+     */
+    private const val TICK_MINUTI = 5.0
+
+    /**
+     * Oltre quante ore di allestimento si avvisa.
+     *
+     * Due, perche' e' il tempo che regge davvero: si crea la lega, si invitano gli amici,
+     * e nella stessa serata si guarda la prima partita. Oltre, la lega si crea una sera e
+     * si comincia a giocare un altro giorno — che e' il modo in cui una partita fra amici
+     * muore prima di cominciare.
+     */
+    private const val MAX_ORE_ALLESTIMENTO = 2.0
+
     fun validate(config: LeagueConfig): ValidationResult {
         val issues = buildList {
             addAll(validateSetup(config))
@@ -352,6 +372,76 @@ object ConfigValidator {
                 "Un'estensione anti-snipe di ${m.antiSnipeSeconds} secondi e' troppo breve per " +
                     "permettere una risposta reale.",
                 "Almeno 30-60 secondi.",
+            ))
+        }
+
+        addAll(validateInitialMarket(config))
+    }
+
+    /**
+     * Il mercato iniziale riesce a riempire le rose prima che qualcuno si stanchi?
+     *
+     * E' il controllo che serviva e non c'era. Con i valori sbagliati la lega non da'
+     * nessun errore: si apre, funziona, e semplicemente non comincia mai. Le rose restano
+     * a nove giocatori, le partite si rinviano una dopo l'altra e chi ha invitato gli
+     * amici non ha niente da mostrargli — l'unico segnale e' che dopo due giorni non e'
+     * successo niente, che e' il modo peggiore possibile di scoprire un problema di
+     * configurazione.
+     *
+     * ## Il conto
+     *
+     * Ogni club deve riempire `minSquadSize` caselle e ogni acquisto ne riempie una. La
+     * velocita' massima e' il **piu' lento** di due soffitti, perche' vanno superati
+     * entrambi:
+     *
+     * - **le aste.** Un club ne tiene aperte al piu'
+     *   [MarketConfig.initialParallelAuctionsPerClub] per volta, ognuna lunga
+     *   [MarketConfig.initialAuctionDurationMinutes]: fanno `aste * 60 / durata`
+     *   aggiudicazioni l'ora.
+     * - **il tick.** Un club agisce una volta per risveglio e i risvegli li conta il tick,
+     *   che gira ogni [TICK_MINUTI] minuti: al massimo `60 / 5` azioni l'ora, comunque
+     *   siano configurate le aste. Alzare le aste in parallelo oltre dodici l'ora non
+     *   accelera piu' niente, e vale la pena saperlo prima di provarci.
+     *
+     * E' un limite superiore ottimistico — presuppone che ogni asta si chiuda con
+     * un'aggiudicazione e che due club non si contendano mai lo stesso giocatore — e va
+     * benissimo cosi': se perfino il caso migliore impiega mezza giornata, quello vero e'
+     * senza speranza.
+     */
+    private fun validateInitialMarket(config: LeagueConfig): List<ConfigIssue> = buildList {
+        val m = config.market
+        val minimo = config.setup.minSquadSize
+
+        if (m.initialParallelAuctionsPerClub < 1) {
+            add(error(
+                "market.initialParallelAuctionsPerClub",
+                "Con zero aste iniziali per club nessuno comprerebbe nessuno: le rose " +
+                    "resterebbero vuote e nessuna partita si giocherebbe mai.",
+            ))
+            return@buildList
+        }
+        if (m.initialAuctionDurationMinutes < 1) {
+            add(error(
+                "market.initialAuctionDurationMinutes",
+                "Un'asta iniziale deve durare almeno un minuto.",
+            ))
+            return@buildList
+        }
+
+        val perAste = m.initialParallelAuctionsPerClub * 60.0 / m.initialAuctionDurationMinutes
+        val perTick = 60.0 / TICK_MINUTI
+        val perOra = minOf(perAste, perTick)
+        val ore = minimo / perOra
+
+        if (ore > MAX_ORE_ALLESTIMENTO) {
+            add(warning(
+                "market.initialAuctionDurationMinutes",
+                "Per arrivare a $minimo giocatori servirebbero almeno ${ore.toInt()} ore di " +
+                    "mercato, e sono ore ottimistiche: al ritmo di queste aste si riempiono " +
+                    "circa ${perOra.toInt()} caselle l'ora. Fino ad allora le squadre sono " +
+                    "incomplete e le loro partite si rinviano una dopo l'altra.",
+                "Accorcia l'asta iniziale o alza le aste in parallelo: 6 aste da 15 minuti " +
+                    "completano una rosa in poco piu' di un'ora.",
             ))
         }
     }
