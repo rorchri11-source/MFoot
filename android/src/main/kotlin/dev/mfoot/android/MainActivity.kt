@@ -236,11 +236,14 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     current.browse.selected?.let { row ->
                         PlayerDetailScreen(
                             row = row,
-                            // Un giocatore sotto contratto non si batte all'asta: si
-                            // tratta col suo club. E senza un proprio club non si puo'
-                            // nemmeno aprirla.
-                            canAuction = row.isFreeAgent && current.lega.myClub != null &&
+                            // Uno svincolato lo puo' battere chiunque; un tesserato solo
+                            // il suo club. La rosa altrui non si tocca — quella si tratta
+                            // — ma vendere i propri e' cio' che tiene vivo il mercato dopo
+                            // che gli svincolati sono finiti.
+                            canAuction = current.lega.myClub != null &&
+                                (row.isFreeAgent || row.club?.isMine == true) &&
                                 current.auctions.none { it.auction.targetId == row.player.id.value },
+                            isSelling = row.club?.isMine == true,
                             onAuction = { viewModel.mettiAllAsta(row) },
                             onClose = { viewModel.select(null) },
                         )

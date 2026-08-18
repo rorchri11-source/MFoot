@@ -2,6 +2,8 @@ package dev.mfoot.tick
 
 import dev.mfoot.core.ai.AiInitiative
 import dev.mfoot.core.ai.AiManager
+import dev.mfoot.core.ai.AiMove
+import dev.mfoot.core.ai.AiTurn
 import dev.mfoot.core.ai.SquadAction
 import dev.mfoot.core.ai.AiObsession
 import dev.mfoot.core.ai.AiPersonality
@@ -987,6 +989,40 @@ class TickRunner(
         val auction = loadAuction(auctionId) ?: return
         if (!auction.isOpen) return
 
+        // Chi vende, se e' una vendita e non uno svincolato.
+        //
+        // Il venditore non ha una colonna sua: e' `started_by`, e lo si riconosce dal fatto
+        // che il giocatore ha ancora un contratto **con quel club**. Se nel frattempo e'
+        // finito altrove — uno scambio chiuso mentre l'asta era aperta — l'asta si annulla:
+        // completarla lo farebbe esistere in due rose contemporaneamente, e non c'e' modo
+        // di accorgersene guardando il risultato.
+        val venditore = (auction.target as? AuctionTarget.ForPlayer)
+            ?.let { proprietarioDi(it.playerId) }
+
+        if (venditore != null && venditore != auction.startedBy) {
+            liberaFondi(auction)
+            connection.prepareStatement(
+                "update auctions set status = 'ANNULLATA' where id = ?",
+            ).use { it.setLong(1, auctionId); it.executeUpdate() }
+            log("Asta $auctionId annullata: il giocatore ha cambiato squadra nel frattempo.")
+            return
+        }
+
+        // E non si vende scendendo sotto il minimo di rosa. Il controllo c'e' gia'
+        // all'apertura, ma fra le due passa un'ora e in mezzo si puo' aver ceduto altro.
+        if (venditore != null && squadSize(league.id, venditore) - 1 < league.config.setup.minSquadSize) {
+            liberaFondi(auction)
+            connection.prepareStatement(
+                "update auctions set status = 'ANNULLATA' where id = ?",
+            ).use { it.setLong(1, auctionId); it.executeUpdate() }
+            notify(
+                league.id, venditore,
+                "La vendita e' saltata: ti avrebbe lasciato sotto il minimo di rosa.",
+                kind = "asta", urgency = "immediata",
+            )
+            return
+        }
+
         val outcome = AuctionRules.close(auction, Instant.now(), league.config.market)
 
         // Prima si liberano i fondi impegnati da tutti, vincitore compreso.
@@ -1019,6 +1055,25 @@ class TickRunner(
             st.executeUpdate()
         }
 
+        // E il prezzo va al venditore, se c'era un venditore. E' l'unica differenza fra
+        // vendere e regalare, ed e' il motivo per cui prima non si poteva mettere all'asta
+        // un giocatore sotto contratto: `assignPlayer` sovrascriveva il contratto e basta,
+        // quindi il giocatore si sarebbe spostato gratis.
+        if (venditore != null) {
+            connection.prepareStatement(
+                "update clubs set credits = credits + ? where id = ?",
+            ).use { st ->
+                st.setInt(1, outcome.price)
+                st.setLong(2, venditore.value)
+                st.executeUpdate()
+            }
+            notify(
+                league.id, venditore,
+                "Venduto per ${outcome.price} crediti.",
+                kind = "asta", urgency = "immediata",
+            )
+        }
+
         when (val target = auction.target) {
             is AuctionTarget.ForPlayer -> assignPlayer(league, target.playerId, winner, outcome.price)
             is AuctionTarget.ForStaff -> assignStaff(target.staffId, winner)
@@ -1035,6 +1090,27 @@ class TickRunner(
 
         notify(league.id, winner, "Ti sei aggiudicato l'asta per ${outcome.price} crediti.")
         log("Asta $auctionId aggiudicata al club ${winner.value} per ${outcome.price}.")
+    }
+
+    /** Di chi e' adesso, o null se e' svincolato. */
+    private fun proprietarioDi(playerId: PlayerId): ClubId? =
+        connection.prepareStatement("select club_id from contracts where player_id = ?").use { st ->
+            st.setLong(1, playerId.value)
+            st.executeQuery().use { rs -> if (rs.next()) ClubId(rs.getLong(1)) else null }
+        }
+
+    /** Sblocca i fondi impegnati da tutti gli offerenti. Serve quando un'asta si annulla. */
+    private fun liberaFondi(auction: Auction) {
+        connection.prepareStatement(
+            "update clubs set committed_credits = greatest(0, committed_credits - ?) where id = ?",
+        ).use { st ->
+            auction.bids.forEach { bid ->
+                st.setInt(1, bid.maxAmount)
+                st.setLong(2, bid.club.value)
+                st.addBatch()
+            }
+            st.executeBatch()
+        }
     }
 
     private fun assignPlayer(league: LeagueRow, playerId: PlayerId, club: ClubId, price: Int) {
@@ -1383,22 +1459,29 @@ class TickRunner(
             return
         }
 
-        // Prima si guarda cosa c'e' gia' sul mercato, poi eventualmente si apre qualcosa.
-        // L'ordine conta: un'AI che aprisse aste senza guardare quelle in corso
-        // riempirebbe il listino di doppioni sugli stessi ruoli scoperti.
+        // L'ordine delle mosse lo decide [AiTurn], in `core`, dove si puo' provare.
         //
-        // Le iniziative — scambi, amichevoli, ordine in rosa — vengono **dopo** e solo a
-        // rosa completa. Un club che deve ancora arrivare a undici titolari non ha niente
-        // da proporre a nessuno: quello che gli avanza non avanza, gli manca.
-        val acted = tryBid(league, state, club, squad, today) ||
-            tryOpenAuction(league, state, club, squad) ||
-            (
-                !allestimento && (
-                    tieniInOrdineLaRosa(league, state, club, squad, today) ||
-                        proponiUnoScambio(league, state, club, squad, today) ||
-                        chiediUnAmichevole(league, state, club, squad)
-                    )
-                )
+        // Era scritto qui, come `tryBid(...) || tryOpenAuction(...)`, e quel corto circuito
+        // era il difetto piu' costoso del mercato: se esisteva **anche una sola** asta su
+        // cui offrire, l'AI offriva e non ne apriva nessuna. Sei slot liberi, nove caselle
+        // vuote, risveglio finito — e appena nasceva un'asta tutti si mettevano in fila su
+        // quella. La simulazione del ritmo lo misura: cinque aste aperte in tutta la lega
+        // al terzo giro, e club fermi fra uno e nove giocatori dopo venti.
+        //
+        // Nessun test lo prendeva perche' viveva dentro questa funzione, che ha bisogno di
+        // una connessione al database.
+        var acted = false
+        for (mossa in AiTurn.order(squad.size, league.config)) {
+            acted = when (mossa) {
+                AiMove.APRI_ASTA -> tryOpenAuction(league, state, club, squad)
+                AiMove.OFFRI -> tryBid(league, state, club, squad, today)
+                AiMove.METTI_IN_VENDITA -> mettiInVendita(league, state, club, squad)
+                AiMove.GESTISCI_ROSA -> tieniInOrdineLaRosa(league, state, club, squad, today)
+                AiMove.PROPONI_SCAMBIO -> proponiUnoScambio(league, state, club, squad, today)
+                AiMove.CHIEDI_AMICHEVOLE -> chiediUnAmichevole(league, state, club, squad)
+            }
+            if (acted) break
+        }
 
         val after = if (acted) AiScheduler.recordAction(state, now) else state
         val next = AiScheduler.scheduleNext(after, now, league.config.setup.worldSeed)
@@ -1735,34 +1818,131 @@ class TickRunner(
         club: Club,
         squad: List<Player>,
     ): Boolean {
-        // Chi ha gia' la rosa a posto non fa la spesa per abitudine.
-        if (squad.size >= league.config.setup.minSquadSize) return false
         if (club.availableCredits < 1) return false
+        if (!AiTurn.canBuy(squad.size, league.config)) return false
 
-        // Arrivati qui la rosa e' sotto il minimo per costruzione (la riga sopra): questo
-        // club non puo' schierare una squadra legale, quindi valgono i numeri
-        // dell'allestimento e non quelli del mercato a regime.
+        val allestimento = squad.size < league.config.setup.minSquadSize
         val market = league.config.market
         val aperte = countOpenAuctionsBy(club.id)
-        if (aperte >= market.initialParallelAuctionsPerClub) return false
-        val durataMinuti = market.initialAuctionDurationMinutes
+
+        var quante = AiTurn.auctionsToOpen(squad.size, aperte, league.config)
+        if (quante <= 0) return false
+
+        val durataMinuti = if (allestimento) {
+            market.initialAuctionDurationMinutes
+        } else {
+            market.auctionDurationMinutes
+        }
 
         // Un giocatore per cui esiste gia' un'asta non si rimette all'asta.
         val giaInAsta = loadOpenAuctions(league.id)
             .mapNotNull { (it.target as? AuctionTarget.ForPlayer)?.playerId?.value }
-            .toSet()
+            .toMutableSet()
 
-        val candidato = loadFreeAgents(league.id, giaInAsta, limit = 40)
-            .map { it to AiManager.evaluate(state, club, squad, it, league.config, competingAi = 0) }
-            .filter { (_, appeal) -> appeal.isInterested && appeal.ceiling <= club.availableCredits }
-            .maxByOrNull { (_, appeal) -> appeal.appeal }
+        // Quanto ha gia' rischiato sulle aste che ha aperto.
+        //
+        // Aprire non impegna niente, ma vincere costa. Senza questo conto un club con
+        // centomila in cassa apre sei aste da cinquantamila, ne vince due, e le altre
+        // quattro hanno tolto quattro giocatori dal listino per un quarto d'ora e sono
+        // andate deserte: il mercato sembra pieno e non si muove niente.
+        var impegnato = impegnoSulleProprieAste(club.id)
+        val migliorePerRuolo = squad.groupBy { it.primaryPosition }
+            .mapValues { (_, giocatori) -> giocatori.maxOf { it.overall } }
+
+        var aperteOra = 0
+
+        while (quante > 0) {
+            val disponibile = club.availableCredits - impegnato
+            if (disponibile < 1) break
+
+            val candidato = loadFreeAgents(league.id, giaInAsta, limit = 40)
+                .map { it to AiManager.evaluate(state, club, squad, it, league.config, competingAi = 0) }
+                .filter { (_, appeal) -> appeal.isInterested && appeal.ceiling <= disponibile }
+                // A rosa completa non basta che piaccia: deve **migliorare** il reparto.
+                // Comprare il quarto centrocampista da 68 avendone tre da 70 e' il modo in
+                // cui una squadra spende tutto senza diventare piu' forte di un punto.
+                .filter { (p, _) ->
+                    AiTurn.migliora(
+                        squad.size, p.overall, migliorePerRuolo[p.primaryPosition], league.config,
+                    )
+                }
+                .maxByOrNull { (_, appeal) -> appeal.appeal }
+                ?: break
+
+            val (player, appeal) = candidato
+            // Base bassa: il prezzo lo deve fare l'asta, non chi la apre. Aprire gia'
+            // vicino al proprio tetto vorrebbe dire dichiarare quanto si e' disposti a
+            // spendere.
+            val base = 1.coerceAtLeast(appeal.ceiling / 5)
+            apriAsta(league.id, player.id.value, club.id, base, durataMinuti)
+
+            giaInAsta += player.id.value
+            impegnato += appeal.ceiling
+            aperteOra++
+            quante--
+
+            log(
+                "Lega ${league.id}: ${club.name} mette all'asta ${player.shortName}, " +
+                    "base $base, durata $durataMinuti minuti.",
+            )
+        }
+
+        return aperteOra > 0
+    }
+
+    /**
+     * Mette all'asta uno dei propri, quando ne ha uno che non gli serve.
+     *
+     * ## Perche' e' la mossa che tiene vivo il mercato
+     *
+     * Perche' le aste esistevano **solo per gli svincolati**: il giorno in cui l'ultimo
+     * senza contratto trovava squadra, il listino restava vuoto per il resto della
+     * stagione. Nessuno vendeva, quindi nessuno comprava, quindi non succedeva piu' niente
+     * fino a giugno. Un club che vende e' l'unica fonte di offerta nuova dopo la prima
+     * settimana.
+     */
+    private fun mettiInVendita(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+    ): Boolean {
+        val aperte = countOpenAuctionsBy(club.id)
+        if (aperte >= league.config.market.maxParallelAuctionsPerClub) return false
+
+        val (giocatore, base) = AiInitiative.playerToSell(state, squad, league.config)
             ?: return false
 
-        val (player, appeal) = candidato
-        // Base bassa: il prezzo lo deve fare l'asta, non chi la apre. Aprire gia' vicino
-        // al proprio tetto vorrebbe dire dichiarare quanto si e' disposti a spendere.
-        val base = 1.coerceAtLeast(appeal.ceiling / 5)
+        // Un giocatore in prestito non e' suo da vendere: alla scadenza deve tornare.
+        if (inPrestito(giocatore.id)) return false
 
+        val giaInAsta = loadOpenAuctions(league.id)
+            .mapNotNull { (it.target as? AuctionTarget.ForPlayer)?.playerId?.value }
+            .toSet()
+        if (giocatore.id.value in giaInAsta) return false
+
+        apriAsta(
+            league.id, giocatore.id.value, club.id, base,
+            league.config.market.auctionDurationMinutes,
+        )
+
+        notify(
+            league.id, null,
+            "${club.name} mette sul mercato ${giocatore.shortName} (${giocatore.overall}).",
+            kind = "asta",
+            urgency = "riepilogo",
+        )
+        log("Lega ${league.id}: ${club.name} vende ${giocatore.shortName}, base $base.")
+        return true
+    }
+
+    private fun apriAsta(
+        leagueId: Long,
+        playerId: Long,
+        startedBy: ClubId,
+        base: Int,
+        durataMinuti: Int,
+    ) {
         connection.prepareStatement(
             """
             insert into auctions (league_id, target_type, target_id, started_by, ends_at,
@@ -1770,21 +1950,36 @@ class TickRunner(
             values (?, 'player', ?, ?, now() + make_interval(mins => ?), ?, ?, 'APERTA')
             """.trimIndent(),
         ).use { st ->
-            st.setLong(1, league.id)
-            st.setLong(2, player.id.value)
-            st.setLong(3, club.id.value)
+            st.setLong(1, leagueId)
+            st.setLong(2, playerId)
+            st.setLong(3, startedBy.value)
             st.setInt(4, durataMinuti)
             st.setInt(5, base)
             st.setInt(6, base)
             st.executeUpdate()
         }
-
-        log(
-            "Lega ${league.id}: ${club.name} mette all'asta ${player.shortName}, " +
-                "base $base, durata $durataMinuti minuti.",
-        )
-        return true
     }
+
+    /** Quanto un club ha gia' offerto in tutto sulle aste ancora aperte. */
+    private fun impegnoSulleProprieAste(clubId: ClubId): Int =
+        connection.prepareStatement(
+            """
+            select coalesce(sum(b.max_amount), 0)
+            from bids b join auctions a on a.id = b.auction_id
+            where b.club_id = ? and a.status = 'APERTA'
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
+        }
+
+    private fun inPrestito(playerId: PlayerId): Boolean =
+        connection.prepareStatement(
+            "select 1 from loans where player_id = ? and active limit 1",
+        ).use { st ->
+            st.setLong(1, playerId.value)
+            st.executeQuery().use { it.next() }
+        }
 
     private fun countOpenAuctionsBy(clubId: ClubId): Int =
         connection.prepareStatement(
@@ -2082,9 +2277,14 @@ class TickRunner(
      * resto finisce nel riepilogo giornaliero: un ping per ogni evento in una lega da
      * venticinque club porta alla disinstallazione in tre giorni.
      */
+    /**
+     * @param club null quando la notizia riguarda **tutta la lega** — un giocatore messo
+     *   sul mercato lo vedono tutti, ed e' la colonna `club_id` nulla che lo dice. Prima
+     *   il parametro non era annullabile e una notizia di lega non si poteva scrivere.
+     */
     private fun notify(
         leagueId: Long,
-        club: ClubId,
+        club: ClubId?,
         body: String,
         kind: String = "asta",
         urgency: String = "immediata",
@@ -2093,7 +2293,7 @@ class TickRunner(
             "insert into notifications (league_id, club_id, kind, urgency, body) values (?, ?, ?, ?, ?)",
         ).use { st ->
             st.setLong(1, leagueId)
-            st.setLong(2, club.value)
+            if (club == null) st.setNull(2, java.sql.Types.BIGINT) else st.setLong(2, club.value)
             st.setString(3, kind)
             st.setString(4, urgency)
             st.setString(5, body)

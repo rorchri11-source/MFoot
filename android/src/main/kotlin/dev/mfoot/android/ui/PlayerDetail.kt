@@ -52,6 +52,9 @@ private fun Int.onScale(): Float =
 fun PlayerDetailScreen(
     row: PlayerRow,
     canAuction: Boolean = false,
+    /** Vero quando il giocatore e mio: cambia solo la parola sul pulsante, ma cambiarla
+     * conta — "metti all asta" e "vendi" sono due gesti diversi. */
+    isSelling: Boolean = false,
     onAuction: () -> Unit = {},
     onClose: () -> Unit,
 ) {
@@ -91,7 +94,7 @@ fun PlayerDetailScreen(
                     Stars(row)
                     Traits(row)
                 }
-                Footer(row, canAuction, onAuction, onClose)
+                Footer(row, canAuction, isSelling, onAuction, onClose)
             }
         }
     }
@@ -448,6 +451,7 @@ private fun Traits(row: PlayerRow) {
 private fun Footer(
     row: PlayerRow,
     canAuction: Boolean,
+    isSelling: Boolean,
     onAuction: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -476,7 +480,7 @@ private fun Footer(
             // guardando la scheda, e farla cercare altrove significa non farla prendere.
             if (canAuction) {
                 Text(
-                    "Metti all'asta",
+                    if (isSelling) "Vendi all'asta" else "Metti all'asta",
                     style = MFootType.value,
                     color = MFootColors.bg,
                     modifier = Modifier

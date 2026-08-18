@@ -764,9 +764,15 @@ class AppViewModel : ViewModel() {
                     _state.value = corrente.copy(
                         browse = corrente.browse.copy(scope = ListScope.ASTE, selected = null),
                     )
+                    val mio = row.club?.isMine == true
                     aggiornaAste(
-                        avviso = "${row.player.fullName} e' all'asta, base $prezzo. " +
-                            "Chiunque puo' offrire, ${club.shortName} compreso.",
+                        avviso = if (mio) {
+                            "${row.player.fullName} e' in vendita, base $prezzo. " +
+                                "Alla chiusura il prezzo arriva a te."
+                        } else {
+                            "${row.player.fullName} e' all'asta, base $prezzo. " +
+                                "Chiunque puo' offrire, ${club.shortName} compreso."
+                        },
                     )
                 }
             }

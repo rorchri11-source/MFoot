@@ -162,6 +162,54 @@ object AiInitiative {
     }
 
     /**
+     * Chi mettere sul mercato, o null se non c'e' nessuno da vendere.
+     *
+     * ## Perche' un'AI deve vendere
+     *
+     * Perche' senza, il mercato muore il giorno in cui l'ultimo svincolato trova squadra.
+     * Le aste esistevano solo per chi non aveva contratto: finito l'allestimento, il
+     * listino era vuoto per il resto della stagione e non succedeva piu' niente. Un club
+     * che vende e' l'unica fonte di offerta nuova dopo la prima settimana.
+     *
+     * ## Chi si vende
+     *
+     * Chi sta **sotto la mediana della rosa in un ruolo dove si abbonda**. Non il peggiore
+     * in assoluto: il peggiore potrebbe essere l'unico portiere di riserva, e venderlo
+     * significa giocare la prossima partita con un difensore fra i pali.
+     *
+     * @return il giocatore e il prezzo di partenza, che e' una frazione del valore perche'
+     *   il prezzo lo deve fare l'asta e non chi la apre.
+     */
+    fun playerToSell(
+        state: AiState,
+        squad: List<Player>,
+        config: LeagueConfig,
+    ): Pair<Player, Int>? {
+        if (squad.size <= config.setup.minSquadSize) return null
+
+        val mediana = squad.map { it.overall }.sorted()[squad.size / 2]
+
+        val candidato = squad
+            .filter { it.overall < mediana }
+            .filter { quantiIn(squad, it.primaryPosition) > minimoPer(it.primaryPosition, config) }
+            // Non i giovani su cui si sta scommettendo: sono il motivo per cui esiste la
+            // forbice di potenziale, e venderli a diciannove anni perche' oggi valgono
+            // poco e' il modo di non vederla mai chiudersi.
+            .filterNot { it.age <= config.rules.peakAgeStart && it.potentialMax > mediana + 4 }
+            .minByOrNull { it.overall }
+            ?: return null
+
+        val valore = Valuation.marketValue(candidato, config)
+        // Base bassa: chi apre un'asta partendo dal proprio prezzo dichiara quanto vale
+        // per lui, e nessuno rilancia sopra.
+        val base = 1.coerceAtLeast(
+            StrictMath.round(valore * MathX.lerp(0.25, 0.45, state.personality.budgetDiscipline))
+                .toInt(),
+        )
+        return candidato to base
+    }
+
+    /**
      * Accetta un prestito?
      *
      * ## Perche' non si riusa il valutatore degli scambi

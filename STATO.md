@@ -65,6 +65,7 @@ gradlew :android:assembleDebug
 | 21 | **Colloqui veri** | `LeagueFacts` apre un discorso solo quando e' successo qualcosa, e scrive il fatto accanto. Tredici argomenti |
 | 22 | **Calendario** | Griglia mensile con una cella per giorno e i colori degli eventi |
 | 23 | **AI complete** | Propongono scambi, chiedono amichevoli, tengono in ordine la rosa, gestiscono il proprio spogliatoio |
+| 24 | **Mercato che non si ferma** | `AiTurn` in `core` decide l'ordine delle mosse, si vendono i propri all'asta, e `MarketRhythmTest` conta quante aste sono aperte a ogni giro |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -163,6 +164,7 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0012_partite_giocate.sql` | `appearances`: chi ha giocato, partita per partita |
 | `supabase/migrations/0013_colloqui.sql` | `conversations` e le funzioni per aprirla e chiuderla |
 | `supabase/migrations/0014_trattative.sql` | Prestiti e amichevoli, `competitions.kind` |
+| `supabase/migrations/0015_vendite.sql` | Vendere i propri giocatori all'asta |
 
 **`0014` va applicata prima di installare l'APK.** Aggiunge una colonna a `competitions`,
 e una colonna nuova dentro una SELECT condivisa non è un'aggiunta: PostgREST rifiuta
@@ -216,6 +218,12 @@ Non refusi: difetti di logica che sarebbero arrivati fino in produzione.
    `+02:00` e appiccicare una `Z` butta via due ore *senza fallire*: le aste chiudevano
    due ore dopo il conto alla rovescia, le partite comparivano due ore più tardi, e il
    registro diceva «mai» accanto a un giro appena avvenuto.
+9. **Il mercato faceva la fila su una sola asta.** `tryBid(...) || tryOpenAuction(...)`:
+   un `||` in corto circuito. Se esisteva anche una sola asta su cui offrire, l'AI
+   offriva e non ne apriva nessuna � sei slot liberi, nove caselle vuote, risveglio
+   finito. Misurato dopo: cinque aste aperte in tutta la lega al terzo giro, e club
+   fermi fra uno e nove giocatori dopo venti. Nessun test lo prendeva perche' viveva
+   dentro una funzione che ha bisogno di una connessione al database.
 8. **Le AI si svegliavano una volta al giorno.** Dopo aver agito, il risveglio successivo
    cadeva nel passato e veniva spinto a domani. `checksPerDay` esisteva e non lo leggeva
    nessuno.
