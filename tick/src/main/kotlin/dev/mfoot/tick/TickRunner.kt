@@ -110,6 +110,7 @@ data class TickSummary(val leagues: List<LeagueSummary>, val failures: List<Stri
 class TickRunner(
     private val connection: Connection,
     private val env: TickEnvironment,
+    private val notifier: Notifier = Notifier(env),
 ) {
 
     fun runAllLeagues(now: Instant): TickSummary {
@@ -226,21 +227,8 @@ class TickRunner(
             }
         }
 
-        // Solo cio' che davvero non e' ancora scritto.
-        //
-        // Questo elenco conteneva anche `SvegliaAi` e `VerificaPromesse`, che nel frattempo
-        // sono state implementate: il registro dichiarava "da implementare" un lavoro che
-        // stava facendo, e chi apriva la schermata per capire perche' il mercato si muoveva
-        // leggeva che l'AI non era ancora stata scritta. Una schermata che serve a dire la
-        // verita' non puo' permettersi un elenco che nessuno aggiorna.
-        val daScrivere = plan.effects
-            .filterIsInstance<TickEffect.InviaRiepilogo>()
-            .groupingBy { it::class.simpleName }.eachCount()
-
-        if (daScrivere.isNotEmpty()) {
-            notes += "Da implementare: " +
-                daScrivere.entries.joinToString(", ") { "${it.key} x${it.value}" }
-        }
+        // Il riepilogo era l'ultimo effetto pianificato e mai applicato. Adesso parte.
+        val riepilogo = plan.effects.filterIsInstance<TickEffect.InviaRiepilogo>().isNotEmpty()
 
         // Le proposte di scambio si guardano a ogni giro, non al risveglio dell'AI.
         //
@@ -265,6 +253,11 @@ class TickRunner(
         // I club del computer rispondono subito ai propri: aspettare non avrebbe senso,
         // e un colloquio aperto blocca quello successivo.
         notes += rispondiAiColloqui(league)
+
+        // La consegna per ultima, quando tutto quello che e' successo in questo giro e'
+        // gia' scritto: cosi' una notifica non puo' raccontare un fatto che la transazione
+        // annullera' un attimo dopo.
+        notes += consegnaLeNotifiche(league, riepilogo)
 
         saveTickState(league.id, plan.processedUpTo, notes.joinToString(" | "), settled)
 
@@ -410,6 +403,148 @@ class TickRunner(
             st.executeUpdate()
         }
     }
+
+    // ---------------------------------------------------------------------- notifiche
+
+    /**
+     * Consegna quello che e' successo.
+     *
+     * ## Perche' due canali e non uno
+     *
+     * Le **immediate** partono subito e da sole: un'asta che chiude, uno scambio che ti
+     * arriva, una promessa tradita. Sono cose a cui si puo' voler rispondere, e un'ora
+     * dopo non servono piu'.
+     *
+     * Il **riepilogo** raccoglie tutto il resto in un messaggio solo, una volta al giorno
+     * all'ora scelta dall'admin. E' la meta' del sistema che protegge dalla disinstallazione:
+     * con venti club che si muovono, un messaggio per evento vuol dire cinquanta messaggi
+     * al giorno e un gruppo silenziato entro mercoledi'.
+     *
+     * ## Perche' si segna consegnato solo se e' partito
+     *
+     * Perche' se Telegram non risponde la riga deve restare li' e riprovarci. Il tick
+     * ripassa fra cinque minuti: non c'e' niente da recuperare a mano, e una notifica in
+     * ritardo di cinque minuti e' incomparabilmente meglio di una persa.
+     */
+    private fun consegnaLeNotifiche(league: LeagueRow, riepilogo: Boolean): List<String> {
+        if (!notifier.enabled) return emptyList()
+        if (env.dryRun) return emptyList()
+
+        val note = mutableListOf<String>()
+
+        if (league.config.notifications.immediateEnabled) {
+            val immediate = caricaDaConsegnare(league.id, "immediata", limite = 20)
+            for (riga in immediate) {
+                if (!notifier.send("<b>${escapeHtml(league.name)}</b>\n${riga.perIlGruppo()}")) break
+                segnaConsegnata(riga.id)
+                note += "notifica mandata"
+            }
+        }
+
+        if (!riepilogo) return note
+
+        val arretrate = caricaDaConsegnare(league.id, "riepilogo", limite = 60)
+        if (arretrate.isEmpty()) {
+            // Anche senza niente da dire il riepilogo si segna come fatto, altrimenti il
+            // pianificatore lo riproverebbe a ogni giro fino a mezzanotte.
+            segnaRiepilogoInviato(league.id)
+            return note
+        }
+
+        val corpo = buildString {
+            append("<b>${escapeHtml(league.name)}</b> — riepilogo\n")
+            arretrate.forEach { append("\n• ${it.perIlGruppo()}") }
+        }
+
+        if (notifier.send(corpo)) {
+            arretrate.forEach { segnaConsegnata(it.id) }
+            segnaRiepilogoInviato(league.id)
+            note += "riepilogo mandato (${arretrate.size} righe)"
+        }
+        return note
+    }
+
+    private inner class NotificaDaMandare(
+        val id: Long,
+        val kind: String,
+        val body: String,
+        val clubName: String?,
+    ) {
+        /**
+         * Come si scrive questa notizia in un gruppo dove leggono tutti.
+         *
+         * ## Perche' non si manda il testo com'e'
+         *
+         * Perche' le Row Level Security nascondono le trattative altrui **di proposito**:
+         * sapere che il Montesole ha offerto trenta milioni per il tuo centravanti e'
+         * un'informazione di mercato che vale, e in una lega fra amici uno sguardo alle
+         * trattative degli altri rovina il gioco piu' di qualunque squilibrio di bilancio.
+         *
+         * Mandare quel testo nel gruppo di Telegram butterebbe via quella protezione dalla
+         * porta di servizio: il database custodisce il segreto e il bot lo racconta a tutti.
+         *
+         * Per le trattative il gruppo riceve quindi solo **un colpetto sulla spalla** — c'e'
+         * qualcosa da leggere, e chi di dovere sa cos'e'. Tutto il resto — aste, risultati,
+         * scadenze — e' gia' pubblico dentro la lega e passa com'e'.
+         */
+        fun perIlGruppo(): String {
+            val chi = clubName?.let { "<b>${escapeHtml(it)}</b>: " } ?: ""
+            return if (kind in RISERVATE) {
+                chi + "hai una proposta da leggere in Trattative."
+            } else {
+                chi + escapeHtml(body)
+            }
+        }
+    }
+
+    /** I tipi il cui contenuto non deve finire in un gruppo dove leggono tutti. */
+    private val RISERVATE = setOf("scambio", "prestito", "amichevole")
+
+    private fun caricaDaConsegnare(
+        leagueId: Long,
+        urgency: String,
+        limite: Int,
+    ): List<NotificaDaMandare> {
+        val out = mutableListOf<NotificaDaMandare>()
+        connection.prepareStatement(
+            """
+            select n.id, n.kind, n.body, c.name as club_name
+            from notifications n
+            left join clubs c on c.id = n.club_id
+            where n.league_id = ? and n.urgency = ? and not n.delivered
+            order by n.created_at limit ?
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setString(2, urgency)
+            st.setInt(3, limite)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += NotificaDaMandare(
+                        id = rs.getLong("id"),
+                        kind = rs.getString("kind") ?: "",
+                        body = rs.getString("body") ?: "",
+                        clubName = rs.getString("club_name"),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    private fun segnaConsegnata(id: Long) {
+        connection.prepareStatement("update notifications set delivered = true where id = ?")
+            .use { st -> st.setLong(1, id); st.executeUpdate() }
+    }
+
+    private fun segnaRiepilogoInviato(leagueId: Long) {
+        connection.prepareStatement("update tick_state set last_digest_at = now() where league_id = ?")
+            .use { st -> st.setLong(1, leagueId); st.executeUpdate() }
+    }
+
+    /** Telegram interpreta l'HTML: un nome di club con una parentesi angolare romperebbe il messaggio. */
+    private fun escapeHtml(text: String): String =
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     // ----------------------------------------------------------------------- colloqui
 

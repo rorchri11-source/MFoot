@@ -191,9 +191,65 @@ completo.
 
 ---
 
+## 7. Le notifiche su Telegram (facoltativo, ma è quasi tutto il gioco)
+
+MFoot è asincrono: il mondo gira mentre i telefoni sono spenti. Senza notifiche il gioco
+chiede di **ricordarsi di aprirlo** — e con dodici amici significa che in tre giocano e gli
+altri si perdono per strada. Un'asta chiude alle 23 e non lo sa nessuno.
+
+Serve un bot di Telegram. È gratis, ci vogliono due minuti, e scrive nel gruppo dove voi
+già vi scrivete.
+
+### 7a. Creare il bot
+
+1. Su Telegram, cerca **@BotFather** e scrivigli `/newbot`.
+2. Dai un nome e un username al bot (l'username deve finire per `bot`).
+3. BotFather risponde con un **token**, una riga tipo `8123456789:AAF...`. Quello è
+   `MFOOT_TELEGRAM_TOKEN`.
+
+**Il token non va mai messo nel repository**, che è pubblico. Va solo nei segreti di GitHub.
+
+### 7b. Trovare l'id del gruppo
+
+1. Aggiungi il bot al gruppo degli amici.
+2. Scrivi un messaggio qualsiasi nel gruppo.
+3. Apri nel browser: `https://api.telegram.org/bot<IL-TUO-TOKEN>/getUpdates`
+4. Cerca `"chat":{"id":-100...}`. Quel numero, **segno meno compreso**, è
+   `MFOOT_TELEGRAM_CHAT`.
+
+### 7c. Aggiungere i due segreti
+
+In *Settings → Secrets and variables → Actions*, accanto a quelli del database:
+
+| Nome | Valore |
+|---|---|
+| `MFOOT_TELEGRAM_TOKEN` | il token di BotFather |
+| `MFOOT_TELEGRAM_CHAT` | l'id del gruppo, con il meno davanti |
+
+Senza questi due il tick funziona esattamente come prima e non manda niente: le notifiche
+restano nel database in attesa, e partono da sole il giorno in cui aggiungi i segreti.
+
+### Cosa arriva e cosa no
+
+| | |
+|---|---|
+| **Subito** | aste che chiudono, promesse tradite, vendite concluse |
+| **Una volta al giorno** | tutto il resto, in un messaggio solo, all'ora scelta nel regolamento |
+| **Mai per esteso** | le trattative. Il gruppo riceve «hai una proposta da leggere», non i termini |
+
+Quest'ultima riga non è pigrizia. Le trattative sono nascoste agli altri club **di
+proposito**: sapere che qualcuno ha offerto trenta milioni per il tuo centravanti è
+un'informazione che vale, e in una lega fra amici rovina il gioco più di qualunque
+squilibrio di bilancio. Mandarne il testo in un gruppo dove leggono tutti butterebbe via
+quella protezione dalla porta di servizio.
+
+---
+
 ## Note
 
 - Il cron di GitHub **non è puntuale** e ogni tanto salta un giro. Non è un problema: il
   tick recupera da solo gli intervalli persi.
+- Se Telegram non risponde, la notifica **resta in attesa** e riparte al giro dopo. Non si
+  perde niente.
 - GitHub **disattiva i workflow programmati** dopo circa 60 giorni senza attività sul
   repository. Si riattivano con un click dalla tab Actions.
