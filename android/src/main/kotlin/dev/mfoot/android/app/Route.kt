@@ -51,7 +51,7 @@ sealed interface Route {
             is Regolamento -> sezione.label
             Competizioni -> "Competizioni"
             Mercati -> "Mercati"
-            Scambi -> "Scambi"
+            Scambi -> "Trattative"
             Aste -> "Aste"
             Svincolati -> "Svincolati"
             Listone -> "Listone"

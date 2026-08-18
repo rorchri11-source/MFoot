@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.TradeDraft
 import dev.mfoot.android.app.TradesState
+import dev.mfoot.android.data.TradeKind
 import dev.mfoot.android.data.TradeRow
 import dev.mfoot.android.ui.Chip
 import dev.mfoot.android.ui.GhostButton
@@ -42,6 +43,9 @@ import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.core.model.Money
 import dev.mfoot.core.model.Player
+import java.time.format.DateTimeFormatter
+
+private val QUANDO_AMICHEVOLE = DateTimeFormatter.ofPattern("EEE d MMM, HH:mm")
 
 /**
  * Gli scambi fra squadre.
@@ -98,7 +102,7 @@ fun ScambiScreen(
                 Spacer(Modifier.height(MFootSpacing.related))
             }
 
-            Label("Proponi uno scambio a")
+            Label("Proponi a")
             Spacer(Modifier.height(9.dp))
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
@@ -149,7 +153,8 @@ fun ScambiScreen(
         if (scambi.trades.isEmpty() && scambi.letto) {
             Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                 Text(
-                    "Nessuno scambio. Tocca una squadra qui sopra per proporne uno.",
+                    "Nessuna trattativa aperta. Tocca una squadra qui sopra per " +
+                        "proporle uno scambio, un prestito o un'amichevole.",
                     style = MFootType.secondary,
                     color = MFootColors.ink3,
                     textAlign = TextAlign.Center,
@@ -195,18 +200,72 @@ private fun Sezione(
                 Text(trade.status.label, style = MFootType.chip, color = coloreStato(trade))
             }
 
-            Spacer(Modifier.height(9.dp))
+            Spacer(Modifier.height(7.dp))
+            Text(
+                trade.kind.label.uppercase(),
+                style = MFootType.label,
+                color = when (trade.kind) {
+                    TradeKind.SCAMBIO -> MFootColors.ink3
+                    TradeKind.PRESTITO -> MFootColors.gamble
+                    TradeKind.AMICHEVOLE -> MFootColors.good
+                },
+            )
 
-            // Chi da' cosa, dal punto di vista di chi guarda. "Ricevi / Dai" e non
-            // "offerti / chiesti": chi legge vuole sapere cosa entra e cosa esce da casa
-            // sua, non da quale lato della proposta stava scritto.
-            val ricevo = if (trade.isIncoming(myClubId)) trade.offered else trade.wanted
-            val do_ = if (trade.isIncoming(myClubId)) trade.wanted else trade.offered
-            val soldi = if (trade.isIncoming(myClubId)) trade.cash else -trade.cash
+            Spacer(Modifier.height(7.dp))
 
-            Colonna("Ricevi", ricevo, soldi.takeIf { it > 0 }, state, MFootColors.elite)
-            Spacer(Modifier.height(6.dp))
-            Colonna("Dai", do_, (-soldi).takeIf { it > 0 }, state, MFootColors.gamble)
+            when (trade.kind) {
+                TradeKind.SCAMBIO -> {
+                    // Chi da' cosa, dal punto di vista di chi guarda. "Ricevi / Dai" e non
+                    // "offerti / chiesti": chi legge vuole sapere cosa entra e cosa esce da
+                    // casa sua, non da quale lato della proposta stava scritto.
+                    val ricevo = if (trade.isIncoming(myClubId)) trade.offered else trade.wanted
+                    val do_ = if (trade.isIncoming(myClubId)) trade.wanted else trade.offered
+                    val soldi = if (trade.isIncoming(myClubId)) trade.cash else -trade.cash
+
+                    Colonna("Ricevi", ricevo, soldi.takeIf { it > 0 }, state, MFootColors.elite)
+                    Spacer(Modifier.height(6.dp))
+                    Colonna("Dai", do_, (-soldi).takeIf { it > 0 }, state, MFootColors.gamble)
+                }
+
+                TradeKind.PRESTITO -> {
+                    val chi = trade.loanedPlayer
+                    Colonna(
+                        if (trade.isIncoming(myClubId)) "Prendi" else "Presti",
+                        listOfNotNull(chi),
+                        null,
+                        state,
+                        if (trade.isIncoming(myClubId)) MFootColors.elite else MFootColors.gamble,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        buildString {
+                            append("${trade.terms.matchDays} giornate")
+                            if (trade.terms.fee > 0) {
+                                append(" · ${Money(trade.terms.fee).formatShort()} a giornata")
+                            }
+                            append(
+                                if (trade.terms.wagePaidByBorrower) {
+                                    " · ingaggio a chi lo prende"
+                                } else {
+                                    " · ingaggio a chi lo presta"
+                                },
+                            )
+                            if (trade.terms.canPlayAgainstOwner) append(" · puo' giocare contro")
+                        },
+                        style = MFootType.chip,
+                        color = MFootColors.ink3,
+                    )
+                }
+
+                TradeKind.AMICHEVOLE -> Text(
+                    trade.terms.kickoff
+                        ?.atZone(state.lega.league.config.calendar.timeZone)
+                        ?.format(QUANDO_AMICHEVOLE)
+                        ?: "orario non indicato",
+                    style = MFootType.chip,
+                    color = MFootColors.ink2,
+                )
+            }
 
             if (trade.message.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
@@ -315,42 +374,66 @@ private fun Composizione(
                 Notice(it, MFootColors.gamble)
             }
 
+            // Il tipo si sceglie qui e non prima: il gesto iniziale — toccare una squadra —
+            // e' lo stesso per tutte e tre, e chiedere "che cosa vuoi proporre" prima di
+            // sapere a chi obbligherebbe a tornare indietro per cambiare idea.
             Spacer(Modifier.height(MFootSpacing.section))
-            Label("Chiedi a lui · ${bozza.wanted.size}")
+            Label("Che cosa gli proponi")
             Spacer(Modifier.height(8.dp))
-            Scelta(suaRosa, bozza.wanted) { id ->
-                onEdit(bozza.copy(wanted = bozza.wanted.toggle(id)))
-            }
-
-            Spacer(Modifier.height(MFootSpacing.section))
-            Label("Offri tu · ${bozza.offered.size}")
-            Spacer(Modifier.height(8.dp))
-            Scelta(miaRosa, bozza.offered) { id ->
-                onEdit(bozza.copy(offered = bozza.offered.toggle(id)))
-            }
-
-            Spacer(Modifier.height(MFootSpacing.section))
-            Label("Conguaglio")
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (bozza.cash >= 0) {
-                    "Aggiungi ${Money(bozza.cash).format()} ai giocatori che offri."
-                } else {
-                    "Gli chiedi ${Money(-bozza.cash).format()} oltre ai giocatori."
-                },
-                style = MFootType.chip,
-                color = MFootColors.ink3,
-            )
-            Spacer(Modifier.height(9.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                MoneyField(kotlin.math.abs(bozza.cash), true) { valore ->
-                    val segno = if (bozza.cash < 0) -1 else 1
-                    onEdit(bozza.copy(cash = valore * segno))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TradeKind.entries.forEach { tipo ->
+                    Chip(tipo.label, bozza.kind == tipo) { onEdit(bozza.copy(kind = tipo)) }
                 }
-                Spacer(Modifier.width(MFootSpacing.related))
-                Chip("Metto io", bozza.cash >= 0) { onEdit(bozza.copy(cash = kotlin.math.abs(bozza.cash))) }
-                Spacer(Modifier.width(6.dp))
-                Chip("Chiedo io", bozza.cash < 0) { onEdit(bozza.copy(cash = -kotlin.math.abs(bozza.cash))) }
+            }
+
+            when (bozza.kind) {
+                TradeKind.SCAMBIO -> {
+                    Spacer(Modifier.height(MFootSpacing.section))
+                    Label("Chiedi a lui · ${bozza.wanted.size}")
+                    Spacer(Modifier.height(8.dp))
+                    Scelta(suaRosa, bozza.wanted) { id ->
+                        onEdit(bozza.copy(wanted = bozza.wanted.toggle(id)))
+                    }
+
+                    Spacer(Modifier.height(MFootSpacing.section))
+                    Label("Offri tu · ${bozza.offered.size}")
+                    Spacer(Modifier.height(8.dp))
+                    Scelta(miaRosa, bozza.offered) { id ->
+                        onEdit(bozza.copy(offered = bozza.offered.toggle(id)))
+                    }
+
+                    Spacer(Modifier.height(MFootSpacing.section))
+                    Label("Conguaglio")
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (bozza.cash >= 0) {
+                            "Aggiungi ${Money(bozza.cash).format()} ai giocatori che offri."
+                        } else {
+                            "Gli chiedi ${Money(-bozza.cash).format()} oltre ai giocatori."
+                        },
+                        style = MFootType.chip,
+                        color = MFootColors.ink3,
+                    )
+                    Spacer(Modifier.height(9.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MoneyField(kotlin.math.abs(bozza.cash), true) { valore ->
+                            val segno = if (bozza.cash < 0) -1 else 1
+                            onEdit(bozza.copy(cash = valore * segno))
+                        }
+                        Spacer(Modifier.width(MFootSpacing.related))
+                        Chip("Metto io", bozza.cash >= 0) {
+                            onEdit(bozza.copy(cash = kotlin.math.abs(bozza.cash)))
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Chip("Chiedo io", bozza.cash < 0) {
+                            onEdit(bozza.copy(cash = -kotlin.math.abs(bozza.cash)))
+                        }
+                    }
+                }
+
+                TradeKind.PRESTITO -> Prestito(miaRosa, bozza, onEdit)
+
+                TradeKind.AMICHEVOLE -> Amichevole(bozza, onEdit)
             }
 
             Spacer(Modifier.height(30.dp))
@@ -367,6 +450,105 @@ private fun Composizione(
                     modifier = Modifier.weight(1f),
                     enabled = !bozza.isEmpty && scambi.busy == null,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Il modulo del prestito.
+ *
+ * ## Perche' un giocatore solo
+ *
+ * Perche' un prestito ha una scadenza, e due giocatori con una scadenza sola sono due
+ * prestiti travestiti da uno: se nel frattempo uno dei due viene girato altrove, alla
+ * scadenza il gioco dovrebbe far tornare indietro qualcosa che non c'e' piu'. Sceglierne
+ * uno per volta costa un giro in piu' e toglie una classe intera di stati assurdi.
+ */
+@Composable
+private fun Prestito(miaRosa: List<Player>, bozza: TradeDraft, onEdit: (TradeDraft) -> Unit) {
+    Spacer(Modifier.height(MFootSpacing.section))
+    Label("Chi gli presti")
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Uno solo. Resta tuo e torna alla scadenza.",
+        style = MFootType.chip,
+        color = MFootColors.ink3,
+    )
+    Spacer(Modifier.height(8.dp))
+    Scelta(miaRosa, bozza.offered) { id ->
+        // Sceglierne un altro sostituisce il precedente invece di aggiungerlo: e' la
+        // regola del prestito, e farla rispettare qui evita di doverla spiegare con un
+        // errore dopo aver premuto Manda.
+        onEdit(bozza.copy(offered = if (id in bozza.offered) emptySet() else setOf(id)))
+    }
+
+    Spacer(Modifier.height(MFootSpacing.section))
+    Label("Per quanto")
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(5, 10, 20, 40).forEach { giornate ->
+            Chip("$giornate giornate", bozza.loanMatchDays == giornate) {
+                onEdit(bozza.copy(loanMatchDays = giornate))
+            }
+        }
+    }
+
+    Spacer(Modifier.height(MFootSpacing.section))
+    Label("Quanto ti paga per giornata")
+    Spacer(Modifier.height(8.dp))
+    MoneyField(bozza.loanFee, true) { onEdit(bozza.copy(loanFee = it)) }
+
+    Spacer(Modifier.height(MFootSpacing.section))
+    Label("Condizioni")
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Chip("Ingaggio a suo carico", bozza.wagePaidByBorrower) {
+            onEdit(bozza.copy(wagePaidByBorrower = !bozza.wagePaidByBorrower))
+        }
+        Chip("Puo' giocare contro di te", bozza.canPlayAgainstOwner) {
+            onEdit(bozza.copy(canPlayAgainstOwner = !bozza.canPlayAgainstOwner))
+        }
+    }
+}
+
+/**
+ * Il modulo dell'amichevole.
+ *
+ * ## Perche' si sceglie fra pochi orari e non con un calendario
+ *
+ * Perche' un selettore di data e ora completo, su questa schermata, servirebbe a fissare
+ * partite fra tre mesi che nessuno giochera'. Un'amichevole si combina per stasera o per
+ * domani: sono sei tocchi contro venti.
+ */
+@Composable
+private fun Amichevole(bozza: TradeDraft, onEdit: (TradeDraft) -> Unit) {
+    val oggi = java.time.LocalDate.now()
+
+    Spacer(Modifier.height(MFootSpacing.section))
+    Label("Quando")
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Ora della lega. Se una delle due squadre gioca gia' in quella fascia, la " +
+            "proposta viene rifiutata.",
+        style = MFootType.chip,
+        color = MFootColors.ink3,
+    )
+    Spacer(Modifier.height(9.dp))
+
+    listOf(0L to "Oggi", 1L to "Domani", 2L to "Dopodomani").forEach { (giorni, etichetta) ->
+        Row(Modifier.padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                etichetta,
+                style = MFootType.label,
+                color = MFootColors.ink3,
+                modifier = Modifier.width(84.dp).padding(top = 8.dp),
+            )
+            listOf(15, 18, 21).forEach { ora ->
+                val quando = oggi.plusDays(giorni).atTime(ora, 0)
+                Chip("$ora:00", bozza.friendlyAt == quando) {
+                    onEdit(bozza.copy(friendlyAt = quando))
+                }
             }
         }
     }

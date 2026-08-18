@@ -16,6 +16,8 @@ import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
 import dev.mfoot.android.data.PlayerRepository
 import dev.mfoot.android.data.PromiseRepository
+import dev.mfoot.android.data.DealRepository
+import dev.mfoot.android.data.TradeKind
 import dev.mfoot.android.data.TradeRepository
 import dev.mfoot.android.data.SavedLineup
 import dev.mfoot.android.data.Session
@@ -1338,14 +1340,37 @@ class AppViewModel : ViewModel() {
         viewModelScope.launch {
             _trades.value = _trades.value.copy(busy = "Mando la proposta…", errore = null)
 
-            val esito = TradeRepository.propose(
-                fromClub = mio.id,
-                toClub = bozza.withClub,
-                offered = bozza.offered.toList(),
-                wanted = bozza.wanted.toList(),
-                cash = bozza.cash,
-                message = bozza.message,
-            )
+            val esito = when (bozza.kind) {
+                TradeKind.SCAMBIO -> TradeRepository.propose(
+                    fromClub = mio.id,
+                    toClub = bozza.withClub,
+                    offered = bozza.offered.toList(),
+                    wanted = bozza.wanted.toList(),
+                    cash = bozza.cash,
+                    message = bozza.message,
+                )
+
+                TradeKind.PRESTITO -> DealRepository.proposeLoan(
+                    fromClub = mio.id,
+                    toClub = bozza.withClub,
+                    playerId = bozza.offered.first(),
+                    matchDays = bozza.loanMatchDays,
+                    fee = bozza.loanFee,
+                    wagePaidByBorrower = bozza.wagePaidByBorrower,
+                    canPlayAgainstOwner = bozza.canPlayAgainstOwner,
+                    message = bozza.message,
+                )
+
+                TradeKind.AMICHEVOLE -> DealRepository.proposeFriendly(
+                    fromClub = mio.id,
+                    toClub = bozza.withClub,
+                    // L'ora scelta e' ora di lega: qui diventa il momento vero, che e'
+                    // l'unica cosa che il database deve conoscere.
+                    kickoff = bozza.friendlyAt!!
+                        .atZone(dentro.lega.league.config.calendar.timeZone).toInstant(),
+                    message = bozza.message,
+                )
+            }
 
             _trades.value = when (esito) {
                 is ApiResult.Error -> _trades.value.copy(busy = null, errore = esito.message)
@@ -1363,12 +1388,23 @@ class AppViewModel : ViewModel() {
      * significherebbe mostrare una squadra che non esiste piu'.
      */
     fun rispondiScambio(tradeId: Long, accetta: Boolean) {
+        // Il tipo decide quale funzione risponde. `respond_trade` sposta giocatori e denaro
+        // in una transazione ed e' la piu' delicata del sistema: prestiti e amichevoli
+        // hanno una funzione loro invece di aggiungerle due rami dentro.
+        val tipo = _trades.value.trades.firstOrNull { it.id == tradeId }?.kind ?: TradeKind.SCAMBIO
+
         viewModelScope.launch {
             _trades.value = _trades.value.copy(
                 busy = if (accetta) "Accetto…" else "Rifiuto…", errore = null,
             )
 
-            when (val esito = TradeRepository.respond(tradeId, accetta)) {
+            val risposta = if (tipo == TradeKind.SCAMBIO) {
+                TradeRepository.respond(tradeId, accetta)
+            } else {
+                DealRepository.respond(tradeId, accetta)
+            }
+
+            when (val esito = risposta) {
                 is ApiResult.Error ->
                     _trades.value = _trades.value.copy(busy = null, errore = esito.message)
 

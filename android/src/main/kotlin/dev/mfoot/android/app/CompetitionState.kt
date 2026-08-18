@@ -238,8 +238,35 @@ data class TradeDraft(
     val wanted: Set<Long> = emptySet(),
     val cash: Int = 0,
     val message: String = "",
+
+    /**
+     * Che trattativa e'.
+     *
+     * Le tre convivono nella stessa bozza invece che in tre schermate perche' il gesto
+     * iniziale e' lo stesso — scegli una squadra, poi decidi cosa proporle — e separarle
+     * costringerebbe a tornare indietro per accorgersi di aver aperto quella sbagliata.
+     */
+    val kind: dev.mfoot.android.data.TradeKind = dev.mfoot.android.data.TradeKind.SCAMBIO,
+
+    /** Prestito: durata in giornate, e quanto paga per giornata chi lo prende. */
+    val loanMatchDays: Int = 10,
+    val loanFee: Int = 0,
+    val wagePaidByBorrower: Boolean = true,
+    val canPlayAgainstOwner: Boolean = false,
+
+    /** Amichevole: quando, in ora di lega. */
+    val friendlyAt: java.time.LocalDateTime? = null,
 ) {
-    val isEmpty: Boolean get() = offered.isEmpty() && wanted.isEmpty() && cash == 0
+    val isEmpty: Boolean
+        get() = when (kind) {
+            dev.mfoot.android.data.TradeKind.SCAMBIO ->
+                offered.isEmpty() && wanted.isEmpty() && cash == 0
+            // Un prestito ha senso solo con **un** giocatore: due giocatori con una durata
+            // sola sarebbero due prestiti travestiti da uno, e alla scadenza tornerebbero
+            // insieme anche se nel frattempo uno dei due e' stato girato altrove.
+            dev.mfoot.android.data.TradeKind.PRESTITO -> offered.size != 1
+            dev.mfoot.android.data.TradeKind.AMICHEVOLE -> friendlyAt == null
+        }
 }
 
 /**
