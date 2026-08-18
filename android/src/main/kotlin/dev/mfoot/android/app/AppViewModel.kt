@@ -11,6 +11,7 @@ import dev.mfoot.android.data.LeagueDeskRepository
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.data.LineupRepository
+import dev.mfoot.android.data.TradeRepository
 import dev.mfoot.android.data.SavedLineup
 import dev.mfoot.android.data.Session
 import dev.mfoot.android.data.Supabase
@@ -772,6 +773,112 @@ class AppViewModel : ViewModel() {
                     _desk.value = _desk.value.copy(tick = esito.value, tickLetto = true, errore = null)
             }
         }
+    }
+
+    // ------------------------------------------------------------------------ scambi
+
+    private val _trades = MutableStateFlow(TradesState())
+    val trades: StateFlow<TradesState> = _trades
+
+    fun caricaScambi(forza: Boolean = false) {
+        val dentro = statoCorrente() ?: return
+        if (_trades.value.letto && !forza) return
+
+        viewModelScope.launch {
+            when (val esito = TradeRepository.list(dentro.lega.league.id)) {
+                is ApiResult.Error ->
+                    _trades.value = _trades.value.copy(letto = true, errore = esito.message)
+                is ApiResult.Ok ->
+                    _trades.value = _trades.value.copy(
+                        trades = esito.value, letto = true, errore = null,
+                    )
+            }
+        }
+    }
+
+    fun nuovoScambio(withClub: Long) {
+        _trades.value = _trades.value.copy(
+            bozza = TradeDraft(withClub = withClub), avviso = null, errore = null,
+        )
+    }
+
+    fun modificaScambio(bozza: TradeDraft) {
+        _trades.value = _trades.value.copy(bozza = bozza, errore = null)
+    }
+
+    fun annullaScambio() {
+        _trades.value = _trades.value.copy(bozza = null, errore = null)
+    }
+
+    fun inviaScambio() {
+        val dentro = statoCorrente() ?: return
+        val mio = dentro.lega.myClub ?: return
+        val bozza = _trades.value.bozza ?: return
+        if (bozza.isEmpty) return
+
+        viewModelScope.launch {
+            _trades.value = _trades.value.copy(busy = "Mando la proposta…", errore = null)
+
+            val esito = TradeRepository.propose(
+                fromClub = mio.id,
+                toClub = bozza.withClub,
+                offered = bozza.offered.toList(),
+                wanted = bozza.wanted.toList(),
+                cash = bozza.cash,
+                message = bozza.message,
+            )
+
+            _trades.value = when (esito) {
+                is ApiResult.Error -> _trades.value.copy(busy = null, errore = esito.message)
+                is ApiResult.Ok -> _trades.value.copy(busy = null, bozza = null, avviso = "Proposta mandata.")
+            }
+            if (esito is ApiResult.Ok) caricaScambi(forza = true)
+        }
+    }
+
+    /**
+     * Accetta, rifiuta o ritira.
+     *
+     * Dopo un'accettazione si **ricarica la lega**, non solo l'elenco degli scambi: sono
+     * cambiate due rose e due conti in banca, e lasciare a schermo i numeri di prima
+     * significherebbe mostrare una squadra che non esiste piu'.
+     */
+    fun rispondiScambio(tradeId: Long, accetta: Boolean) {
+        viewModelScope.launch {
+            _trades.value = _trades.value.copy(
+                busy = if (accetta) "Accetto…" else "Rifiuto…", errore = null,
+            )
+
+            when (val esito = TradeRepository.respond(tradeId, accetta)) {
+                is ApiResult.Error ->
+                    _trades.value = _trades.value.copy(busy = null, errore = esito.message)
+
+                is ApiResult.Ok -> {
+                    _trades.value = _trades.value.copy(
+                        busy = null,
+                        avviso = if (accetta) "Scambio fatto." else "Proposta rifiutata.",
+                    )
+                    caricaScambi(forza = true)
+                    if (accetta) Session.leagueId?.let { carica(it, avviso = "Scambio fatto.") }
+                }
+            }
+        }
+    }
+
+    fun ritiraScambio(tradeId: Long) {
+        viewModelScope.launch {
+            when (val esito = TradeRepository.withdraw(tradeId)) {
+                is ApiResult.Error -> _trades.value = _trades.value.copy(errore = esito.message)
+                is ApiResult.Ok -> {
+                    _trades.value = _trades.value.copy(avviso = "Proposta ritirata.")
+                    caricaScambi(forza = true)
+                }
+            }
+        }
+    }
+
+    fun chiudiAvvisoScambi() {
+        _trades.value = _trades.value.copy(avviso = null, errore = null)
     }
 
     // -------------------------------------------------------------------- formazione

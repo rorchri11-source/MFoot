@@ -188,3 +188,45 @@ data class DeskState(
     val tickLetto: Boolean = false,
     val errore: String? = null,
 )
+
+/**
+ * Gli scambi: quelli ricevuti, quelli mandati, e quello che si sta componendo.
+ *
+ * [bozza] non nullo e' la differenza fra "guardo le proposte" e "ne sto scrivendo una", ed
+ * e' anche cio' che decide se la schermata mostra un elenco o un modulo.
+ */
+data class TradesState(
+    val trades: List<dev.mfoot.android.data.TradeRow> = emptyList(),
+    val letto: Boolean = false,
+    val bozza: TradeDraft? = null,
+    val busy: String? = null,
+    val avviso: String? = null,
+    val errore: String? = null,
+) {
+    fun ricevute(myClubId: Long?) = trades.filter { it.isIncoming(myClubId) && it.isPending }
+    fun mandate(myClubId: Long?) = trades.filter { !it.isIncoming(myClubId) && it.isPending }
+    fun concluse() = trades.filterNot { it.isPending }
+}
+
+/**
+ * La proposta che si sta scrivendo.
+ *
+ * ## Perche' il denaro e' un numero con un segno
+ *
+ * Positivo: ci metto dei soldi sopra. Negativo: ne chiedo. Con due campi — "offro" e
+ * "chiedo" — si potrebbero riempire tutti e due, e una proposta che offre venti milioni e
+ * ne chiede trenta non vuol dire niente. E' lo stesso ragionamento del modello in `core`, e
+ * vale la pena ripeterlo qui perche' e' l'unico punto in cui qualcuno potrebbe pensare di
+ * "migliorare" l'interfaccia con due caselle.
+ */
+data class TradeDraft(
+    val withClub: Long,
+    /** Miei, che cedo. */
+    val offered: Set<Long> = emptySet(),
+    /** Suoi, che chiedo. */
+    val wanted: Set<Long> = emptySet(),
+    val cash: Int = 0,
+    val message: String = "",
+) {
+    val isEmpty: Boolean get() = offered.isEmpty() && wanted.isEmpty() && cash == 0
+}

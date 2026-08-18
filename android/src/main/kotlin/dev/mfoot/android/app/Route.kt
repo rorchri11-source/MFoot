@@ -51,6 +51,7 @@ sealed interface Route {
             is Regolamento -> sezione.label
             Competizioni -> "Competizioni"
             Mercati -> "Mercati"
+            Scambi -> "Scambi"
             Aste -> "Aste"
             Svincolati -> "Svincolati"
             Listone -> "Listone"
@@ -113,6 +114,9 @@ sealed interface Route {
     // ---------------------------------------------------------------------------- gioca
 
     data object Aste : Route
+
+    /** Le proposte di scambio: le propone chiunque abbia un club, non solo l.admin. */
+    data object Scambi : Route
     data object Svincolati : Route
     data object Listone : Route
     data object Infermeria : Route

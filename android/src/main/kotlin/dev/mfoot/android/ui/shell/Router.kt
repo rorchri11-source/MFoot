@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AuctionRow
 import dev.mfoot.android.app.DeskState
+import dev.mfoot.android.app.TradeDraft
+import dev.mfoot.android.app.TradesState
 import dev.mfoot.android.app.LineupEdit
 import dev.mfoot.android.app.ListScope
 import dev.mfoot.android.app.PlayerRow
@@ -34,6 +36,7 @@ import dev.mfoot.android.ui.screens.MercatiScreen
 import dev.mfoot.android.ui.screens.PartecipantiScreen
 import dev.mfoot.android.ui.screens.ProfiloLegaScreen
 import dev.mfoot.android.ui.screens.RegistroScreen
+import dev.mfoot.android.ui.screens.ScambiScreen
 import dev.mfoot.android.ui.screens.RosaScreen
 import dev.mfoot.android.ui.screens.SquadreScreen
 import dev.mfoot.android.ui.theme.MFootColors
@@ -65,6 +68,15 @@ fun Router(
     desk: DeskState,
     onLoadMembers: () -> Unit,
     onLoadTick: () -> Unit,
+    scambi: TradesState,
+    onLoadTrades: () -> Unit,
+    onNewTrade: (Long) -> Unit,
+    onEditTrade: (TradeDraft) -> Unit,
+    onSendTrade: () -> Unit,
+    onCancelTrade: () -> Unit,
+    onRespondTrade: (Long, Boolean) -> Unit,
+    onWithdrawTrade: (Long) -> Unit,
+    onDismissTradeNotice: () -> Unit,
     lineup: LineupEdit,
     onLineupChange: (LineupEdit) -> Unit,
     onLineupSave: () -> Unit,
@@ -116,6 +128,21 @@ fun Router(
             onChange = onConfigChange,
             onSave = onConfigSave,
         )
+        is Route.Scambi -> {
+            LaunchedEffect(state.lega.league.id) { onLoadTrades() }
+            ScambiScreen(
+                state = state,
+                scambi = scambi,
+                onNuovo = onNewTrade,
+                onEdit = onEditTrade,
+                onInvia = onSendTrade,
+                onAnnulla = onCancelTrade,
+                onRispondi = onRespondTrade,
+                onRitira = onWithdrawTrade,
+                onChiudiAvviso = onDismissTradeNotice,
+            )
+        }
+
         is Route.Mercati -> MercatiScreen(state)
         is Route.RegistroAdmin -> {
             LaunchedEffect(state.lega.league.id) { onLoadTick() }

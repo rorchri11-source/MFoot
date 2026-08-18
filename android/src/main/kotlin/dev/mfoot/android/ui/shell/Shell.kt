@@ -262,6 +262,7 @@ private fun Drawer(
 
         Section("Gioca")
         Item("Aste", Route.Aste, route, onNavigate)
+        Item("Scambi", Route.Scambi, route, onNavigate)
         Item("Svincolati", Route.Svincolati, route, onNavigate)
         Item("Listone", Route.Listone, route, onNavigate)
         Item("Infermeria", Route.Infermeria, route, onNavigate)

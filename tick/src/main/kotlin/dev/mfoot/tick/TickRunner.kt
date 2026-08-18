@@ -22,8 +22,11 @@ import dev.mfoot.core.market.AuctionRules
 import dev.mfoot.core.market.AuctionTarget
 import dev.mfoot.core.market.Bid
 import dev.mfoot.core.market.Negotiation
+import dev.mfoot.core.market.Valuation
 import dev.mfoot.core.market.OfferStatus
 import dev.mfoot.core.market.OfferTerms
+import dev.mfoot.core.market.TradeEvaluator
+import dev.mfoot.core.market.TradeOffer
 import dev.mfoot.core.match.AutoLineup
 import dev.mfoot.core.match.Formation
 import dev.mfoot.core.match.Lineup
@@ -220,9 +223,159 @@ class TickRunner(
                 daScrivere.entries.joinToString(", ") { "${it.key} x${it.value}" }
         }
 
+        // Le proposte di scambio si guardano a ogni giro, non al risveglio dell'AI.
+        //
+        // Il risveglio scaglionato serve a impedire lo sciame sul mercato: e' una difesa
+        // contro venti club che si buttano sullo stesso giocatore. Una proposta di scambio
+        // e' l'opposto — arriva **da una persona, a un club solo** — e farla aspettare fino
+        // a domani mattina perche' quel club dorme non protegge nessuno: fa solo credere
+        // che l'avversario ti stia ignorando.
+        notes += rispondiAgliScambi(league)
+
         saveTickState(league.id, plan.processedUpTo, notes.joinToString(" | "), settled)
 
         return LeagueSummary(league.id, league.name, plan.effects.size, applied, pending, notes)
+    }
+
+    // ------------------------------------------------------------------------- scambi
+
+    /**
+     * Le AI rispondono alle proposte ricevute.
+     *
+     * Il verdetto lo da' [TradeEvaluator], che sta in `core` ed e' testato: qui c'e' solo il
+     * trasporto — leggere la proposta, chiedere, scrivere l'esito. Se la decisione vivesse
+     * qui, il regolamento degli scambi sarebbe verificabile solo con un database davanti.
+     */
+    private fun rispondiAgliScambi(league: LeagueRow): List<String> {
+        val note = mutableListOf<String>()
+
+        for (trade in loadPendingTrades(league.id)) {
+            val stato = loadAiState(trade.to) ?: continue
+            val club = loadClub(trade.to) ?: continue
+            val squad = loadSquad(league.id, trade.to)
+
+            // I giocatori offerti stanno nella rosa dell'altro club: il valutatore vede solo
+            // la propria, quindi glieli si porta gia' valutati.
+            val offerti = loadSquad(league.id, trade.from).filter { it.id in trade.offer.offered }
+            val valori = offerti.associate { it.id to Valuation.marketValue(it, league.config) }
+
+            val risposta = TradeEvaluator.evaluate(
+                offer = trade.offer,
+                personality = stato.personality,
+                squad = squad,
+                availableCredits = club.availableCredits,
+                config = league.config,
+                offeredValues = valori,
+            )
+
+            if (risposta.accepted) {
+                applicaScambio(trade, risposta.reason)
+                note += "${club.name} accetta uno scambio."
+            } else {
+                chiudiScambio(trade.id, "RIFIUTATA", risposta.reason)
+                note += "${club.name} rifiuta: ${risposta.verdict.label}."
+            }
+        }
+        return note
+    }
+
+    private data class PendingTrade(
+        val id: Long,
+        val from: ClubId,
+        val to: ClubId,
+        val offer: TradeOffer,
+    )
+
+    private fun loadPendingTrades(leagueId: Long): List<PendingTrade> {
+        val out = mutableListOf<PendingTrade>()
+        connection.prepareStatement(
+            """
+            select t.id, t.from_club, t.to_club, t.offered, t.wanted, t.cash
+            from trades t
+            join clubs c on c.id = t.to_club
+            where t.league_id = ? and t.status = 'PROPOSTA' and c.is_ai
+            order by t.created_at
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val from = ClubId(rs.getLong("from_club"))
+                    val to = ClubId(rs.getLong("to_club"))
+                    out += PendingTrade(
+                        id = rs.getLong("id"),
+                        from = from,
+                        to = to,
+                        offer = TradeOffer(
+                            id = rs.getLong("id"),
+                            from = from,
+                            to = to,
+                            offered = ids(rs.getArray("offered")),
+                            wanted = ids(rs.getArray("wanted")),
+                            cash = rs.getInt("cash"),
+                        ),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    private fun ids(array: java.sql.Array?): List<PlayerId> =
+        (array?.array as? Array<*>)?.mapNotNull { (it as? Number)?.let { n -> PlayerId(n.toLong()) } }
+            ?: emptyList()
+
+    /**
+     * Sposta giocatori e denaro, e chiude la proposta.
+     *
+     * Tutto nella stessa transazione del giro: o lo scambio avviene intero o non avviene.
+     * A meta' lascerebbe un club senza il giocatore e senza i soldi, e nessuno potrebbe
+     * accorgersene guardando il risultato.
+     */
+    private fun applicaScambio(trade: PendingTrade, motivo: String) {
+        trade.offer.offered.forEach { spostaContratto(it, trade.from, trade.to) }
+        trade.offer.wanted.forEach { spostaContratto(it, trade.to, trade.from) }
+
+        if (trade.offer.cash != 0) {
+            connection.prepareStatement(
+                "update clubs set credits = credits - ? where id = ?",
+            ).use { st ->
+                st.setInt(1, trade.offer.cash)
+                st.setLong(2, trade.from.value)
+                st.executeUpdate()
+            }
+            connection.prepareStatement(
+                "update clubs set credits = credits + ? where id = ?",
+            ).use { st ->
+                st.setInt(1, trade.offer.cash)
+                st.setLong(2, trade.to.value)
+                st.executeUpdate()
+            }
+        }
+
+        chiudiScambio(trade.id, "ACCETTATA", motivo)
+    }
+
+    private fun spostaContratto(player: PlayerId, da: ClubId, a: ClubId) {
+        connection.prepareStatement(
+            "update contracts set club_id = ? where player_id = ? and club_id = ?",
+        ).use { st ->
+            st.setLong(1, a.value)
+            st.setLong(2, player.value)
+            st.setLong(3, da.value)
+            st.executeUpdate()
+        }
+    }
+
+    private fun chiudiScambio(id: Long, stato: String, motivo: String) {
+        connection.prepareStatement(
+            "update trades set status = ?, answer = ?, answered_at = now() where id = ?",
+        ).use { st ->
+            st.setString(1, stato)
+            st.setString(2, motivo)
+            st.setLong(3, id)
+            st.executeUpdate()
+        }
     }
 
     // -------------------------------------------------------------- chiusura asta

@@ -72,6 +72,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val settings by viewModel.configEdit.collectAsStateWithLifecycle()
     val lineup by viewModel.lineupEdit.collectAsStateWithLifecycle()
     val desk by viewModel.desk.collectAsStateWithLifecycle()
+    val scambi by viewModel.trades.collectAsStateWithLifecycle()
 
     Box(
         Modifier
@@ -160,6 +161,15 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         desk = desk,
                         onLoadMembers = viewModel::caricaPartecipanti,
                         onLoadTick = viewModel::caricaRegistro,
+                        scambi = scambi,
+                        onLoadTrades = { viewModel.caricaScambi() },
+                        onNewTrade = viewModel::nuovoScambio,
+                        onEditTrade = viewModel::modificaScambio,
+                        onSendTrade = viewModel::inviaScambio,
+                        onCancelTrade = viewModel::annullaScambio,
+                        onRespondTrade = viewModel::rispondiScambio,
+                        onWithdrawTrade = viewModel::ritiraScambio,
+                        onDismissTradeNotice = viewModel::chiudiAvvisoScambi,
                         lineup = lineup,
                         onLineupChange = viewModel::modificaFormazione,
                         onLineupSave = viewModel::salvaFormazione,
