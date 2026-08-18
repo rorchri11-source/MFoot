@@ -115,7 +115,13 @@ class AppViewModel : ViewModel() {
      * non che il mondo sia arrivato tutto: leggere indietro quello che si e' scritto e'
      * l'unica conferma che valga qualcosa, e costa una richiesta.
      */
-    fun creaLega(nome: String, codice: String, nickname: String, presetId: String = "sprint") {
+    fun creaLega(
+        nome: String,
+        codice: String,
+        nickname: String,
+        presetId: String = "sprint",
+        scelte: SetupChoices? = null,
+    ) {
         if (nome.isBlank() || codice.isBlank() || nickname.isBlank()) {
             aggiornaPorta(errore = "Servono nome della lega, codice e il tuo nickname.")
             return
@@ -125,7 +131,10 @@ class AppViewModel : ViewModel() {
             aggiornaPorta(busy = "Genero il mondo…")
 
             val preset = ConfigPresets.byId(presetId) ?: ConfigPresets.all.first()
-            val config = preset.build(16, 8, LocalDate.now()).let {
+            val base = preset.build(16, 8, LocalDate.now())
+            // Le scelte fatte alla creazione vincono sul preset: il preset e' un punto di
+            // partenza, non un vincolo.
+            val config = (scelte?.applyTo(base) ?: base).let {
                 it.copy(
                     setup = it.setup.copy(
                         leagueName = nome.trim(),

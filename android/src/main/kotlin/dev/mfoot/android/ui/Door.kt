@@ -32,7 +32,12 @@ import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
+import dev.mfoot.android.app.SetupChoices
+import dev.mfoot.android.ui.settings.IntStepper
+import dev.mfoot.android.ui.settings.MoneyField
+import dev.mfoot.android.ui.settings.SettingRow
 import dev.mfoot.core.config.ConfigPresets
+import java.time.LocalDate
 
 /**
  * La porta d'ingresso.
@@ -50,7 +55,7 @@ import dev.mfoot.core.config.ConfigPresets
 fun DoorScreen(
     state: AppState.Porta,
     onMode: (DoorMode) -> Unit,
-    onCreate: (nome: String, codice: String, nickname: String, preset: String) -> Unit,
+    onCreate: (nome: String, codice: String, nickname: String, preset: String, scelte: SetupChoices) -> Unit,
     onJoin: (codice: String, nickname: String) -> Unit,
 ) {
     Column(
@@ -117,13 +122,20 @@ private fun Choice(onMode: (DoorMode) -> Unit) {
 @Composable
 private fun CreateForm(
     state: AppState.Porta,
-    onCreate: (String, String, String, String) -> Unit,
+    onCreate: (String, String, String, String, SetupChoices) -> Unit,
     onBack: () -> Unit,
 ) {
     var nome by rememberSaveable { mutableStateOf("") }
     var codice by rememberSaveable { mutableStateOf("") }
     var nickname by rememberSaveable { mutableStateOf("") }
     var preset by rememberSaveable { mutableStateOf(ConfigPresets.all.first().id) }
+
+    // Le scelte ripartono dal preset ogni volta che se ne cambia uno: e' il senso di un
+    // preset. Tenere i ritocchi attraverso il cambio darebbe una lega che non e' ne' quella
+    // scelta ne' quella impostata, e nessuno saprebbe piu' da dove vengono i suoi numeri.
+    var scelte by remember(preset) {
+        mutableStateOf(SetupChoices.from(ConfigPresets.byId(preset)!!.build(16, 8, LocalDate.now())))
+    }
     val pronto = nome.isNotBlank() && codice.isNotBlank() && nickname.isNotBlank()
 
     Column {
@@ -155,10 +167,13 @@ private fun CreateForm(
             Spacer(Modifier.height(8.dp))
         }
 
+        Spacer(Modifier.height(24.dp))
+        Impostazioni(scelte) { scelte = it }
+
         Spacer(Modifier.height(20.dp))
         PrimaryButton(
             text = "Genera il mondo e crea la lega",
-            onClick = { onCreate(nome, codice, nickname, preset) },
+            onClick = { onCreate(nome, codice, nickname, preset, scelte) },
             enabled = pronto && state.busy == null,
         )
     }
@@ -243,4 +258,74 @@ private fun PresetCard(preset: ConfigPresets.Preset, selected: Boolean, onClick:
         )
         Text(preset.description, style = MFootType.chip, color = MFootColors.ink3)
     }
+}
+
+/**
+ * Le poche impostazioni che vanno decise prima di generare il mondo.
+ *
+ * ## Perche' qui e non solo nel Regolamento
+ *
+ * Perche' dopo e' tardi. Il numero di club decide quante squadre nascono, il budget decide
+ * l'intero listino prezzi, le divisioni decidono la forma del campionato: cambiarli a lega
+ * avviata non rigenera niente, resta tutto com'era e cambia solo il numero scritto.
+ *
+ * Tutto il resto — infortuni, premi, crescita, stipendi — si tocca quando si vuole da
+ * Regolamento e opzioni, ed e' scritto qui sotto perche' nessuno debba chiederselo.
+ */
+@Composable
+private fun Impostazioni(scelte: SetupChoices, onChange: (SetupChoices) -> Unit) {
+    Label("Come e' fatta la lega")
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Queste vanno decise adesso: dopo la creazione il mondo e' gia' generato. " +
+            "Tutto il resto lo cambi quando vuoi da Regolamento e opzioni.",
+        style = MFootType.chip,
+        color = MFootColors.ink3,
+    )
+    Spacer(Modifier.height(MFootSpacing.related))
+
+    SettingRow(
+        "Squadre in tutto",
+        "Quante ne esistono nella lega, umane e non.",
+    ) { IntStepper(scelte.totalClubs, 2..40, true) { onChange(scelte.copy(totalClubs = it)) } }
+
+    SettingRow(
+        "Gestite dal computer",
+        "Le altre ${scelte.humanClubs} restano libere per te e i tuoi amici. " +
+            "Le AI comprano e giocano da sole, e non aspettano nessuno.",
+    ) {
+        IntStepper(scelte.aiClubs, 0..scelte.totalClubs, true) {
+            onChange(scelte.copy(aiClubs = it))
+        }
+    }
+
+    SettingRow(
+        "Budget iniziale",
+        "Da qui deriva tutto il listino: alzandolo salgono anche i prezzi, quindi non " +
+            "rende nessuno piu' ricco — cambia solo la scala dei numeri.",
+    ) { MoneyField(scelte.startingCredits, true) { onChange(scelte.copy(startingCredits = it)) } }
+
+    SettingRow(
+        "Minimo in rosa",
+        "Sotto questo numero una squadra non scende in campo e le sue partite si rinviano.",
+    ) { IntStepper(scelte.minSquadSize, 11..40, true) { onChange(scelte.copy(minSquadSize = it)) } }
+
+    SettingRow(
+        "Massimo in rosa",
+        "Il tetto agli acquisti, perche' chi ha budget non si prenda mezzo listino.",
+    ) {
+        IntStepper(scelte.maxSquadSize, scelte.minSquadSize..60, true) {
+            onChange(scelte.copy(maxSquadSize = it))
+        }
+    }
+
+    SettingRow(
+        "Divisioni",
+        if (scelte.divisions > 1) {
+            "${scelte.totalClubs / scelte.divisions} squadre per divisione, con promozioni e " +
+                "retrocessioni. Chi resta indietro ha comunque qualcosa da giocare."
+        } else {
+            "Una sola: girone unico, tutti contro tutti. Con tante squadre conviene spezzare."
+        },
+    ) { IntStepper(scelte.divisions, 1..6, true) { onChange(scelte.copy(divisions = it)) } }
 }

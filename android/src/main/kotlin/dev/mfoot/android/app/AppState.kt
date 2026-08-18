@@ -6,6 +6,7 @@ import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.ui.kit.Crest
 import dev.mfoot.android.ui.kit.Kit
 import dev.mfoot.core.config.CustomPlayerConfig
+import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.model.Attributes
 import dev.mfoot.core.model.Player
 import dev.mfoot.core.model.Reparto
@@ -87,6 +88,57 @@ data class BrowseState(
 
 /** Quale porta si sta usando per entrare. */
 enum class DoorMode { SCELTA, CREA, ENTRA }
+
+/**
+ * Le scelte che vanno fatte **prima** di generare il mondo.
+ *
+ * ## Perche' solo queste cinque, e non tutto il regolamento
+ *
+ * Il regolamento ha piu' di cento manopole. Chiederle tutte a chi sta creando la lega
+ * vorrebbe dire un modulo lungo tre schermate prima ancora di aver visto il gioco, e quasi
+ * tutte quelle manopole si possono cambiare dopo senza conseguenze: il tasso di infortunio,
+ * i premi, la velocita' di crescita.
+ *
+ * Queste cinque no. Il numero di club decide quanti ne genera il mondo; il budget decide
+ * l'intero listino prezzi; le divisioni decidono come e' fatto il campionato. Cambiarle a
+ * lega avviata non rigenera niente — restano le squadre e i prezzi di prima — quindi vanno
+ * chieste quando servono davvero, che e' adesso.
+ */
+data class SetupChoices(
+    val totalClubs: Int = 16,
+    val aiClubs: Int = 8,
+    val minSquadSize: Int = 18,
+    val maxSquadSize: Int = 30,
+    val startingCredits: Int = 100_000,
+    val divisions: Int = 1,
+) {
+    /** Gli umani che ci stanno: e' il numero che interessa a chi invita gli amici. */
+    val humanClubs: Int get() = totalClubs - aiClubs
+
+    companion object {
+        /** I valori del preset scelto, come punto di partenza da ritoccare. */
+        fun from(config: LeagueConfig) = SetupChoices(
+            totalClubs = config.setup.totalClubs,
+            aiClubs = config.setup.aiClubs,
+            minSquadSize = config.setup.minSquadSize,
+            maxSquadSize = config.setup.maxSquadSize,
+            startingCredits = config.economy.startingCredits,
+            divisions = config.divisions.count,
+        )
+    }
+
+    /** Le scelte applicate alla configurazione del preset. */
+    fun applyTo(config: LeagueConfig): LeagueConfig = config.copy(
+        setup = config.setup.copy(
+            totalClubs = totalClubs,
+            aiClubs = aiClubs.coerceIn(0, totalClubs),
+            minSquadSize = minSquadSize,
+            maxSquadSize = maxOf(maxSquadSize, minSquadSize),
+        ),
+        economy = config.economy.copy(startingCredits = startingCredits),
+        divisions = config.divisions.copy(count = divisions),
+    )
+}
 
 /** I due passi della fondazione: prima la squadra, poi il giocatore che sei tu. */
 enum class FoundingStep { CLUB, GIOCATORE }
