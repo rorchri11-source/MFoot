@@ -1,5 +1,6 @@
 package dev.mfoot.android.data
 
+import dev.mfoot.core.json.JsonNode
 import dev.mfoot.core.json.JsonWriter
 
 /**
@@ -36,5 +37,39 @@ object PlayerRepository {
                 "ancora stata applicata a questo database.",
         )
         else -> this
+    }
+}
+
+/**
+ * Le promesse fatte parlando.
+ *
+ * Sta accanto al morale perche' nasce dallo stesso gesto — un colloquio produce l'una e
+ * l'altra — ma e' una scrittura separata di proposito: il morale cambia sempre, la promessa
+ * solo per alcune risposte, e legarle vorrebbe dire che un fallimento nel salvare la
+ * promessa cancella anche la reazione del giocatore, che invece e' gia' avvenuta.
+ */
+object PromiseRepository {
+
+    suspend fun make(
+        playerId: Long,
+        type: String,
+        madeOn: Int,
+        deadline: Int,
+        target: Int,
+    ): ApiResult<Unit> {
+        val w = JsonWriter(256)
+        w.beginObject()
+        w.field("p_player_id", playerId)
+        w.field("p_type", type)
+        w.field("p_made_on", madeOn)
+        w.field("p_deadline", deadline)
+        w.field("p_target", target)
+        w.endObject()
+
+        return SupabaseApi.rpc("make_promise", w.toString()).then { body ->
+            val node = JsonNode.parse(body).let { if (it.asList().isNotEmpty()) it[0] else it }
+            if (node["ok"].bool(false)) ApiResult.Ok(Unit)
+            else ApiResult.Error(node["reason"].str("Promessa rifiutata."))
+        }
     }
 }

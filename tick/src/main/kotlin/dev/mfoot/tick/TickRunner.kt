@@ -11,6 +11,10 @@ import dev.mfoot.core.calendar.CompetitionType
 import dev.mfoot.core.calendar.Fixture
 import dev.mfoot.core.calendar.FixtureGenerator
 import dev.mfoot.core.config.ConfigJson
+import dev.mfoot.core.conversation.ConversationEngine
+import dev.mfoot.core.conversation.Promise
+import dev.mfoot.core.conversation.PromiseStatus
+import dev.mfoot.core.conversation.PromiseType
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.growth.GrowthContext
 import dev.mfoot.core.growth.GrowthEngine
@@ -232,9 +236,130 @@ class TickRunner(
         // che l'avversario ti stia ignorando.
         notes += rispondiAgliScambi(league)
 
+        // Le promesse si controllano dopo aver giocato, non prima: e' l'ultima partita del
+        // giro a poter completare un "titolare per tre partite", e rimandare al giro
+        // successivo vorrebbe dire dichiarare tradita una promessa appena mantenuta.
+        notes += verificaLePromesse(league)
+
         saveTickState(league.id, plan.processedUpTo, notes.joinToString(" | "), settled)
 
         return LeagueSummary(league.id, league.name, plan.effects.size, applied, pending, notes)
+    }
+
+    // ----------------------------------------------------------------------- promesse
+
+    /**
+     * Controlla le promesse aperte, e le chiude quando c'e' da chiuderle.
+     *
+     * ## Perche' questo pezzo e' il senso di tutto il resto
+     *
+     * Senza, promettere il posto da titolare sarebbe un pulsante gratuito: alza il morale,
+     * non costa niente, si preme su tutta la rosa. La conseguenza — molto peggiore
+     * dell'aumento se non la mantieni — e' cio' che rende la promessa una decisione, e puo'
+     * arrivare solo da qui: da qualcuno che conta le partite anche quando i telefoni sono
+     * spenti.
+     *
+     * Le tre operazioni per ogni promessa — avanzare, valutare, chiudere — non si possono
+     * separare: una promessa avanzata e non valutata resterebbe aperta oltre la scadenza, e
+     * al giro dopo verrebbe dichiarata tradita per un ritardo del server invece che per una
+     * scelta del manager.
+     */
+    private fun verificaLePromesse(league: LeagueRow): List<String> {
+        val aperte = loadOpenPromises(league.id)
+        if (aperte.isEmpty()) return emptyList()
+
+        val oggi = MatchDay(league.currentMatchDay)
+        val note = mutableListOf<String>()
+
+        for ((id, promessa, clubId) in aperte) {
+            val titolare = eraTitolare(promessa.playerId, clubId, oggi)
+            val avanzata = ConversationEngine.recordMatch(promessa, titolare)
+            if (avanzata.progress != promessa.progress) salvaProgresso(id, avanzata.progress)
+
+            val stato = ConversationEngine.status(avanzata, oggi)
+            if (stato == PromiseStatus.IN_CORSO) continue
+
+            val player = loadPlayerRow(promessa.playerId)?.player ?: continue
+            val esito = ConversationEngine.closePromise(player, stato)
+
+            salvaMorale(promessa.playerId, esito.player.morale)
+            chiudiPromessa(id, stato.name)
+
+            note += "${player.shortName}: promessa ${stato.name.lowercase()} " +
+                "(${if (esito.moraleDelta >= 0) "+" else ""}${esito.moraleDelta} morale)."
+        }
+        return note
+    }
+
+    private fun loadOpenPromises(leagueId: Long): List<Triple<Long, Promise, ClubId>> {
+        val out = mutableListOf<Triple<Long, Promise, ClubId>>()
+        connection.prepareStatement(
+            "select id, club_id, player_id, type, made_on, deadline, target, progress " +
+                "from promises where league_id = ? and status = 'IN_CORSO'",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += Triple(
+                        rs.getLong("id"),
+                        Promise(
+                            playerId = PlayerId(rs.getLong("player_id")),
+                            type = runCatching { PromiseType.valueOf(rs.getString("type")) }
+                                .getOrDefault(PromiseType.TITOLARE_PER_PARTITE),
+                            madeOn = MatchDay(rs.getInt("made_on")),
+                            deadline = MatchDay(rs.getInt("deadline")),
+                            target = rs.getInt("target"),
+                            progress = rs.getInt("progress"),
+                        ),
+                        ClubId(rs.getLong("club_id")),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    /**
+     * E' sceso in campo dal primo minuto, nell'ultima partita giocata dal suo club?
+     *
+     * Si guarda la formazione salvata e non i minuti giocati, perche' i tabellini per
+     * giocatore non vengono conservati: quello che il gioco sa e' chi era negli undici, ed
+     * e' anche esattamente cio' che era stato promesso.
+     */
+    private fun eraTitolare(player: PlayerId, club: ClubId, today: MatchDay): Boolean {
+        val slots = connection.prepareStatement(
+            "select slots from lineups where club_id = ?",
+        ).use { st ->
+            st.setLong(1, club.value)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getString("slots") else null }
+        }
+        return LineupJson.slots(slots).any { it.playerId == player.value }
+    }
+
+    private fun salvaProgresso(id: Long, progress: Int) {
+        connection.prepareStatement("update promises set progress = ? where id = ?").use { st ->
+            st.setInt(1, progress)
+            st.setLong(2, id)
+            st.executeUpdate()
+        }
+    }
+
+    private fun chiudiPromessa(id: Long, stato: String) {
+        connection.prepareStatement(
+            "update promises set status = ?, closed_at = now() where id = ?",
+        ).use { st ->
+            st.setString(1, stato)
+            st.setLong(2, id)
+            st.executeUpdate()
+        }
+    }
+
+    private fun salvaMorale(player: PlayerId, morale: Int) {
+        connection.prepareStatement("update players set morale = ? where id = ?").use { st ->
+            st.setInt(1, morale.coerceIn(0, 100))
+            st.setLong(2, player.value)
+            st.executeUpdate()
+        }
     }
 
     // ------------------------------------------------------------------------- scambi

@@ -13,6 +13,7 @@ import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
 import dev.mfoot.android.data.PlayerRepository
+import dev.mfoot.android.data.PromiseRepository
 import dev.mfoot.android.data.TradeRepository
 import dev.mfoot.android.data.SavedLineup
 import dev.mfoot.android.data.Session
@@ -24,6 +25,7 @@ import dev.mfoot.core.calendar.ClubFate
 import dev.mfoot.core.calendar.Division
 import dev.mfoot.core.calendar.DivisionRules
 import dev.mfoot.core.calendar.SeasonEnd
+import dev.mfoot.core.calendar.CompetitionType
 import dev.mfoot.core.calendar.SeasonOutcome
 import dev.mfoot.core.config.ConfigPresets
 import dev.mfoot.core.conversation.ConversationEngine
@@ -62,6 +64,11 @@ import kotlin.random.Random
  * ogni avvio rigenerasse, due telefoni vedrebbero due leghe diverse con lo stesso nome.
  */
 class AppViewModel : ViewModel() {
+
+    companion object {
+        /** Quanti giorni si danno agli spareggi: sono due o tre turni, non un torneo. */
+        private const val GIORNI_SPAREGGIO = 4L
+    }
 
     /**
      * L'ultima configurazione letta.
@@ -851,8 +858,29 @@ class AppViewModel : ViewModel() {
                     )
 
                 is ApiResult.Ok -> {
+                    // La promessa si salva **dopo** il morale e separatamente: la reazione
+                    // del giocatore e' gia' avvenuta, e un errore qui non deve cancellarla.
+                    // In una variabile locale: esito.promise viene da un altro modulo e
+                    // Kotlin non puo' garantirne la stabilita' fra due letture.
+                    val promessa = esito.promise
+                    val debito = promessa?.let { p ->
+                        PromiseRepository.make(
+                            playerId = playerId,
+                            type = p.type.name,
+                            madeOn = p.madeOn.value,
+                            deadline = p.deadline.value,
+                            target = p.target,
+                        )
+                    }
+
+                    val coda = when {
+                        debito is ApiResult.Error -> "  (la promessa non e' stata registrata: ${debito.message})"
+                        promessa != null -> "  Promessa presa: ${promessa.describe()}"
+                        else -> ""
+                    }
+
                     _spogliatoio.value = _spogliatoio.value.copy(
-                        rispostaUltima = "“${esito.reply}”  ${segno(esito.moraleDelta)} morale",
+                        rispostaUltima = "“${esito.reply}”  ${segno(esito.moraleDelta)} morale$coda",
                         deltaUltimo = esito.moraleDelta,
                     )
                     Session.leagueId?.let { carica(it) }
@@ -937,11 +965,12 @@ class AppViewModel : ViewModel() {
             }
 
             val esiti = SeasonEnd.settle(divisioni, classifiche, DivisionRules.of(config))
-            // Gli spareggi non li ha ancora giocati nessuno: chi e' in bilico resta dov'e',
-            // che e' l'unica cosa onesta da fare finche' quelle partite non esistono.
+            // Chi e' in bilico resta dov'e': gli spareggi non si sono ancora giocati, e
+            // muoverlo adesso vorrebbe dire promuovere una squadra che potrebbe perderli.
             val livelli = SeasonEnd.apply(esiti)
 
-            applicaLivelli(leagueId, livelli, riassunto(esiti))
+            val spareggi = creaSpareggi(leagueId, dentro, esiti, config)
+            applicaLivelli(leagueId, livelli, riassunto(esiti) + spareggi)
         }
     }
 
@@ -997,6 +1026,75 @@ class AppViewModel : ViewModel() {
                 carica(leagueId, avviso = avviso)
             }
         }
+    }
+
+    /**
+     * Crea le partite di spareggio, invece di lasciarle da fare a mano.
+     *
+     * ## Perche' vanno generate qui e non chieste all'admin
+     *
+     * Chi sale ai playoff lo decide la classifica, gli accoppiamenti li decide il
+     * regolamento — primo contro ultimo — e le date sono quelle subito dopo la stagione
+     * regolare. Non resta nessuna scelta da fare, e chiedere all'admin di ricreare a mano
+     * un tabellone che il gioco conosce gia' significa solo dargli l'occasione di
+     * sbagliarlo: un accoppiamento diverso, una squadra dimenticata, e lo spareggio non
+     * corrisponde piu' alla classifica.
+     *
+     * Una competizione per divisione e per tipo, perche' sono tornei separati: i playoff
+     * della Serie B non c'entrano niente con i playout della Serie A, e mescolarli in un
+     * tabellone solo produrrebbe accoppiamenti fra squadre di divisioni diverse.
+     */
+    private suspend fun creaSpareggi(
+        leagueId: Long,
+        dentro: AppState.Dentro,
+        esiti: List<ClubFate>,
+        config: dev.mfoot.core.config.DivisionsConfig,
+    ): String {
+        val perLivello = esiti.groupBy { it.level }
+        var creati = 0
+
+        for ((livello, fates) in perLivello) {
+            listOf(
+                SeasonOutcome.PLAYOFF to "Playoff ${config.nameOf(livello)}",
+                SeasonOutcome.PLAYOUT to "Playout ${config.nameOf(livello)}",
+            ).forEach { (esito, nome) ->
+                val qualificate = fates
+                    .filter { it.outcome == esito }
+                    .sortedBy { it.position }
+                    .map { it.club }
+                if (qualificate.size < 2) return@forEach
+
+                // Gli accoppiamenti li conosce il regolamento; qui serve solo l'elenco
+                // ordinato, che il generatore di tabelloni riaccoppia allo stesso modo.
+                val partecipanti = qualificate.map { it.value }
+                val calendario = dentro.lega.league.config.calendar.copy(
+                    startDate = LocalDate.now(),
+                    endDate = LocalDate.now().plusDays(GIORNI_SPAREGGIO),
+                )
+
+                val schedule = CompetitionRepository.preview(
+                    participants = partecipanti,
+                    type = CompetitionType.ELIMINAZIONE_DIRETTA,
+                    doubleRound = config.twoLeggedPlayoffs,
+                    calendar = calendario,
+                    config = dentro.lega.league.config,
+                    seed = dentro.lega.league.config.setup.worldSeed + livello,
+                )
+
+                val creata = CompetitionRepository.create(
+                    leagueId = leagueId,
+                    name = nome,
+                    type = CompetitionType.ELIMINAZIONE_DIRETTA,
+                    doubleRound = config.twoLeggedPlayoffs,
+                    participants = partecipanti,
+                    calendar = calendario,
+                    schedule = schedule,
+                )
+                if (creata is ApiResult.Ok) creati++
+            }
+        }
+
+        return if (creati == 0) "" else " Creati $creati tabelloni di spareggio."
     }
 
     private fun riassunto(esiti: List<ClubFate>): String {

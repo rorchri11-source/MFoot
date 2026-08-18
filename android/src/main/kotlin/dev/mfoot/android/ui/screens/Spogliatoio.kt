@@ -282,8 +282,8 @@ private fun Colloquio(
                 if (opzione.createsPromise != null) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "È una promessa: se non la mantieni il crollo sarà peggiore di non " +
-                            "aver detto niente.",
+                        "E' una promessa: il tick la controlla giornata per giornata, e se " +
+                            "non la mantieni il crollo e' peggiore di non aver detto niente.",
                         style = MFootType.chip,
                         color = MFootColors.gamble,
                     )
