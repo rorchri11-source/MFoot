@@ -11,7 +11,11 @@ import dev.mfoot.core.calendar.CompetitionType
 import dev.mfoot.core.calendar.Fixture
 import dev.mfoot.core.calendar.FixtureGenerator
 import dev.mfoot.core.config.ConfigJson
+import dev.mfoot.core.conversation.AppearanceFact
 import dev.mfoot.core.conversation.ConversationEngine
+import dev.mfoot.core.conversation.ConversationTrigger
+import dev.mfoot.core.conversation.LeagueFacts
+import dev.mfoot.core.conversation.PlayerHistory
 import dev.mfoot.core.conversation.Promise
 import dev.mfoot.core.conversation.PromiseStatus
 import dev.mfoot.core.conversation.PromiseType
@@ -247,6 +251,12 @@ class TickRunner(
         // successivo vorrebbe dire dichiarare tradita una promessa appena mantenuta.
         notes += verificaLePromesse(league)
 
+        // I colloqui si aprono per ultimi, dopo le partite e dopo le promesse: e' l'unico
+        // momento in cui i fatti della giornata sono tutti scritti. Aprirli prima
+        // significherebbe dire a un giocatore "hai giocato male" prima di sapere come ha
+        // giocato, e non dirgli niente della promessa che gli hai appena tradito.
+        notes += apriIColloqui(league)
+
         saveTickState(league.id, plan.processedUpTo, notes.joinToString(" | "), settled)
 
         return LeagueSummary(league.id, league.name, plan.effects.size, applied, pending, notes)
@@ -278,8 +288,8 @@ class TickRunner(
         val note = mutableListOf<String>()
 
         for ((id, promessa, clubId) in aperte) {
-            val titolare = eraTitolare(promessa.playerId, clubId, oggi)
-            val avanzata = ConversationEngine.recordMatch(promessa, titolare)
+            val fatte = partiteDaTitolare(promessa, clubId)
+            val avanzata = promessa.copy(progress = fatte)
             if (avanzata.progress != promessa.progress) salvaProgresso(id, avanzata.progress)
 
             val stato = ConversationEngine.status(avanzata, oggi)
@@ -332,15 +342,39 @@ class TickRunner(
      * giocatore non vengono conservati: quello che il gioco sa e' chi era negli undici, ed
      * e' anche esattamente cio' che era stato promesso.
      */
-    private fun eraTitolare(player: PlayerId, club: ClubId, today: MatchDay): Boolean {
-        val slots = connection.prepareStatement(
-            "select slots from lineups where club_id = ?",
+    /**
+     * Quante partite da titolare ha giocato da quando gliel'hai promesso.
+     *
+     * ## Perche' si conta invece di incrementare
+     *
+     * La versione precedente faceva due cose sbagliate. Leggeva `lineups`, che tiene la
+     * formazione **attuale** e non quella con cui si e' giocato: cambiavi undici dopo la
+     * partita e il conto cambiava con te. E incrementava un contatore a ogni giro del
+     * tick — che passa ogni cinque minuti — quindi una promessa da tre partite si
+     * chiudeva in un quarto d'ora, senza che si giocasse niente. Il sistema che doveva
+     * rendere costoso promettere era il modo piu' rapido di alzare il morale gratis.
+     *
+     * Contare le presenze rende l'operazione idempotente per costruzione: eseguirla mille
+     * volte da' mille volte lo stesso numero, perche' la risposta sta nei fatti e non in
+     * quante volte si e' guardato.
+     *
+     * `made_on` e' esclusa: la partita gia' giocata quando la promessa e' stata fatta non
+     * puo' valere come partita promessa.
+     */
+    private fun partiteDaTitolare(promessa: Promise, club: ClubId): Int =
+        connection.prepareStatement(
+            """
+            select count(*) from appearances
+            where player_id = ? and club_id = ? and started
+              and match_day > ? and match_day <= ?
+            """.trimIndent(),
         ).use { st ->
-            st.setLong(1, club.value)
-            st.executeQuery().use { rs -> if (rs.next()) rs.getString("slots") else null }
+            st.setLong(1, promessa.playerId.value)
+            st.setLong(2, club.value)
+            st.setInt(3, promessa.madeOn.value)
+            st.setInt(4, promessa.deadline.value)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
         }
-        return LineupJson.slots(slots).any { it.playerId == player.value }
-    }
 
     private fun salvaProgresso(id: Long, progress: Int) {
         connection.prepareStatement("update promises set progress = ? where id = ?").use { st ->
@@ -366,6 +400,223 @@ class TickRunner(
             st.setLong(2, player.value)
             st.executeUpdate()
         }
+    }
+
+    // ----------------------------------------------------------------------- colloqui
+
+    /**
+     * Apre i colloqui che i fatti giustificano.
+     *
+     * ## Perche' li apre il server e non l'app
+     *
+     * Perche' i fatti li vede solo qui. "Tre panchine di fila" e' una domanda sulle
+     * presenze di tre partite, e chiederla dal telefono vorrebbe dire scaricare lo storico
+     * di tutta la rosa a ogni apertura della schermata — o, com'era prima, non chiederla
+     * affatto e indovinare l'argomento da una soglia sul morale.
+     *
+     * ## Perche' anche per i club dell'AI
+     *
+     * Perche' un'AI deve poter gestire il proprio spogliatoio come lo gestisci tu:
+     * altrimenti le sue rose finiscono la stagione con il morale a terra e le partite le
+     * perde per un motivo che nessuno ha scelto.
+     */
+    private fun apriIColloqui(league: LeagueRow): List<String> {
+        if (!league.config.rules.conversationsEnabled) return emptyList()
+
+        val oggi = MatchDay(league.currentMatchDay)
+        val aperti = colloquiAperti(league.id)
+        val ultimoColloquio = ultimiColloqui(league.id)
+        val tradite = promesseTraditeSenzaColloquio(league.id)
+        val presenze = presenzeRecenti(league.id, oggi)
+        val capitani = capitani(league.id)
+        val sconfitte = sconfitteConsecutive(league.id)
+
+        var aperte = 0
+        val nuovi = mutableListOf<Triple<Long, Long, ConversationTrigger>>()
+
+        caricaRosePerColloqui(league.id).forEach { (player, contratto) ->
+            if (player.id.value in aperti) return@forEach
+
+            val storia = PlayerHistory(
+                playerId = player.id,
+                joinedOn = MatchDay(contratto.signedOn),
+                contractEndsOn = MatchDay(contratto.expiresOn),
+                isInjured = player.injuredUntil?.let { it.value >= oggi.value } ?: false,
+                recent = presenze[player.id.value].orEmpty(),
+                brokenPromise = player.id.value in tradite,
+                isCaptain = capitani[contratto.clubId] == player.id.value,
+                teamLosingStreak = sconfitte[contratto.clubId] ?: 0,
+                lastConversationOn = ultimoColloquio[player.id.value]?.let(::MatchDay),
+            )
+
+            val trigger = LeagueFacts.trigger(player, storia, oggi) ?: return@forEach
+            nuovi += Triple(player.id.value, contratto.clubId, trigger)
+        }
+
+        if (nuovi.isEmpty()) return emptyList()
+
+        connection.prepareStatement(
+            """
+            insert into conversations (league_id, club_id, player_id, topic, cause, opened_on)
+            values (?, ?, ?, ?, ?, ?)
+            on conflict do nothing
+            """.trimIndent(),
+        ).use { st ->
+            nuovi.forEach { (playerId, clubId, trigger) ->
+                st.setLong(1, league.id)
+                st.setLong(2, clubId)
+                st.setLong(3, playerId)
+                st.setString(4, trigger.topic.name)
+                st.setString(5, trigger.cause)
+                st.setInt(6, oggi.value)
+                st.addBatch()
+            }
+            aperte = st.executeBatch().count { it > 0 }
+        }
+
+        return if (aperte > 0) listOf("$aperte colloqui aperti nello spogliatoio.") else emptyList()
+    }
+
+    private data class ContrattoBreve(val clubId: Long, val signedOn: Int, val expiresOn: Int)
+
+    private fun caricaRosePerColloqui(leagueId: Long): List<Pair<Player, ContrattoBreve>> {
+        val out = mutableListOf<Pair<Player, ContrattoBreve>>()
+        connection.prepareStatement(
+            """
+            select p.*, c.club_id as contract_club, c.signed_on, c.expires_on
+            from players p
+            join contracts c on c.player_id = p.id
+            where p.league_id = ? and c.squad = 'prima'
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += readPlayer(rs) to ContrattoBreve(
+                        clubId = rs.getLong("contract_club"),
+                        signedOn = rs.getInt("signed_on"),
+                        expiresOn = rs.getInt("expires_on"),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    private fun colloquiAperti(leagueId: Long): Set<Long> {
+        val out = mutableSetOf<Long>()
+        connection.prepareStatement(
+            "select player_id from conversations where league_id = ? and status = 'APERTA'",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> while (rs.next()) out += rs.getLong(1) }
+        }
+        return out
+    }
+
+    private fun ultimiColloqui(leagueId: Long): Map<Long, Int> {
+        val out = mutableMapOf<Long, Int>()
+        connection.prepareStatement(
+            "select player_id, max(opened_on) from conversations where league_id = ? group by player_id",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> while (rs.next()) out[rs.getLong(1)] = rs.getInt(2) }
+        }
+        return out
+    }
+
+    /**
+     * Le promesse tradite di cui non si e' ancora parlato.
+     *
+     * La condizione non e' "chiusa da poco" ma "senza un colloquio aperto dopo la
+     * scadenza": e' l'unica forma che regge il tick che ripassa ogni cinque minuti senza
+     * riaprire ogni volta lo stesso discorso.
+     */
+    private fun promesseTraditeSenzaColloquio(leagueId: Long): Set<Long> {
+        val out = mutableSetOf<Long>()
+        connection.prepareStatement(
+            """
+            select pr.player_id from promises pr
+            where pr.league_id = ? and pr.status = 'TRADITA'
+              and not exists (
+                  select 1 from conversations c
+                  where c.player_id = pr.player_id
+                    and c.topic = 'PROMESSA_TRADITA'
+                    and c.opened_on >= pr.deadline
+              )
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> while (rs.next()) out += rs.getLong(1) }
+        }
+        return out
+    }
+
+    /** Le ultime otto giornate, che coprono ogni regola di [LeagueFacts]. */
+    private fun presenzeRecenti(leagueId: Long, oggi: MatchDay): Map<Long, List<AppearanceFact>> {
+        val out = mutableMapOf<Long, MutableList<AppearanceFact>>()
+        connection.prepareStatement(
+            """
+            select player_id, match_day, started, minutes, rating, goals, injured
+            from appearances
+            where league_id = ? and match_day > ?
+            order by player_id, match_day desc
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setInt(2, oggi.value - 8)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out.getOrPut(rs.getLong("player_id")) { mutableListOf() } += AppearanceFact(
+                        matchDay = MatchDay(rs.getInt("match_day")),
+                        started = rs.getBoolean("started"),
+                        minutes = rs.getInt("minutes"),
+                        rating = rs.getDouble("rating"),
+                        goals = rs.getInt("goals"),
+                        injured = rs.getBoolean("injured"),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    private fun capitani(leagueId: Long): Map<Long, Long> {
+        val out = mutableMapOf<Long, Long>()
+        connection.prepareStatement(
+            "select club_id, captain_id from lineups where league_id = ? and captain_id is not null",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> while (rs.next()) out[rs.getLong(1)] = rs.getLong(2) }
+        }
+        return out
+    }
+
+    /** Quante sconfitte di fila ha ogni club, contando dall'ultima partita all'indietro. */
+    private fun sconfitteConsecutive(leagueId: Long): Map<Long, Int> {
+        val esiti = mutableMapOf<Long, MutableList<Boolean>>()
+        connection.prepareStatement(
+            """
+            select f.home_club_id, f.away_club_id, r.home_goals, r.away_goals
+            from fixtures f join match_results r on r.fixture_id = f.id
+            where f.league_id = ? and f.played
+            order by f.match_day desc
+            limit 400
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val casa = rs.getLong("home_club_id")
+                    val fuori = rs.getLong("away_club_id")
+                    val gc = rs.getInt("home_goals")
+                    val gf = rs.getInt("away_goals")
+                    esiti.getOrPut(casa) { mutableListOf() } += gc < gf
+                    esiti.getOrPut(fuori) { mutableListOf() } += gf < gc
+                }
+            }
+        }
+        return esiti.mapValues { (_, sconfitte) -> sconfitte.takeWhile { it }.size }
     }
 
     // ------------------------------------------------------------------------- scambi
@@ -683,6 +934,7 @@ class TickRunner(
             st.executeUpdate()
         }
 
+        salvaPresenze(league, fixture, result, home, away)
         applyMatchAftermath(league, result, fixture)
         awardPrizes(league, fixture, result)
 
@@ -698,6 +950,75 @@ class TickRunner(
 
         log("Lega ${league.id}: ${home.name} ${result.scoreline} ${away.name}")
         return true
+    }
+
+    /**
+     * Chi ha giocato, e chi no.
+     *
+     * ## Perche' si scrive una riga anche per chi non e' sceso in campo
+     *
+     * Perche' la domanda vera non e' "quanto ha giocato", e' **"da quanto non gioca"**. Se
+     * la panchina non lasciasse traccia, "tre partite senza scendere in campo" sarebbe
+     * indistinguibile da "tre partite di cui non so niente" — e la seconda e' la
+     * condizione normale di chiunque sia arrivato la settimana scorsa. Un colloquio
+     * aperto sulla seconda invece che sulla prima e' esattamente l'evento incoerente che
+     * il gioco produceva finora.
+     *
+     * ## Perche' titolare non si deduce dai minuti
+     *
+     * `PlayerMatchStats.started` risponde `minutesPlayed > 0`, che e' vero anche per chi
+     * entra all'ottantesimo. Chi era in campo al fischio d'inizio lo sa solo la formazione
+     * con cui la partita e' cominciata, ed e' qui che si ha ancora in mano.
+     */
+    private fun salvaPresenze(
+        league: LeagueRow,
+        fixture: Fixture,
+        result: MatchResult,
+        home: TeamSetup,
+        away: TeamSetup,
+    ) {
+        connection.prepareStatement(
+            """
+            insert into appearances (fixture_id, player_id, league_id, club_id, match_day,
+                                     started, minutes, goals, assists, yellow, red,
+                                     injured, rating)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            on conflict (fixture_id, player_id) do nothing
+            """.trimIndent(),
+        ).use { st ->
+            listOf(home, away).forEach { team ->
+                val titolari = team.lineup.playerIds
+                loadSquad(league.id, team.clubId).forEach { player ->
+                    val stats = result.stats[player.id]
+                    val minuti = stats?.minutesPlayed ?: 0
+
+                    st.setLong(1, fixture.id)
+                    st.setLong(2, player.id.value)
+                    st.setLong(3, league.id)
+                    st.setLong(4, team.clubId.value)
+                    st.setInt(5, fixture.matchDay.value)
+                    st.setBoolean(6, player.id in titolari)
+                    st.setInt(7, minuti)
+                    st.setInt(8, stats?.goals ?: 0)
+                    st.setInt(9, stats?.assists ?: 0)
+                    st.setInt(10, stats?.yellowCards ?: 0)
+                    st.setInt(11, stats?.redCards ?: 0)
+                    st.setBoolean(12, stats?.injured ?: false)
+                    // Il voto di chi non gioca non esiste: uno zero si distingue, un sei
+                    // di comodo falserebbe ogni media.
+                    st.setDouble(
+                        13,
+                        if (minuti > 0 && stats != null) {
+                            stats.rating(player.primaryPosition.isGoalkeeper)
+                        } else {
+                            0.0
+                        },
+                    )
+                    st.addBatch()
+                }
+            }
+            st.executeBatch()
+        }
     }
 
     /**

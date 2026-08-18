@@ -7,6 +7,7 @@ import dev.mfoot.android.data.AuctionRepository
 import dev.mfoot.android.data.AuctionView
 import dev.mfoot.android.data.ClubUpload
 import dev.mfoot.android.data.CompetitionRepository
+import dev.mfoot.android.data.ConversationRepository
 import dev.mfoot.android.data.LeagueDeskRepository
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
@@ -31,6 +32,7 @@ import dev.mfoot.core.config.ConfigPresets
 import dev.mfoot.core.conversation.ConversationEngine
 import dev.mfoot.core.conversation.ConversationOption
 import dev.mfoot.core.conversation.ConversationTopic
+import dev.mfoot.core.conversation.LeagueFacts
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.market.Valuation
 import dev.mfoot.core.match.AutoLineup
@@ -820,50 +822,129 @@ class AppViewModel : ViewModel() {
     private val _spogliatoio = MutableStateFlow(SpogliatoioState())
     val spogliatoio: StateFlow<SpogliatoioState> = _spogliatoio
 
+    /**
+     * Carica i discorsi aperti.
+     *
+     * Si chiama entrando nello spogliatoio e dopo ogni risposta: l'elenco cambia solo per
+     * effetto del tick o di quello che hai appena detto, e tenerlo aggiornato in tempo
+     * reale costerebbe una richiesta al minuto per un dato che si guarda due volte al
+     * giorno.
+     */
+    fun caricaSpogliatoio() {
+        val club = statoCorrente()?.lega?.myClub ?: return
+        viewModelScope.launch {
+            when (val esito = ConversationRepository.load(club.id)) {
+                is ApiResult.Error ->
+                    _spogliatoio.value = _spogliatoio.value.copy(avviso = esito.message, letto = true)
+
+                is ApiResult.Ok ->
+                    _spogliatoio.value = _spogliatoio.value.copy(
+                        spogliatoio = esito.value,
+                        letto = true,
+                        avviso = null,
+                    )
+            }
+        }
+    }
+
     fun apriColloquio(playerId: Long) {
-        _spogliatoio.value = SpogliatoioState(conPlayerId = playerId)
+        _spogliatoio.value = _spogliatoio.value.copy(
+            conPlayerId = playerId,
+            rispostaUltima = null,
+            deltaUltimo = 0,
+            avviso = null,
+        )
+    }
+
+    /**
+     * Convoca qualcuno che non aveva niente da dire.
+     *
+     * Il colloquio si apre sul server prima di comparire sullo schermo: senza, si potrebbe
+     * cominciare a parlare e scoprire solo alla risposta che l'attesa non era finita, dopo
+     * aver gia' scelto cosa dire.
+     */
+    fun convoca(playerId: Long) {
+        val dentro = statoCorrente() ?: return
+        val club = dentro.lega.myClub ?: return
+        val player = dentro.lega.squadOf(club.id).firstOrNull { it.id.value == playerId } ?: return
+
+        viewModelScope.launch {
+            _spogliatoio.value = _spogliatoio.value.copy(inCorso = true, avviso = null)
+            val argomento = LeagueFacts.argomentoDiCortesia(player)
+
+            when (val esito = ConversationRepository.convoca(playerId, argomento)) {
+                is ApiResult.Error ->
+                    _spogliatoio.value = _spogliatoio.value.copy(avviso = esito.message, inCorso = false)
+
+                is ApiResult.Ok -> {
+                    val aggiornato = ConversationRepository.load(club.id)
+                    _spogliatoio.value = _spogliatoio.value.copy(
+                        spogliatoio = (aggiornato as? ApiResult.Ok)?.value
+                            ?: _spogliatoio.value.spogliatoio,
+                        conPlayerId = playerId,
+                        rispostaUltima = null,
+                        deltaUltimo = 0,
+                        inCorso = false,
+                        letto = true,
+                    )
+                }
+            }
+        }
     }
 
     fun chiudiColloquio() {
-        _spogliatoio.value = SpogliatoioState()
+        _spogliatoio.value = _spogliatoio.value.copy(
+            conPlayerId = null,
+            rispostaUltima = null,
+            deltaUltimo = 0,
+        )
     }
 
     /**
      * Parla con un giocatore.
      *
-     * ## Il morale si salva subito, la promessa no
+     * ## L'argomento non lo sceglie piu' il telefono
      *
-     * Il nuovo morale va sul database perche' e' un fatto: il giocatore ha sentito quelle
-     * parole e ha reagito. Le promesse invece restano da fare — servono una tabella loro e
-     * il tick che le verifica giornata per giornata — e finche' non c'e', prometterle
-     * varrebbe come dirle e poi dimenticarsene, che e' peggio di non poterle fare.
+     * Prima lo ricavava qui, da una soglia sul morale: parlavi, il morale saliva, la soglia
+     * cambiava e compariva l'argomento successivo — quattro colloqui di fila con lo stesso
+     * giocatore, +5 ogni volta. Adesso l'argomento e' quello della riga che qualcuno ha
+     * aperto per un motivo, e rispondere la chiude. Senza riga non si parla.
      *
-     * Per questo l'opzione che crea una promessa **c'e' e funziona nel motore**, ma qui la
-     * si segnala per quello che e': l'effetto immediato lo si ottiene, il debito non viene
-     * ancora riscosso.
+     * ## Il morale e la promessa restano due scritture
+     *
+     * La risposta chiude il colloquio e paga il morale in una transazione sola. La promessa
+     * viene dopo, separata: la reazione del giocatore e' gia' avvenuta e un errore nel
+     * registrare il debito non deve cancellarla.
      */
     fun parla(playerId: Long, option: ConversationOption) {
         val dentro = statoCorrente() ?: return
         val club = dentro.lega.myClub ?: return
         val player = dentro.lega.squadOf(club.id).firstOrNull { it.id.value == playerId } ?: return
 
-        val argomento = when {
-            player.morale < 20 -> ConversationTopic.RICHIESTA_CESSIONE
-            player.morale < 35 -> ConversationTopic.MORALE_BASSO
-            player.morale < 50 -> ConversationTopic.POCO_MINUTAGGIO
-            else -> ConversationTopic.PRESTAZIONI_SCARSE
+        val colloquio = _spogliatoio.value.spogliatoio.apertoPer(playerId) ?: run {
+            _spogliatoio.value = _spogliatoio.value.copy(
+                avviso = "Questo discorso non e' piu' aperto.",
+            )
+            return
         }
 
         val esito = ConversationEngine.resolve(
             player = player,
-            topic = argomento,
+            topic = colloquio.topic,
             option = option,
             today = MatchDay(dentro.lega.league.currentMatchDay),
             rules = dentro.lega.league.config.rules,
+            spontanea = colloquio.spontaneous,
         )
 
         viewModelScope.launch {
-            when (val salvato = PlayerRepository.updateMorale(playerId, esito.player.morale)) {
+            val salvato = ConversationRepository.rispondi(
+                conversationId = colloquio.id,
+                tone = option.tone.name,
+                moraleDelta = esito.moraleDelta,
+            )
+
+            when (salvato) {
                 is ApiResult.Error ->
                     _spogliatoio.value = _spogliatoio.value.copy(
                         rispostaUltima = salvato.message,
@@ -896,6 +977,10 @@ class AppViewModel : ViewModel() {
                         rispostaUltima = "“${esito.reply}”  ${segno(esito.moraleDelta)} morale$coda",
                         deltaUltimo = esito.moraleDelta,
                     )
+                    // L'elenco dei discorsi cambia — quello appena chiuso sparisce — e la
+                    // rosa pure, perche' il morale e' cambiato. Due letture, non una: la
+                    // seconda ricarica tutta la lega ed e' quella lenta.
+                    caricaSpogliatoio()
                     Session.leagueId?.let { carica(it) }
                 }
             }

@@ -256,4 +256,10 @@ data class SpogliatoioState(
     val rispostaUltima: String? = null,
     val deltaUltimo: Int = 0,
     val avviso: String? = null,
+    /** I discorsi aperti e quando si e' parlato l'ultima volta con ognuno. */
+    val spogliatoio: dev.mfoot.android.data.Spogliatoio =
+        dev.mfoot.android.data.Spogliatoio.VUOTO,
+    /** Falso finche' la prima lettura non e' tornata: "nessuno" e "non lo so ancora". */
+    val letto: Boolean = false,
+    val inCorso: Boolean = false,
 )

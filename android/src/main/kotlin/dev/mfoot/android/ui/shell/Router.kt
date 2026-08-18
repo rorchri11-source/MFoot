@@ -88,7 +88,9 @@ fun Router(
     onCloseSeason: () -> Unit,
     onDismissDivisionNotice: () -> Unit,
     spogliatoio: SpogliatoioState,
+    onLoadTalks: () -> Unit,
     onOpenTalk: (Long) -> Unit,
+    onSummon: (Long) -> Unit,
     onTalk: (Long, ConversationOption) -> Unit,
     onCloseTalk: () -> Unit,
     lineup: LineupEdit,
@@ -114,7 +116,9 @@ fun Router(
         is Route.Spogliatoio -> SpogliatoioScreen(
             state = state,
             spogliatoio = spogliatoio,
+            onCarica = onLoadTalks,
             onApri = onOpenTalk,
+            onConvoca = onSummon,
             onParla = onTalk,
             onChiudi = onCloseTalk,
         )

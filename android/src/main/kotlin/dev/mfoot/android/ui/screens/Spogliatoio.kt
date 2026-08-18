@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.SpogliatoioState
+import dev.mfoot.android.data.OpenConversation
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
@@ -35,32 +37,39 @@ import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.core.conversation.ConversationEngine
 import dev.mfoot.core.conversation.ConversationOption
-import dev.mfoot.core.conversation.ConversationTopic
-import dev.mfoot.core.model.MatchDay
+import dev.mfoot.core.conversation.LeagueFacts
 import dev.mfoot.core.model.Player
 
 /**
- * Lo spogliatoio: chi ha qualcosa da dirti, e cosa rispondergli.
+ * Lo spogliatoio: chi ha qualcosa da dirti, e perche'.
  *
  * ## Perche' l'argomento non lo scegli tu
  *
  * Verrebbe naturale mettere un elenco di argomenti e lasciare scegliere. Ma una
- * conversazione non comincia perche' il manager ha voglia di parlare: comincia perche' il
- * giocatore ha un problema, e quel problema e' uno solo e lo sa lui. Sceglierlo dalla lista
- * vorrebbe dire poter "parlare del rinnovo" a chi il rinnovo non lo ha chiesto — cioe' dire
- * a qualcuno che non lo stai ascoltando, e infatti nel motore quella risposta va male.
+ * conversazione non comincia perche' il manager ha voglia di parlare: comincia perche' e'
+ * successo qualcosa. Sceglierlo dalla lista vorrebbe dire poter "parlare del rinnovo" a chi
+ * il rinnovo non lo ha chiesto — cioe' dire a qualcuno che non lo stai ascoltando.
  *
- * ## Perche' chi sta bene non compare
+ * ## Perche' la causa e' scritta accanto al nome
  *
- * Un elenco di venti giocatori con scritto "tutto bene" accanto a diciotto di loro
- * nasconde i due che contano. Qui ci sono solo quelli che hanno qualcosa da dire, e se non
- * c'e' nessuno la schermata lo dice in una riga.
+ * "Poco spazio" e' un'etichetta; **"3 partite senza scendere in campo: 17a, 18a, 19a"** e'
+ * una ragione. La prima si puo' inventare, la seconda no, e la differenza si sente subito:
+ * e' cio' che distingue un gioco che sa cosa e' successo da uno che tira a indovinare da
+ * una soglia sul morale, che e' precisamente quello che faceva prima questa schermata.
+ *
+ * ## Perche' esiste anche la convocazione
+ *
+ * Perche' un manager deve poter parlare a chi vuole. Ma un colloquio che non nasce da
+ * niente rende un terzo, e non si puo' ripetere prima di tre giornate: senza quei due
+ * limiti sarebbe di nuovo il pulsante "alza morale" con un altro nome.
  */
 @Composable
 fun SpogliatoioScreen(
     state: AppState.Dentro,
     spogliatoio: SpogliatoioState,
+    onCarica: () -> Unit,
     onApri: (Long) -> Unit,
+    onConvoca: (Long) -> Unit,
     onParla: (Long, ConversationOption) -> Unit,
     onChiudi: () -> Unit,
 ) {
@@ -75,21 +84,27 @@ fun SpogliatoioScreen(
         return
     }
 
+    LaunchedEffect(club.id) { onCarica() }
+
     val rosa = state.lega.squadOf(club.id)
-    val giornata = MatchDay(state.lega.league.currentMatchDay)
+    val oggi = state.lega.league.currentMatchDay
 
     val aperto = spogliatoio.conPlayerId?.let { id -> rosa.firstOrNull { it.id.value == id } }
-    if (aperto != null) {
-        Colloquio(aperto, spogliatoio, giornata, onParla, onChiudi)
+    val colloquio = aperto?.let { spogliatoio.spogliatoio.apertoPer(it.id.value) }
+    if (aperto != null && colloquio != null) {
+        Colloquio(aperto, colloquio, spogliatoio, onParla, onChiudi)
         return
     }
 
     // Solo chi ha qualcosa da dire, e i piu' scontenti in cima: e' l'ordine in cui uno
     // affronterebbe davvero lo spogliatoio.
-    val daSentire = rosa
-        .map { it to argomentoDi(it) }
-        .filter { (_, argomento) -> argomento != null }
+    val perId = rosa.associateBy { it.id.value }
+    val daSentire = spogliatoio.spogliatoio.aperti
+        .mapNotNull { c -> perId[c.playerId]?.let { it to c } }
         .sortedBy { (giocatore, _) -> giocatore.morale }
+
+    val sentiti = daSentire.map { it.first.id.value }.toSet()
+    val altri = rosa.filterNot { it.id.value in sentiti }
 
     Column(
         Modifier
@@ -99,87 +114,118 @@ fun SpogliatoioScreen(
     ) {
         spogliatoio.avviso?.let {
             Box(Modifier.padding(MFootSpacing.section)) {
-                Notice(it, MFootColors.elite, Modifier.clickable(onClick = onChiudi))
+                Notice(it, MFootColors.gamble)
             }
         }
 
-        if (daSentire.isEmpty()) {
-            Box(Modifier.fillMaxWidth().padding(44.dp), contentAlignment = Alignment.Center) {
-                Text(
-                    if (rosa.isEmpty()) "Rosa vuota: non c'e' nessuno con cui parlare."
-                    else "Nessuno ha niente da ridire. Spogliatoio tranquillo.",
-                    style = MFootType.secondary,
-                    color = MFootColors.ink3,
-                    textAlign = TextAlign.Center,
-                )
-            }
+        if (rosa.isEmpty()) {
+            Vuoto("Rosa vuota: non c'e' nessuno con cui parlare.")
             return@Column
         }
 
         Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 10.dp)) {
-            Label("${daSentire.size} vogliono parlarti")
+            Label(
+                when {
+                    !spogliatoio.letto -> "Spogliatoio"
+                    daSentire.isEmpty() -> "Nessuno ha niente da ridire"
+                    daSentire.size == 1 -> "Uno vuole parlarti"
+                    else -> "${daSentire.size} vogliono parlarti"
+                },
+            )
         }
 
-        daSentire.forEach { (giocatore, argomento) ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { onApri(giocatore.id.value) }
-                    .padding(MFootSpacing.section, 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier
-                        .size(36.dp, 23.dp)
-                        .background(MFootColors.core, MFootShapes.field)
-                        .border(1.dp, MFootColors.line, MFootShapes.field),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        giocatore.primaryPosition.short,
-                        style = MFootType.label,
-                        color = MFootColors.ink2,
-                    )
-                }
-                Spacer(Modifier.width(11.dp))
+        daSentire.forEach { (giocatore, conversazione) ->
+            Riga(
+                giocatore = giocatore,
+                sotto = conversazione.cause.ifBlank { conversazione.topic.label },
+                coloreSotto = MFootColors.gamble,
+                onClick = { onApri(giocatore.id.value) },
+            )
+        }
 
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        giocatore.shortName,
-                        style = MFootType.rowTitle,
-                        color = MFootColors.ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        argomento!!.label,
-                        style = MFootType.chip,
-                        color = MFootColors.gamble,
-                    )
-                }
-
-                Morale(giocatore.morale)
+        if (altri.isNotEmpty()) {
+            Spacer(Modifier.height(MFootSpacing.section))
+            Column(Modifier.padding(MFootSpacing.section, 0.dp, MFootSpacing.section, 10.dp)) {
+                Label("Convoca")
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Puoi chiamare chi vuoi, ma un discorso che non nasce da niente rende " +
+                        "poco, e c'e' da aspettare prima di ripeterlo.",
+                    style = MFootType.chip,
+                    color = MFootColors.ink3,
+                )
             }
-            Hairline()
+
+            altri.forEach { giocatore ->
+                val attesa = LeagueFacts.attesaResidua(
+                    spogliatoio.spogliatoio.ultimoColloquio[giocatore.id.value],
+                    oggi,
+                )
+
+                Riga(
+                    giocatore = giocatore,
+                    sotto = if (attesa > 0) {
+                        "Gli hai gia' parlato: fra $attesa giornate"
+                    } else {
+                        "Convocalo"
+                    },
+                    coloreSotto = if (attesa > 0) MFootColors.ink3 else MFootColors.good,
+                    onClick = { if (attesa == 0 && !spogliatoio.inCorso) onConvoca(giocatore.id.value) },
+                )
+            }
         }
 
         Spacer(Modifier.height(30.dp))
     }
 }
 
-/**
- * Di cosa vuole parlare questo giocatore.
- *
- * Uno solo, il piu' urgente. Chi vuole andarsene lo dice prima di ogni altra cosa: e' la
- * lamentela che, se ignorata, finisce con una cessione.
- */
-private fun argomentoDi(player: Player): ConversationTopic? = when {
-    player.morale < 20 -> ConversationTopic.RICHIESTA_CESSIONE
-    player.morale < 35 -> ConversationTopic.MORALE_BASSO
-    player.morale < 50 -> ConversationTopic.POCO_MINUTAGGIO
-    player.form < 40 -> ConversationTopic.PRESTAZIONI_SCARSE
-    else -> null
+@Composable
+private fun Vuoto(testo: String) {
+    Box(Modifier.fillMaxWidth().padding(44.dp), contentAlignment = Alignment.Center) {
+        Text(testo, style = MFootType.secondary, color = MFootColors.ink3, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun Riga(
+    giocatore: Player,
+    sotto: String,
+    coloreSotto: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(MFootSpacing.section, 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(36.dp, 23.dp)
+                .background(MFootColors.core, MFootShapes.field)
+                .border(1.dp, MFootColors.line, MFootShapes.field),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(giocatore.primaryPosition.short, style = MFootType.label, color = MFootColors.ink2)
+        }
+        Spacer(Modifier.width(11.dp))
+
+        Column(Modifier.weight(1f)) {
+            Text(
+                giocatore.shortName,
+                style = MFootType.rowTitle,
+                color = MFootColors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(sotto, style = MFootType.chip, color = coloreSotto, maxLines = 2)
+        }
+
+        Morale(giocatore.morale)
+    }
+    Hairline()
 }
 
 @Composable
@@ -201,13 +247,13 @@ private fun Morale(valore: Int) {
 @Composable
 private fun Colloquio(
     player: Player,
+    conversazione: OpenConversation,
     spogliatoio: SpogliatoioState,
-    giornata: MatchDay,
     onParla: (Long, ConversationOption) -> Unit,
     onChiudi: () -> Unit,
 ) {
-    val argomento = argomentoDi(player) ?: ConversationTopic.MORALE_BASSO
-    val opzioni = ConversationEngine.optionsFor(argomento)
+    val opzioni = ConversationEngine.optionsFor(conversazione.topic)
+    val risposto = spogliatoio.rispostaUltima != null
 
     Column(
         Modifier
@@ -253,47 +299,61 @@ private fun Colloquio(
             }
         }
 
-        Spacer(Modifier.height(MFootSpacing.section))
-        Text(
-            "“${argomento.prompt}”",
-            style = MFootType.rowTitle,
-            color = MFootColors.ink2,
-        )
+        // Il fatto prima delle parole: e' il pezzo che spiega perche' si sta parlando.
+        if (conversazione.cause.isNotBlank()) {
+            Spacer(Modifier.height(MFootSpacing.section))
+            Text(conversazione.cause, style = MFootType.chip, color = MFootColors.gamble)
+        }
+
+        Spacer(Modifier.height(MFootSpacing.related))
+        Text("“${conversazione.topic.prompt}”", style = MFootType.rowTitle, color = MFootColors.ink2)
+
+        if (conversazione.spontaneous) {
+            Spacer(Modifier.height(MFootSpacing.related))
+            Text(
+                "Lo hai chiamato tu: non aveva niente da dirti, e quello che gli dirai " +
+                    "pesera' molto meno.",
+                style = MFootType.chip,
+                color = MFootColors.ink3,
+            )
+        }
 
         spogliatoio.rispostaUltima?.let {
             Spacer(Modifier.height(MFootSpacing.section))
             Notice(it, if (spogliatoio.deltaUltimo >= 0) MFootColors.elite else MFootColors.gamble)
         }
 
-        Spacer(Modifier.height(MFootSpacing.section))
-        Label("Cosa gli dici")
-        Spacer(Modifier.height(10.dp))
+        if (!risposto) {
+            Spacer(Modifier.height(MFootSpacing.section))
+            Label("Cosa gli dici")
+            Spacer(Modifier.height(10.dp))
 
-        opzioni.forEach { opzione ->
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(MFootColors.core, MFootShapes.field)
-                    .border(1.dp, MFootColors.lineStrong, MFootShapes.field)
-                    .clickable { onParla(player.id.value, opzione) }
-                    .padding(14.dp),
-            ) {
-                Text(opzione.text, style = MFootType.rowTitle, color = MFootColors.ink)
-                if (opzione.createsPromise != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "E' una promessa: il tick la controlla giornata per giornata, e se " +
-                            "non la mantieni il crollo e' peggiore di non aver detto niente.",
-                        style = MFootType.chip,
-                        color = MFootColors.gamble,
-                    )
+            opzioni.forEach { opzione ->
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(MFootColors.core, MFootShapes.field)
+                        .border(1.dp, MFootColors.lineStrong, MFootShapes.field)
+                        .clickable { onParla(player.id.value, opzione) }
+                        .padding(14.dp),
+                ) {
+                    Text(opzione.text, style = MFootType.rowTitle, color = MFootColors.ink)
+                    if (opzione.createsPromise != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "E' una promessa: il tick conta le partite giocate, e se non la " +
+                                "mantieni il crollo e' peggiore di non aver detto niente.",
+                            style = MFootType.chip,
+                            color = MFootColors.gamble,
+                        )
+                    }
                 }
+                Spacer(Modifier.height(9.dp))
             }
-            Spacer(Modifier.height(9.dp))
         }
 
         Spacer(Modifier.height(MFootSpacing.section))
-        GhostButton("Torna allo spogliatoio", onChiudi)
+        GhostButton(if (risposto) "Torna allo spogliatoio" else "Non dirgli niente", onChiudi)
         Spacer(Modifier.height(30.dp))
     }
 }
