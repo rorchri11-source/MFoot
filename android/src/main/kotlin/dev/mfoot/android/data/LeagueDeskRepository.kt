@@ -2,6 +2,7 @@ package dev.mfoot.android.data
 
 import dev.mfoot.core.json.JsonNode
 import java.time.Instant
+import java.time.OffsetDateTime
 
 /**
  * Un iscritto alla lega.
@@ -113,13 +114,24 @@ object LeagueDeskRepository {
     }
 
     /**
-     * Una data ISO come la scrive Postgres, o null se non si capisce.
+     * Una data come la scrive Postgres, o null se non si capisce.
      *
-     * Una data illeggibile non fa fallire la schermata: si mostra "mai". Il contrario —
-     * un'eccezione che svuota il registro perche' un timestamp ha un formato inatteso — e'
-     * il modo peggiore di reagire a un dettaglio.
+     * ## Perche' tre tentativi e non uno
+     *
+     * Postgres restituisce `2026-08-18T15:04:05.123456+00:00`: ha il fuso scritto come
+     * scostamento, non come `Z`. La prima versione di questa funzione accodava una `Z`
+     * quando non c'era, producendo `...+00:00Z` — che non e' una data valida in nessun
+     * formato. Risultato: il registro diceva **"mai"** accanto a un giro appena avvenuto, e
+     * il fallimento era silenzioso perche' un formato inatteso qui non deve svuotare la
+     * schermata.
+     *
+     * Le tre forme sono quelle che si incontrano davvero: con scostamento, gia' in UTC, e
+     * con lo spazio al posto della T che alcuni strumenti producono.
      */
-    private fun istante(testo: String): Instant? = runCatching {
-        Instant.parse(if (testo.endsWith("Z")) testo else "${testo.replace(' ', 'T')}Z")
-    }.getOrNull()
+    internal fun istante(testo: String): Instant? {
+        val pulito = testo.trim()
+        return runCatching { OffsetDateTime.parse(pulito).toInstant() }.getOrNull()
+            ?: runCatching { Instant.parse(pulito) }.getOrNull()
+            ?: runCatching { OffsetDateTime.parse(pulito.replace(' ', 'T')).toInstant() }.getOrNull()
+    }
 }

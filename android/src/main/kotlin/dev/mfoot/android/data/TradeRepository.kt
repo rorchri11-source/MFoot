@@ -63,13 +63,8 @@ object TradeRepository {
                         message = row["message"].str(""),
                         status = row["status"].enum(TradeStatus.PROPOSTA),
                         answer = row["answer"].str(""),
-                        createdAt = row["created_at"].strOrNull()?.let { testo ->
-                            runCatching {
-                                Instant.parse(
-                                    if (testo.endsWith("Z")) testo else "${testo.replace(' ', 'T')}Z",
-                                )
-                            }.getOrNull()
-                        },
+                        createdAt = row["created_at"].strOrNull()
+                            ?.let(LeagueDeskRepository::istante),
                     )
                 },
             )

@@ -217,6 +217,15 @@ class AppViewModel : ViewModel() {
     }
 
     private fun carica(leagueId: Long, avviso: String? = null) {
+        // Dove si era: la ricarica non deve buttare fuori da dove si stava lavorando.
+        //
+        // Ricaricare la lega e' l'ultimo passo di mezza dozzina di azioni — parlare con un
+        // giocatore, accettare uno scambio, chiudere la stagione — perche' cambiano rose e
+        // conti in banca. Ricostruendo lo stato da zero si ricostruiva anche la pila delle
+        // schermate, e chi aveva appena risposto a un giocatore si ritrovava alla Dashboard
+        // senza aver toccato niente: sembra che l'app abbia perso il filo.
+        val dovEro = statoCorrente()?.stack
+
         viewModelScope.launch {
             _state.value = AppState.Caricamento("Leggo la lega…")
 
@@ -253,6 +262,10 @@ class AppViewModel : ViewModel() {
                             scope = if (lega.myClub != null) ListScope.MIA_ROSA
                             else ListScope.SVINCOLATI,
                         ),
+                        // Con la pila di prima se c'era: le rotte con un dato dentro —
+                        // la rosa di un club, la scheda di un giocatore — restano valide,
+                        // perche' sono gli stessi club e gli stessi giocatori appena riletti.
+                        stack = dovEro ?: listOf(Route.Dashboard),
                         avviso = avviso,
                     )
                     caricaFormazione(lega)

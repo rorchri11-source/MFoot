@@ -208,18 +208,24 @@ class TickRunner(
                 }
 
                 else -> {
-                    // Restano le partite, il risveglio delle AI e la verifica delle
-                    // promesse: pianificati correttamente, ancora da scrivere a database.
+                    // Resta il riepilogo periodico da mandare ai proprietari: pianificato
+                    // correttamente, ancora da scrivere. Le promesse non passano piu' di
+                    // qui — si controllano in fondo al giro, dopo le partite, perche' e'
+                    // l'ultima partita a poterne completare una.
                     pending++
                 }
             }
         }
 
+        // Solo cio' che davvero non e' ancora scritto.
+        //
+        // Questo elenco conteneva anche `SvegliaAi` e `VerificaPromesse`, che nel frattempo
+        // sono state implementate: il registro dichiarava "da implementare" un lavoro che
+        // stava facendo, e chi apriva la schermata per capire perche' il mercato si muoveva
+        // leggeva che l'AI non era ancora stata scritta. Una schermata che serve a dire la
+        // verita' non puo' permettersi un elenco che nessuno aggiorna.
         val daScrivere = plan.effects
-            .filter {
-                it is TickEffect.SvegliaAi || it is TickEffect.VerificaPromesse ||
-                    it is TickEffect.InviaRiepilogo
-            }
+            .filterIsInstance<TickEffect.InviaRiepilogo>()
             .groupingBy { it::class.simpleName }.eachCount()
 
         if (daScrivere.isNotEmpty()) {
