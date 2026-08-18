@@ -61,6 +61,31 @@ object CompetitionRepository {
     }
 
     /**
+     * Le competizioni che non fanno classifica: quella nascosta delle amichevoli.
+     *
+     * ## Perche' una richiesta a parte invece di leggere `kind` insieme al resto
+     *
+     * Perche' `kind` arriva con la migrazione 0014, e una colonna nuova dentro una SELECT
+     * condivisa non e' un'aggiunta: e' una rottura. PostgREST rifiuta **l'intera query**
+     * per una colonna che non esiste, quindi chiedere `kind` insieme al resto farebbe
+     * sparire l'elenco delle competizioni su ogni database non ancora aggiornato. E'
+     * successo davvero con `clubs.division_level`, e ha rotto tutta l'app.
+     *
+     * Isolata, al peggio questa richiesta fallisce da sola: le amichevoli si colorano come
+     * partite qualsiasi, che e' un difetto piccolo invece di un guasto.
+     */
+    suspend fun friendlyIds(leagueId: Long): Set<Long> {
+        val path = "/rest/v1/competitions?select=id&league_id=eq.$leagueId&kind=eq.AMICHEVOLE"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            is ApiResult.Error -> emptySet()
+            is ApiResult.Ok -> JsonNode.parse(esito.value).asList()
+                .map { it["id"].long(0) }
+                .toSet()
+        }
+    }
+
+    /**
      * Prepara il calendario **senza scrivere niente**.
      *
      * E' l'anteprima che l'admin approva. Restituisce anche gli avvisi del risolutore:

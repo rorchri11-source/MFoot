@@ -450,9 +450,16 @@ class AppViewModel : ViewModel() {
                 )
 
                 is ApiResult.Ok -> {
-                    val prima = competizioni.value.firstOrNull()
+                    // Le amichevoli hanno una competizione loro perche' una partita deve
+                    // appartenere a qualcosa, ma non e' un torneo e non va nell'elenco: una
+                    // riga "Amichevoli" fra Serie A e Coppa, con una classifica priva di
+                    // senso, farebbe cercare a lungo cosa sia.
+                    competizioniAmichevoli = CompetitionRepository.friendlyIds(leagueId)
+                    val elenco = competizioni.value.filterNot { it.id in competizioniAmichevoli }
+
+                    val prima = elenco.firstOrNull()
                     val base = TableState(
-                        competitions = competizioni.value,
+                        competitions = elenco,
                         selectedId = prima?.id,
                         clubs = dentro.lega.clubs,
                         myClubId = dentro.lega.myClub?.id,
@@ -491,6 +498,8 @@ class AppViewModel : ViewModel() {
                     caricamento = true,
                 ),
             )
+
+            competizioniAmichevoli = CompetitionRepository.friendlyIds(lega.league.id)
 
             val esito = CalendarRepository.load(
                 leagueId = lega.league.id,

@@ -1,7 +1,7 @@
 # MFoot — stato del progetto
 
-**Aggiornato:** 2026-08-16
-**Test:** 446 verdi, 0 falliti
+**Aggiornato:** 2026-08-18
+**Test:** tutti verdi
 **Verificato:** su emulatore Android e su Supabase, non solo nei test
 
 ---
@@ -59,6 +59,12 @@ gradlew :android:assembleDebug
 | 15 | **Le AI si muovono** | Si svegliano a turno, aprono aste e offrono passando per `place_bid` come tutti |
 | 16 | **Competizioni** | L'admin crea campionato, coppa o gironi: partecipanti, date e orari suoi, con anteprima del calendario |
 | 17 | **Classifica** | Tabellone con punti, differenza reti e criteri di spareggio dell'admin, piu' il calendario turno per turno |
+| 18 | **Divisioni** | Serie multiple con promozioni, retrocessioni e spareggi. `SeasonEnd` in `core`, dimensioni garantite dal database |
+| 19 | **Trattative** | Scambi, prestiti e amichevoli in una casella sola: `trades` con `kind` e `terms` |
+| 20 | **Presenze** | `appearances`: chi ha giocato, partita per partita, panchina compresa |
+| 21 | **Colloqui veri** | `LeagueFacts` apre un discorso solo quando e' successo qualcosa, e scrive il fatto accanto. Tredici argomenti |
+| 22 | **Calendario** | Griglia mensile con una cella per giorno e i colori degli eventi |
+| 23 | **AI complete** | Propongono scambi, chiedono amichevoli, tengono in ordine la rosa, gestiscono il proprio spogliatoio |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -112,10 +118,9 @@ il suo overall dipende da quattro attributi invece che da sei.
 
 1. **Il replay della partita.** La timeline viene salvata intera a database; manca la
    schermata che la riproduce con l'orologio del telefono.
-2. **Formazione e ordini condizionali.** La tabella `lineups` esiste e si scrive già alla
-   fondazione del club, ma il tick usa sempre la formazione automatica: quella scelta a
-   mano non viene ancora letta.
-3. **Notifiche Telegram.** Il tick le accumula in `notifications`, nessuno le consegna.
+2. **Il riepilogo giornaliero.** Il tick accumula le notifiche in `notifications` e
+   nessuno le consegna. È l'unica cosa che il tick *pianifica* e non fa, e da oggi è anche
+   l'unica riga che il registro dichiara "da implementare".
 
 ### Cosa fa e cosa non fa il tick, oggi
 
@@ -131,7 +136,11 @@ il suo overall dipende da quattro attributi invece che da sei.
 | Simulazione partite, con crescita, morale e premi | ✅ |
 | Avvio della stagione | ➖ non e' compito del tick: le competizioni le crea l'admin |
 | Risveglio AI, con offerte vere sulle aste | ✅ |
-| Verifica promesse | ❌ pianificata, non applicata |
+| Presenze scritte dopo ogni partita | ✅ |
+| Verifica promesse, contando le presenze | ✅ |
+| Apertura dei colloqui dai fatti | ✅ |
+| Risposta a scambi, prestiti e amichevoli | ✅ |
+| AI che propongono, rinnovano e svincolano | ✅ |
 | Riepilogo giornaliero | ❌ pianificato, non applicato |
 
 ### Migrazioni SQL da eseguire
@@ -145,6 +154,20 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0003_club.sql` | `create_club` e il conto del budget lato server |
 | `supabase/migrations/0004_auctions.sql` | `start_auction`, prezzo pubblico sulle aste |
 | `supabase/migrations/0005_competitions.sql` | `create_competition`, `delete_competition` |
+| `supabase/migrations/0006_config.sql` | `update_league_config` |
+| `supabase/migrations/0007_tick_state_read.sql` | La policy che rendeva `tick_state` leggibile |
+| `supabase/migrations/0008_trades.sql` | Gli scambi |
+| `supabase/migrations/0009_divisions.sql` | Le divisioni |
+| `supabase/migrations/0010_conversations.sql` | Il morale dai colloqui |
+| `supabase/migrations/0011_promises.sql` | Le promesse |
+| `supabase/migrations/0012_partite_giocate.sql` | `appearances`: chi ha giocato, partita per partita |
+| `supabase/migrations/0013_colloqui.sql` | `conversations` e le funzioni per aprirla e chiuderla |
+| `supabase/migrations/0014_trattative.sql` | Prestiti e amichevoli, `competitions.kind` |
+
+**`0014` va applicata prima di installare l'APK.** Aggiunge una colonna a `competitions`,
+e una colonna nuova dentro una SELECT condivisa non è un'aggiunta: PostgREST rifiuta
+l'intera query per una colonna che non esiste. È già successo con `clubs.division_level`,
+e aveva rotto tutta l'app.
 
 Le leghe create prima della migrazione `0003` non hanno i pesi dei ruoli in
 configurazione e **non possono accettare nuovi club**: per provare la fondazione va
@@ -185,3 +208,14 @@ Non refusi: difetti di logica che sarebbero arrivati fino in produzione.
    è segreto. Nessuno avrebbe mai potuto fare un'offerta.
 5. **Il cartellino rosso rompeva la formazione**, perché `Lineup` pretendeva sempre
    esattamente 11 giocatori.
+6. **Le promesse si mantenevano da sole in un quarto d'ora.** Il tick incrementava un
+   contatore a ogni giro invece di contare le partite, e i giri passano ogni cinque
+   minuti. Il sistema che doveva rendere costoso promettere era il modo più rapido di
+   alzare il morale gratis.
+7. **Lo stesso difetto di fuso orario viveva in tre copie.** Tagliare lo scostamento
+   `+02:00` e appiccicare una `Z` butta via due ore *senza fallire*: le aste chiudevano
+   due ore dopo il conto alla rovescia, le partite comparivano due ore più tardi, e il
+   registro diceva «mai» accanto a un giro appena avvenuto.
+8. **Le AI si svegliavano una volta al giorno.** Dopo aver agito, il risveglio successivo
+   cadeva nel passato e veniva spinto a domani. `checksPerDay` esisteva e non lo leggeva
+   nessuno.
