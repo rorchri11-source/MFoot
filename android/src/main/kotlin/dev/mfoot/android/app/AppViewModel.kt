@@ -12,6 +12,7 @@ import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
+import dev.mfoot.android.data.PlayerRepository
 import dev.mfoot.android.data.TradeRepository
 import dev.mfoot.android.data.SavedLineup
 import dev.mfoot.android.data.Session
@@ -25,6 +26,9 @@ import dev.mfoot.core.calendar.DivisionRules
 import dev.mfoot.core.calendar.SeasonEnd
 import dev.mfoot.core.calendar.SeasonOutcome
 import dev.mfoot.core.config.ConfigPresets
+import dev.mfoot.core.conversation.ConversationEngine
+import dev.mfoot.core.conversation.ConversationOption
+import dev.mfoot.core.conversation.ConversationTopic
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.market.Valuation
 import dev.mfoot.core.match.AutoLineup
@@ -790,6 +794,74 @@ class AppViewModel : ViewModel() {
             }
         }
     }
+
+    // -------------------------------------------------------------------- spogliatoio
+
+    private val _spogliatoio = MutableStateFlow(SpogliatoioState())
+    val spogliatoio: StateFlow<SpogliatoioState> = _spogliatoio
+
+    fun apriColloquio(playerId: Long) {
+        _spogliatoio.value = SpogliatoioState(conPlayerId = playerId)
+    }
+
+    fun chiudiColloquio() {
+        _spogliatoio.value = SpogliatoioState()
+    }
+
+    /**
+     * Parla con un giocatore.
+     *
+     * ## Il morale si salva subito, la promessa no
+     *
+     * Il nuovo morale va sul database perche' e' un fatto: il giocatore ha sentito quelle
+     * parole e ha reagito. Le promesse invece restano da fare — servono una tabella loro e
+     * il tick che le verifica giornata per giornata — e finche' non c'e', prometterle
+     * varrebbe come dirle e poi dimenticarsene, che e' peggio di non poterle fare.
+     *
+     * Per questo l'opzione che crea una promessa **c'e' e funziona nel motore**, ma qui la
+     * si segnala per quello che e': l'effetto immediato lo si ottiene, il debito non viene
+     * ancora riscosso.
+     */
+    fun parla(playerId: Long, option: ConversationOption) {
+        val dentro = statoCorrente() ?: return
+        val club = dentro.lega.myClub ?: return
+        val player = dentro.lega.squadOf(club.id).firstOrNull { it.id.value == playerId } ?: return
+
+        val argomento = when {
+            player.morale < 20 -> ConversationTopic.RICHIESTA_CESSIONE
+            player.morale < 35 -> ConversationTopic.MORALE_BASSO
+            player.morale < 50 -> ConversationTopic.POCO_MINUTAGGIO
+            else -> ConversationTopic.PRESTAZIONI_SCARSE
+        }
+
+        val esito = ConversationEngine.resolve(
+            player = player,
+            topic = argomento,
+            option = option,
+            today = MatchDay(dentro.lega.league.currentMatchDay),
+            rules = dentro.lega.league.config.rules,
+        )
+
+        viewModelScope.launch {
+            when (val salvato = PlayerRepository.updateMorale(playerId, esito.player.morale)) {
+                is ApiResult.Error ->
+                    _spogliatoio.value = _spogliatoio.value.copy(
+                        rispostaUltima = salvato.message,
+                        deltaUltimo = -1,
+                    )
+
+                is ApiResult.Ok -> {
+                    _spogliatoio.value = _spogliatoio.value.copy(
+                        rispostaUltima = "“${esito.reply}”  ${segno(esito.moraleDelta)} morale",
+                        deltaUltimo = esito.moraleDelta,
+                    )
+                    Session.leagueId?.let { carica(it) }
+                }
+            }
+        }
+    }
+
+    private fun segno(delta: Int) = if (delta >= 0) "+$delta" else "$delta"
 
     // --------------------------------------------------------------------- divisioni
 

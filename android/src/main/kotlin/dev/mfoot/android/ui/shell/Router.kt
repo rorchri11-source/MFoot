@@ -19,6 +19,8 @@ import dev.mfoot.android.app.AuctionRow
 import dev.mfoot.android.app.DeskState
 import dev.mfoot.android.app.DivisionsAdmin
 import dev.mfoot.android.app.SettingsSection
+import dev.mfoot.android.app.SpogliatoioState
+import dev.mfoot.core.conversation.ConversationOption
 import dev.mfoot.android.app.TradeDraft
 import dev.mfoot.android.app.TradesState
 import dev.mfoot.android.app.LineupEdit
@@ -40,6 +42,7 @@ import dev.mfoot.android.ui.screens.PartecipantiScreen
 import dev.mfoot.android.ui.screens.ProfiloLegaScreen
 import dev.mfoot.android.ui.screens.RegistroScreen
 import dev.mfoot.android.ui.screens.ScambiScreen
+import dev.mfoot.android.ui.screens.SpogliatoioScreen
 import dev.mfoot.android.ui.screens.RosaScreen
 import dev.mfoot.android.ui.screens.SquadreScreen
 import dev.mfoot.android.ui.theme.MFootColors
@@ -84,6 +87,10 @@ fun Router(
     onAssignDivisions: () -> Unit,
     onCloseSeason: () -> Unit,
     onDismissDivisionNotice: () -> Unit,
+    spogliatoio: SpogliatoioState,
+    onOpenTalk: (Long) -> Unit,
+    onTalk: (Long, ConversationOption) -> Unit,
+    onCloseTalk: () -> Unit,
     lineup: LineupEdit,
     onLineupChange: (LineupEdit) -> Unit,
     onLineupSave: () -> Unit,
@@ -104,6 +111,14 @@ fun Router(
         // sempre la propria, e sembrava che l'elenco non funzionasse.
         is Route.Rosa -> RosaScreen(state, route.clubId, onSelect)
 
+        is Route.Spogliatoio -> SpogliatoioScreen(
+            state = state,
+            spogliatoio = spogliatoio,
+            onApri = onOpenTalk,
+            onParla = onTalk,
+            onChiudi = onCloseTalk,
+        )
+
         is Route.Infermeria -> Infermeria(state)
 
         // Queste tre hanno gia' una schermata propria, aperta a schermo pieno dal
@@ -115,7 +130,7 @@ fun Router(
 
         is Route.ProfiloLega -> ProfiloLegaScreen(state)
         is Route.Partecipanti -> {
-            // La lettura parte all.apertura, non all.avvio dell.app: e. una richiesta in piu.
+            // La lettura parte all apertura, non all avvio: e una richiesta in piu
             // per una schermata che si guarda due volte a stagione.
             LaunchedEffect(state.lega.league.id) { onLoadMembers() }
             PartecipantiScreen(desk)

@@ -265,6 +265,7 @@ private fun Drawer(
         Item("Scambi", Route.Scambi, route, onNavigate)
         Item("Svincolati", Route.Svincolati, route, onNavigate)
         Item("Listone", Route.Listone, route, onNavigate)
+        Item("Spogliatoio", Route.Spogliatoio, route, onNavigate)
         Item("Infermeria", Route.Infermeria, route, onNavigate)
         Item("Registro attivita'", Route.RegistroAdmin, route, onNavigate)
 

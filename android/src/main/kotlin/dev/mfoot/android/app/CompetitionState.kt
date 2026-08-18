@@ -243,3 +243,17 @@ data class DivisionsAdmin(
     val avviso: String? = null,
     val errore: String? = null,
 )
+
+/**
+ * Lo spogliatoio: chi si sta ascoltando e come e' andata.
+ *
+ * [rispostaUltima] resta a schermo dopo aver parlato invece di sparire: la risposta del
+ * giocatore e' l'unica cosa che dice se la scelta e' stata giusta, e farla lampeggiare
+ * mezzo secondo vorrebbe dire non farla leggere.
+ */
+data class SpogliatoioState(
+    val conPlayerId: Long? = null,
+    val rispostaUltima: String? = null,
+    val deltaUltimo: Int = 0,
+    val avviso: String? = null,
+)

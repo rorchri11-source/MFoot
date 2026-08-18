@@ -56,6 +56,7 @@ sealed interface Route {
             Svincolati -> "Svincolati"
             Listone -> "Listone"
             Infermeria -> "Infermeria"
+            Spogliatoio -> "Spogliatoio"
             RegistroAdmin -> "Registro admin"
             is Rosa -> "Rosa"
             is Giocatore -> row.player.fullName
@@ -120,6 +121,9 @@ sealed interface Route {
     data object Svincolati : Route
     data object Listone : Route
     data object Infermeria : Route
+
+    /** Chi ha qualcosa da dirti, e cosa rispondergli. */
+    data object Spogliatoio : Route
     data object RegistroAdmin : Route
 
     // ------------------------------------------------------- destinazioni con un dato
