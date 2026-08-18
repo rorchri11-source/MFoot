@@ -2,6 +2,7 @@ package dev.mfoot.android.data
 
 import android.util.JsonReader
 import android.util.JsonToken
+import dev.mfoot.android.ui.kit.Kit
 import dev.mfoot.core.config.ConfigJson
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.json.JsonNode
@@ -44,6 +45,14 @@ data class ClubInfo(
     val credits: Int,
     val committedCredits: Int,
     val customPlayerId: Long?,
+    /**
+     * La maglia scelta dal proprietario.
+     *
+     * Sta dentro il club e non in una lettura a parte perche' e' un suo attributo come il
+     * nome: ovunque si mostri una squadra si vuole mostrare la sua maglia, e una lettura
+     * separata darebbe un elenco che compare grigio e si colora mezzo secondo dopo.
+     */
+    val kit: Kit = Kit.DEFAULT,
 ) {
     /** Quello che si puo' davvero spendere: i crediti impegnati nelle aste sono gia' via. */
     val available: Int get() = credits - committedCredits
@@ -161,7 +170,7 @@ object LeagueRepository {
 
     private suspend fun readClubs(leagueId: Long): ApiResult<List<ClubInfo>> {
         val path = "/rest/v1/clubs?select=id,name,short_name,is_ai,owner_user_id,owner_name," +
-            "credits,committed_credits,custom_player_id&league_id=eq.$leagueId&order=name"
+            "credits,committed_credits,custom_player_id,kit&league_id=eq.$leagueId&order=name"
         val me = Session.userId
 
         return SupabaseApi.get(path).then { body ->
@@ -179,10 +188,48 @@ object LeagueRepository {
                         credits = row["credits"].int(0),
                         committedCredits = row["committed_credits"].int(0),
                         customPlayerId = row["custom_player_id"].long(0).takeIf { it > 0 },
+                        kit = readKit(row["kit"], row["id"].long(0)),
                     )
                 },
             )
         }
+    }
+
+    /**
+     * La maglia salvata, con il ripiego a quella predefinita.
+     *
+     * Un colore illeggibile non fa fallire la lettura della lega: si mostra la maglia
+     * bianca. Il contrario — un club che sparisce dall'elenco perche' qualcuno ha salvato
+     * un motivo che questa versione dell'app non conosce — sarebbe molto peggio di una
+     * maglia sbagliata.
+     */
+    private fun readKit(node: JsonNode, clubId: Long): Kit {
+        // Nessun colore salvato: e' un club nato dentro `create_league`, cioe' una squadra
+        // gestita dal computer. Gliene si da' una ricavata dall'id invece della bianca
+        // predefinita, altrimenti otto avversari sono otto maglie identiche.
+        if (node["primary"].strOrNull() == null) return Kit.forClub(clubId)
+
+        val d = Kit.forClub(clubId)
+        return Kit(
+            pattern = node["pattern"].enum(d.pattern),
+            primary = colore(node["primary"].strOrNull(), d.primary),
+            secondary = colore(node["secondary"].strOrNull(), d.secondary),
+            detail = colore(node["detail"].strOrNull(), d.detail),
+            number = node["number"].int(0).takeIf { it > 0 },
+        )
+    }
+
+    /**
+     * Da `#RRGGBB` a intero con l'alfa piena.
+     *
+     * L'alfa va rimessa qui: il database salva sei cifre esadecimali, e un colore senza
+     * alfa in Compose e' completamente trasparente. Una maglia invisibile e' esattamente il
+     * genere di difetto che si scambia per "la maglia non si e' salvata".
+     */
+    private fun colore(hex: String?, fallback: Long): Long {
+        val pulito = hex?.trim()?.removePrefix("#") ?: return fallback
+        val valore = pulito.toLongOrNull(16) ?: return fallback
+        return 0xFF000000L or (valore and 0xFFFFFF)
     }
 
     /**

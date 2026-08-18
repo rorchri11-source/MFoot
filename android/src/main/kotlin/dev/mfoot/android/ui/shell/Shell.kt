@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mfoot.android.BuildConfig
 import dev.mfoot.android.app.Route
 import dev.mfoot.android.app.SettingsSection
 import dev.mfoot.android.ui.Hairline
@@ -276,6 +277,18 @@ private fun Drawer(
                 .fillMaxWidth()
                 .clickable(onClick = onLeaveLeague)
                 .padding(MFootSpacing.section, 15.dp),
+        )
+
+        // La versione, scritta dove si vede senza cercarla.
+        //
+        // Non e' vanita': senza, non c'e' modo di sapere se l'APK sul telefono contiene una
+        // correzione o e' quello della settimana scorsa, e si finisce per segnalare difetti
+        // gia' risolti guardando una build vecchia.
+        Text(
+            "MFoot ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+            modifier = Modifier.padding(MFootSpacing.section, 14.dp, MFootSpacing.section, 0.dp),
         )
         Spacer(Modifier.height(20.dp))
     }

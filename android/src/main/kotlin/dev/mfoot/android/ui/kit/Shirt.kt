@@ -57,6 +57,61 @@ data class Kit(
             secondary = 0xFF12151A,
             detail = 0xFF12151A,
         )
+
+        /**
+         * La maglia di un club che non ne ha scelta una.
+         *
+         * Serve ai club gestiti dal computer, che nascono dentro `create_league` senza
+         * maglia: senza questo erano otto squadre **tutte bianche e identiche**, e l'unica
+         * cosa che le distingueva era il nome scritto sopra.
+         *
+         * Si ricava dall'id e non a caso, per due ragioni. La prima e' che deve restare la
+         * stessa a ogni apertura dell'app: una squadra che cambia colori quando ricarichi
+         * la lega non e' una squadra, e' un'animazione. La seconda e' che l'id lo conoscono
+         * tutti i telefoni, quindi la maglia del Montesole e' la stessa sul tuo schermo e
+         * su quello dei tuoi amici, senza doverla salvare da nessuna parte.
+         */
+        fun forClub(clubId: Long): Kit {
+            // Numeri primi diversi per ogni scelta: usando lo stesso moltiplicatore, motivo
+            // e colori si muoverebbero insieme e i club vicini di id si somiglierebbero.
+            val patterns = KitPattern.entries
+            val primario = TAVOLOZZA[((clubId * 7) % TAVOLOZZA.size).toInt()]
+            var secondario = TAVOLOZZA[((clubId * 13 + 5) % TAVOLOZZA.size).toInt()]
+
+            // Due colori uguali fanno una maglia che sembra a tinta unita anche quando non
+            // lo e': si scala di uno finche' non sono diversi.
+            if (secondario == primario) {
+                secondario = TAVOLOZZA[((clubId * 13 + 6) % TAVOLOZZA.size).toInt()]
+            }
+
+            return Kit(
+                pattern = patterns[((clubId * 3) % patterns.size).toInt()],
+                primary = primario,
+                secondary = secondario,
+                detail = if (chiaro(primario)) 0xFF12151A else 0xFFF2F4F7,
+            )
+        }
+
+        /**
+         * Il colore di rifinitura deve staccare dal fondo.
+         *
+         * Su una maglia bianca un dettaglio bianco sparisce, su una nera un dettaglio nero
+         * pure. Si guarda la luminosita' percepita — il verde pesa piu' del blu — e si
+         * sceglie l'opposto.
+         */
+        private fun chiaro(colore: Long): Boolean {
+            val r = ((colore shr 16) and 0xFF).toDouble()
+            val g = ((colore shr 8) and 0xFF).toDouble()
+            val b = (colore and 0xFF).toDouble()
+            return (0.299 * r + 0.587 * g + 0.114 * b) > 140
+        }
+
+        /** Gli stessi colori che si possono scegliere a mano nell'editor. */
+        private val TAVOLOZZA = listOf(
+            0xFFF2F4F7, 0xFF12151A, 0xFFE8483F, 0xFF1F5FD8,
+            0xFF2BE07E, 0xFFFFC53D, 0xFF8A0F2E, 0xFF0B3B8C,
+            0xFF00A6A6, 0xFFB05CFF, 0xFFFF7A3D, 0xFF7A8290,
+        )
     }
 }
 

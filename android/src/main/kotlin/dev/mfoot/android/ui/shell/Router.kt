@@ -28,6 +28,7 @@ import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.PlayerListScreen
 import dev.mfoot.android.ui.screens.CampoScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
+import dev.mfoot.android.ui.screens.RosaScreen
 import dev.mfoot.android.ui.screens.SquadreScreen
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -70,7 +71,10 @@ fun Router(
         is Route.Svincolati -> Lista(state, ListScope.SVINCOLATI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
         is Route.Listone -> Lista(state, ListScope.TUTTI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
         is Route.Aste -> Lista(state, ListScope.ASTE, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
-        is Route.Rosa -> Lista(state, ListScope.MIA_ROSA, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
+        // La rosa **di quel club**, non la propria. Prima la rotta portava con se' il
+        // clubId e nessuno lo guardava: toccare una squadra qualsiasi nell'elenco apriva
+        // sempre la propria, e sembrava che l'elenco non funzionasse.
+        is Route.Rosa -> RosaScreen(state, route.clubId, onSelect)
 
         is Route.Infermeria -> Infermeria(state)
 

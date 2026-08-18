@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.data.ClubInfo
 import dev.mfoot.android.ui.Label
+import dev.mfoot.android.ui.kit.Shirt
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -85,17 +86,12 @@ private fun ClubRow(club: ClubInfo, inRosa: Int, minimo: Int, onClick: () -> Uni
             .padding(horizontal = MFootSpacing.section, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Lo stemma e' la sigla su un colore ricavato dall'id: due club non hanno mai la
-        // stessa tinta, e non serve che nessuno carichi un'immagine.
-        Box(
-            Modifier
-                .size(38.dp)
-                .background(colorFor(club.id), RoundedCornerShape(11.dp))
-                .border(1.dp, MFootColors.lineStrong, RoundedCornerShape(11.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(club.shortName, style = MFootType.label, color = MFootColors.bg)
-        }
+        // La maglia vera, non un quadrato colorato.
+        //
+        // Prima il colore si ricavava dall'id e non aveva niente a che vedere con la maglia
+        // che il proprietario aveva disegnato: lo stesso club aveva due identita' diverse a
+        // seconda della schermata. Qui c'e' quella che scende in campo.
+        Shirt(club.kit, Modifier.size(38.dp, 43.dp), showNumber = false)
 
         Spacer(Modifier.width(MFootSpacing.related))
 

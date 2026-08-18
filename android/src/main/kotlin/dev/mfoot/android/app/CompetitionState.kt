@@ -123,9 +123,26 @@ data class TableState(
     val view: TableView? = null,
     val clubs: List<ClubInfo> = emptyList(),
     val myClubId: Long? = null,
+    val tab: TableTab = TableTab.CLASSIFICA,
     val errore: String? = null,
 ) {
     fun clubName(id: Long): String = clubs.firstOrNull { it.id == id }?.name ?: "Club #$id"
+
+    fun kitOf(id: Long): dev.mfoot.android.ui.kit.Kit? = clubs.firstOrNull { it.id == id }?.kit
+}
+
+/**
+ * Le due domande che si fanno a questa schermata.
+ *
+ * Erano una schermata sola, con la classifica in cima e il calendario sotto, e a ragione la
+ * barra in basso aveva due voci che aprivano la stessa identica cosa. Sono due domande
+ * diverse: "a che punto siamo" si guarda una volta al giorno, "quando gioco" si guarda
+ * prima di schierare. Metterle in fila obbliga a scorrere una classifica da venti righe
+ * ogni volta che si vuole sapere l'orario della prossima partita.
+ */
+enum class TableTab(val label: String) {
+    CLASSIFICA("Classifica"),
+    CALENDARIO("Calendario"),
 }
 
 /** La schermata delle competizioni: quelle esistenti e quella in costruzione. */

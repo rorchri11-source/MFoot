@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.TableState
+import dev.mfoot.android.app.TableTab
 import dev.mfoot.android.data.MatchRow
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
@@ -48,6 +49,7 @@ private val QUANDO = DateTimeFormatter.ofPattern("d MMM, HH:mm")
 fun TableScreen(
     state: TableState,
     onPickCompetition: (Long) -> Unit,
+    onPickTab: (TableTab) -> Unit,
     onClose: () -> Unit,
 ) {
     Column(
@@ -75,6 +77,12 @@ fun TableScreen(
                 }
                 Spacer(Modifier.height(12.dp))
             }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TableTab.entries.forEach { tab ->
+                    Chip(tab.label, tab == state.tab) { onPickTab(tab) }
+                }
+            }
         }
 
         val view = state.view
@@ -88,7 +96,14 @@ fun TableScreen(
             view.matches.isEmpty() ->
                 Center("Nessuna partita in calendario.", MFootColors.ink3)
 
-            else -> Content(state, view.matches, view.rows.isNotEmpty())
+            state.tab == TableTab.CLASSIFICA && view.rows.isEmpty() ->
+                Center(
+                    "Questa competizione non ha una classifica: e' a eliminazione. " +
+                        "Guarda il calendario.",
+                    MFootColors.ink3,
+                )
+
+            else -> Content(state, view.matches, state.tab)
         }
     }
 }
@@ -107,11 +122,11 @@ private fun Center(text: String, color: androidx.compose.ui.graphics.Color) {
 }
 
 @Composable
-private fun Content(state: TableState, matches: List<MatchRow>, hasTable: Boolean) {
+private fun Content(state: TableState, matches: List<MatchRow>, tab: TableTab) {
     val view = state.view ?: return
 
     LazyColumn(Modifier.fillMaxSize()) {
-        if (hasTable) {
+        if (tab == TableTab.CLASSIFICA) {
             item { TableHeader() }
             itemsIndexed(view.rows.size) { index ->
                 val row = view.rows[index]
@@ -133,14 +148,16 @@ private fun Content(state: TableState, matches: List<MatchRow>, hasTable: Boolea
 
         // Le partite raggruppate per turno: e' cosi' che si guarda un calendario, non
         // come un elenco piatto di cinquanta righe.
-        matches.groupBy { it.round }.toSortedMap().forEach { (round, ofRound) ->
-            item {
-                Column(Modifier.padding(MFootSpacing.section, 16.dp, MFootSpacing.section, 8.dp)) {
-                    Label(ofRound.firstOrNull()?.roundLabel?.takeIf { it.isNotBlank() } ?: "Turno $round")
+        if (tab == TableTab.CALENDARIO) {
+            matches.groupBy { it.round }.toSortedMap().forEach { (round, ofRound) ->
+                item {
+                    Column(Modifier.padding(MFootSpacing.section, 16.dp, MFootSpacing.section, 8.dp)) {
+                        Label(ofRound.firstOrNull()?.roundLabel?.takeIf { it.isNotBlank() } ?: "Turno $round")
+                    }
                 }
-            }
-            items(ofRound, key = { it.id }) { match ->
-                MatchLine(match, state)
+                items(ofRound, key = { it.id }) { match ->
+                    MatchLine(match, state)
+                }
             }
         }
 

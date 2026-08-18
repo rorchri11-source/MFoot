@@ -33,6 +33,7 @@ import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AppViewModel
 import dev.mfoot.android.app.DoorMode
 import dev.mfoot.android.app.Route
+import dev.mfoot.android.app.TableTab
 import dev.mfoot.android.data.Session
 import dev.mfoot.android.ui.shell.Router
 import dev.mfoot.android.ui.shell.Shell
@@ -94,6 +95,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
             is AppState.Classifica -> TableScreen(
                 state = current.table,
                 onPickCompetition = viewModel::scegliCompetizione,
+                onPickTab = viewModel::cambiaSchedaTabella,
                 onClose = viewModel::chiudiClassifica,
             )
 
@@ -132,7 +134,8 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         // intera loro, con caricamenti propri: si aprono da fuori dal
                         // guscio invece di essere infilate dentro il contenuto.
                         when (route) {
-                            is Route.Classifica, is Route.Calendario -> viewModel.apriClassifica()
+                            is Route.Classifica -> viewModel.apriClassifica(TableTab.CLASSIFICA)
+                            is Route.Calendario -> viewModel.apriClassifica(TableTab.CALENDARIO)
                             is Route.Competizioni -> viewModel.apriCompetizioni()
                             else -> viewModel.vai(route)
                         }

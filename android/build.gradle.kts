@@ -37,8 +37,17 @@ android {
         // livello servirebbe il desugaring.
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        // Il numero di versione sale a ogni build, e la data ne fa parte.
+        //
+        // Serve a rispondere a una domanda che si e' gia' posta e che costava un'ora ogni
+        // volta: "l'APK che sto provando contiene la correzione o no?". Con versionCode
+        // fisso a 1 e nessuna versione scritta nell'app non c'era modo di saperlo, e si
+        // finiva per discutere di difetti gia' corretti guardando una build vecchia.
+        //
+        // La versione compare in fondo al menu laterale, non in una schermata "info" che
+        // nessuno apre.
+        versionCode = 4
+        versionName = "0.4.0"
 
         buildConfigField("String", "SUPABASE_URL", "\"${secret("supabase.url")}\"")
         buildConfigField("String", "SUPABASE_KEY", "\"${secret("supabase.key")}\"")

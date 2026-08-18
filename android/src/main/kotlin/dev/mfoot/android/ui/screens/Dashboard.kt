@@ -95,7 +95,10 @@ fun DashboardScreen(
 
         Spacer(Modifier.height(20.dp))
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Shirt(Kit.DEFAULT, Modifier.size(148.dp, 166.dp), showNumber = false)
+            // La maglia del club, non quella predefinita. Disegnarne una fissa qui voleva
+            // dire che i colori scelti alla fondazione si vedevano una volta sola, durante
+            // la scelta, e poi mai piu': salvati, e invisibili.
+            Shirt(club.kit, Modifier.size(148.dp, 166.dp), showNumber = false)
         }
         Spacer(Modifier.height(24.dp))
 

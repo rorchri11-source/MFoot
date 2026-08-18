@@ -366,16 +366,25 @@ class AppViewModel : ViewModel() {
      * La aprono tutti, non solo l'admin: e' la schermata che si guarda piu' spesso, ed e'
      * quella che fa sembrare la lega un campionato invece di una serie di partite slegate.
      */
-    fun apriClassifica() {
+    /**
+     * Apre classifica e calendario, sulla scheda giusta.
+     *
+     * La scheda arriva da **quale voce e' stata toccata** nella barra in basso. Aprire
+     * sempre la classifica e lasciare che sia l'utente a spostarsi vorrebbe dire che il
+     * tasto "Calendario" mostra la classifica, che e' quello che faceva prima.
+     */
+    fun apriClassifica(tab: TableTab = TableTab.CLASSIFICA) {
         val dentro = _state.value as? AppState.Dentro ?: return
         val leagueId = dentro.lega.league.id
 
         viewModelScope.launch {
-            _state.value = AppState.Caricamento("Leggo la classifica…")
+            _state.value = AppState.Caricamento(
+                if (tab == TableTab.CALENDARIO) "Leggo il calendario…" else "Leggo la classifica…",
+            )
 
             when (val competizioni = CompetitionRepository.list(leagueId)) {
                 is ApiResult.Error -> _state.value = AppState.Classifica(
-                    TableState(emptyList(), null, errore = competizioni.message),
+                    TableState(emptyList(), null, tab = tab, errore = competizioni.message),
                 )
 
                 is ApiResult.Ok -> {
@@ -385,6 +394,7 @@ class AppViewModel : ViewModel() {
                         selectedId = prima?.id,
                         clubs = dentro.lega.clubs,
                         myClubId = dentro.lega.myClub?.id,
+                        tab = tab,
                     )
                     _state.value = AppState.Classifica(
                         if (prima == null) base else base.copy(view = caricaTabella(leagueId, prima))
@@ -392,6 +402,11 @@ class AppViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    fun cambiaSchedaTabella(tab: TableTab) {
+        val schermata = (_state.value as? AppState.Classifica)?.table ?: return
+        _state.value = AppState.Classifica(schermata.copy(tab = tab))
     }
 
     fun scegliCompetizione(id: Long) {
