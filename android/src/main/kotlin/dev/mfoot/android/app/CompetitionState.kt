@@ -171,3 +171,20 @@ data class SettingsEdit(
 ) {
     val dirty: Boolean get() = bozza != null
 }
+
+/**
+ * Le letture della scrivania dell'admin: partecipanti e registro del tick.
+ *
+ * Vive accanto allo stato della lega e non dentro perche' si legge di rado: infilarla nello
+ * snapshot iniziale vorrebbe dire due richieste in piu' a ogni avvio dell'app per dati che
+ * quasi nessuno guarda.
+ *
+ * [tickLetto] distingue "non ho ancora chiesto" da "ho chiesto e il tick non ha mai girato",
+ * che sono due cose diversissime: la prima e' un caricamento, la seconda un problema.
+ */
+data class DeskState(
+    val members: List<dev.mfoot.android.data.MemberInfo>? = null,
+    val tick: dev.mfoot.android.data.TickInfo? = null,
+    val tickLetto: Boolean = false,
+    val errore: String? = null,
+)

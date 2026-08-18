@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AuctionRow
+import dev.mfoot.android.app.DeskState
 import dev.mfoot.android.app.LineupEdit
 import dev.mfoot.android.app.ListScope
 import dev.mfoot.android.app.PlayerRow
@@ -28,6 +30,10 @@ import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.PlayerListScreen
 import dev.mfoot.android.ui.screens.CampoScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
+import dev.mfoot.android.ui.screens.MercatiScreen
+import dev.mfoot.android.ui.screens.PartecipantiScreen
+import dev.mfoot.android.ui.screens.ProfiloLegaScreen
+import dev.mfoot.android.ui.screens.RegistroScreen
 import dev.mfoot.android.ui.screens.RosaScreen
 import dev.mfoot.android.ui.screens.SquadreScreen
 import dev.mfoot.android.ui.theme.MFootColors
@@ -56,6 +62,9 @@ fun Router(
     settings: SettingsEdit,
     onConfigChange: (LeagueConfig) -> Unit,
     onConfigSave: () -> Unit,
+    desk: DeskState,
+    onLoadMembers: () -> Unit,
+    onLoadTick: () -> Unit,
     lineup: LineupEdit,
     onLineupChange: (LineupEdit) -> Unit,
     onLineupSave: () -> Unit,
@@ -85,8 +94,13 @@ fun Router(
 
         is Route.Campo -> CampoScreen(state, lineup, onLineupChange, onLineupSave)
 
-        is Route.ProfiloLega -> DaFare("Profilo lega", "Nome, codice, stato, giornata.")
-        is Route.Partecipanti -> DaFare("Partecipanti", "Chi c'e', con quale club, chi e' admin.")
+        is Route.ProfiloLega -> ProfiloLegaScreen(state)
+        is Route.Partecipanti -> {
+            // La lettura parte all.apertura, non all.avvio dell.app: e. una richiesta in piu.
+            // per una schermata che si guarda due volte a stagione.
+            LaunchedEffect(state.lega.league.id) { onLoadMembers() }
+            PartecipantiScreen(desk)
+        }
 
         is Route.Opzioni -> SettingsIndexScreen(state.lega.league.isAdmin) {
             onNavigate(Route.Regolamento(it))
@@ -102,8 +116,11 @@ fun Router(
             onChange = onConfigChange,
             onSave = onConfigSave,
         )
-        is Route.Mercati -> DaFare("Mercati", "Finestre di mercato e asta iniziale.")
-        is Route.RegistroAdmin -> DaFare("Registro", "Cosa ha fatto il tick, giro per giro.")
+        is Route.Mercati -> MercatiScreen(state)
+        is Route.RegistroAdmin -> {
+            LaunchedEffect(state.lega.league.id) { onLoadTick() }
+            RegistroScreen(desk)
+        }
 
         is Route.Giocatore, is Route.Offerta -> Box(Modifier.fillMaxSize())
     }

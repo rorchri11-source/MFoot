@@ -7,6 +7,7 @@ import dev.mfoot.android.data.AuctionRepository
 import dev.mfoot.android.data.AuctionView
 import dev.mfoot.android.data.ClubUpload
 import dev.mfoot.android.data.CompetitionRepository
+import dev.mfoot.android.data.LeagueDeskRepository
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.data.LineupRepository
@@ -218,6 +219,9 @@ class AppViewModel : ViewModel() {
                         avviso = avviso,
                     )
                     caricaFormazione(snapshot.value)
+                    // Ripulito a ogni ricarica: dopo che qualcuno fonda un club, un elenco
+                    // partecipanti in memoria dalla volta prima lo mostrerebbe ancora senza.
+                    _desk.value = DeskState()
                 }
             }
         }
@@ -720,6 +724,46 @@ class AppViewModel : ViewModel() {
     /** La configurazione da mostrare: la bozza se c'e', altrimenti quella della lega. */
     fun configMostrata(): LeagueConfig =
         _config.value.bozza ?: configCorrente()
+
+    // --------------------------------------------------------------------- scrivania
+
+    /**
+     * Partecipanti e registro del tick.
+     *
+     * Si leggono **quando si apre la schermata**, non all'avvio: sono due richieste in piu'
+     * per dati che si guardano due volte a stagione, e farle sempre significherebbe far
+     * aspettare tutti per comodita' di pochi.
+     */
+    private val _desk = MutableStateFlow(DeskState())
+    val desk: StateFlow<DeskState> = _desk
+
+    fun caricaPartecipanti() {
+        val dentro = statoCorrente() ?: return
+        if (_desk.value.members != null) return
+
+        viewModelScope.launch {
+            when (val esito = LeagueDeskRepository.members(dentro.lega.league.id, dentro.lega.clubs)) {
+                is ApiResult.Error -> _desk.value = _desk.value.copy(errore = esito.message)
+                is ApiResult.Ok -> _desk.value = _desk.value.copy(members = esito.value, errore = null)
+            }
+        }
+    }
+
+    fun caricaRegistro() {
+        val dentro = statoCorrente() ?: return
+        if (_desk.value.tickLetto) return
+
+        viewModelScope.launch {
+            when (val esito = LeagueDeskRepository.tick(dentro.lega.league.id)) {
+                is ApiResult.Error -> _desk.value = _desk.value.copy(errore = esito.message)
+                // `tickLetto` si alza anche quando il risultato e' null: e' proprio quel caso
+                // — il tick non ha mai girato — che la schermata deve poter distinguere da
+                // "sto ancora caricando".
+                is ApiResult.Ok ->
+                    _desk.value = _desk.value.copy(tick = esito.value, tickLetto = true, errore = null)
+            }
+        }
+    }
 
     // -------------------------------------------------------------------- formazione
 

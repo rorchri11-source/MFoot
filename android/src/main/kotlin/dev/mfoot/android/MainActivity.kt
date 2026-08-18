@@ -71,6 +71,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val settings by viewModel.configEdit.collectAsStateWithLifecycle()
     val lineup by viewModel.lineupEdit.collectAsStateWithLifecycle()
+    val desk by viewModel.desk.collectAsStateWithLifecycle()
 
     Box(
         Modifier
@@ -156,6 +157,9 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         settings = settings,
                         onConfigChange = viewModel::modificaRegolamento,
                         onConfigSave = viewModel::salvaRegolamento,
+                        desk = desk,
+                        onLoadMembers = viewModel::caricaPartecipanti,
+                        onLoadTick = viewModel::caricaRegistro,
                         lineup = lineup,
                         onLineupChange = viewModel::modificaFormazione,
                         onLineupSave = viewModel::salvaFormazione,

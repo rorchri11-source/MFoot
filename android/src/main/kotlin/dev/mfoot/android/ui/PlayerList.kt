@@ -162,11 +162,26 @@ private fun ListHeader(
 
         Spacer(Modifier.height(MFootSpacing.related))
 
+        // L'intestazione dice **cosa distingue questo elenco dagli altri**.
+        //
+        // Prima diceva "N giocatori · ordinati per overall" per ogni ambito, e con il mercato
+        // appena aperto — quando quasi nessuno ha ancora un club — "Svincolati" e "Tutto il
+        // mondo" mostravano gli stessi identici nomi con la stessa identica scritta sopra.
+        // Sembravano due voci di menu per la stessa schermata, e a ragione.
+        val presi = state.rows.count { !it.isFreeAgent }
         Label(
-            if (browse.scope == ListScope.ASTE) {
-                "${state.auctions.size} aste aperte · ${state.myAuctions.size} con una tua offerta"
-            } else {
-                "${state.visible.size} giocatori · ordinati per overall"
+            when (browse.scope) {
+                ListScope.ASTE ->
+                    "${state.auctions.size} aste aperte · ${state.myAuctions.size} con una tua offerta"
+
+                ListScope.SVINCOLATI ->
+                    "${state.visible.size} da prendere · $presi hanno gia' un club"
+
+                ListScope.TUTTI ->
+                    "${state.visible.size} in tutto il mondo · $presi con un club"
+
+                ListScope.MIA_ROSA ->
+                    "${state.visible.size} nella tua rosa"
             },
         )
     }
