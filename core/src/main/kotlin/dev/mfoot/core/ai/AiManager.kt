@@ -86,12 +86,53 @@ object AiManager {
             appeal += 0.2
         }
 
-        // Regola 2: piu' AI sono gia' sopra a questo giocatore, meno interessa.
-        appeal *= crowdingFactor(competingAi, config)
-
         appeal = appeal.coerceIn(0.0, 1.5)
 
-        val ceiling = ceilingFor(personality, club, estimatedValue, appeal, config)
+        // Sotto la rosa minima, comprare non e' una preferenza: e' un obbligo.
+        //
+        // Il moltiplicatore in [needFactor] diceva gia' di volerlo, e non bastava. Misurato
+        // su otto club: dopo dieci acquisti avevano preso i giocatori forti, il listino
+        // rimasto non interessava piu' nessuno, e si fermavano con **sessanta milioni in
+        // cassa** e otto caselle vuote. Non a corto di soldi — a corto di interesse. E una
+        // squadra sotto il minimo non scende in campo, quindi il campionato non partiva.
+        //
+        // Il pavimento vale solo finche' manca qualcuno. Sopra il minimo l'AI torna
+        // liberissima di non voler comprare, che e' il comportamento giusto: e' li' che
+        // "non mi interessa" e' una decisione invece che una resa.
+        if (squad.size < config.setup.minSquadSize) {
+            appeal = maxOf(appeal, OBBLIGO_DI_ROSA)
+        }
+
+        // Un portiere, quando non se ne ha nessuno, batte qualunque altra cosa.
+        //
+        // Sta **dopo** il limite superiore e non fra i moltiplicatori perche' li' non
+        // funzionava: il gradimento e' tagliato a 1,5, e sia il fuoriclasse di movimento sia
+        // il portiere ci arrivavano lo stesso: il portiere non passava mai davanti. Misurato
+        // su otto club: uno arrivava a diciotto giocatori senza nessuno fra i pali.
+        //
+        // Non e' un gusto, e' un requisito. Con tre difensori invece di quattro si gioca;
+        // senza portiere ci va un giocatore di movimento, che vale quaranta punti di malus,
+        // e la partita e' persa prima del fischio d'inizio.
+        val senzaPortiere = squad.none { it.primaryPosition.isGoalkeeper }
+        if (senzaPortiere && player.primaryPosition.isGoalkeeper) {
+            appeal = PORTIERE_MANCANTE
+        }
+
+        // Regola 2 dell'anti-sciame, e va applicata **per ultima**: piu' AI sono gia' sopra
+        // a questo giocatore, meno interessa.
+        //
+        // L'ordine non e' un dettaglio. Messa prima dei due pavimenti qui sopra, la
+        // penalita' veniva cancellata: durante l'allestimento ogni club e' sotto il minimo,
+        // quindi ogni club restava interessato a tutto, e venti squadre si sarebbero buttate
+        // sullo stesso fuoriclasse — esattamente lo sciame che tutte queste regole esistono
+        // per impedire.
+        //
+        // Messa dopo, le due cose convivono: chi ha bisogno di giocatori resta interessato
+        // **a qualcosa**, ma non a cio' su cui c'e' gia' la fila. Che e' come si comporta
+        // chi fa mercato sul serio.
+        appeal *= crowdingFactor(competingAi, config)
+
+        val ceiling = ceilingFor(personality, club, estimatedValue, appeal, config, squad.size)
 
         return TargetAppeal(
             player = player,
@@ -107,6 +148,37 @@ object AiManager {
      * Il tetto viene calcolato **una volta sola** all'inizio e non viene mai superato:
      * l'AI non si fa prendere dalla foga. E' quello che permette a un umano di battere
      * un'AI semplicemente valutando il giocatore di piu' di quanto lo valuti lei.
+     *
+     * ## Il tetto sa quante caselle restano
+     *
+     * Era una frazione del disponibile e basta — fra il 18% e il 45% a seconda del
+     * carattere — e non sapeva niente di quanti giocatori mancassero alla rosa. In una lega
+     * vera ha prodotto otto club con la rosa vuota che tenevano aste su giocatori da 86,
+     * uno con **42 milioni impegnati su cento e un solo giocatore in squadra**. Nessuna
+     * partita si poteva giocare, perche' nessuno arrivava al minimo di rosa.
+     *
+     * Il conto giusto parte da li': con cento milioni e diciotto caselle, la media per
+     * casella e' 5,5 milioni. Lo **sforo** dice quanto ci si permette di superarla su un
+     * singolo colpo, e resta la leva del carattere: chi ha poca disciplina arriva a
+     * quattro volte la media, chi ne ha molta si ferma a due. Nessun carattere autorizza a
+     * rovinarsi.
+     *
+     * Man mano che la rosa si riempie le caselle calano e la media sale da sola, quindi il
+     * fuoriclasse si puo' ancora prendere — piu' avanti, quando il grosso e' a posto. E'
+     * la forma di rosa che si voleva: un paio di stelle e tanti onesti.
+     *
+     * ## La riserva
+     *
+     * Sotto al tetto c'e' un pavimento: quello che serve a comprare **almeno** le caselle
+     * che restano al prezzo minimo possibile. Senza, spendendo sempre il massimo si arriva
+     * a diciassette giocatori e zero crediti, che e' lo stesso identico difetto di prima
+     * spostato di qualche acquisto.
+     *
+     * ## Chi ha gia' la rosa a posto
+     *
+     * Torna alle vecchie regole. Sopra il minimo non c'e' nessun obbligo da proteggere, e
+     * spendere molto su un rinforzo e' una scelta legittima invece che un suicidio. Il
+     * confine e' la rosa, come dappertutto nel gioco.
      */
     fun ceilingFor(
         personality: AiPersonality,
@@ -114,18 +186,65 @@ object AiManager {
         estimatedValue: Int,
         appeal: Double,
         config: LeagueConfig,
+        squadSize: Int = Int.MAX_VALUE,
     ): Int {
         val available = club.availableCredits.coerceAtLeast(0)
         if (available <= 0) return 0
 
-        // Frazione massima del disponibile che questa AI mette su un singolo giocatore.
-        val maxShare = MathX.lerp(0.45, 0.18, personality.budgetDiscipline)
-        val hardCap = available * maxShare
-
         val desired = estimatedValue * (0.75 + personality.marketAggression * 0.55) * appeal
+
+        val mancanti = config.setup.minSquadSize - squadSize
+        val hardCap = if (mancanti <= 0) {
+            // Rosa a posto: vale il tetto per carattere di sempre.
+            available * MathX.lerp(0.45, 0.18, personality.budgetDiscipline)
+        } else {
+            val mediaPerCasella = available.toDouble() / mancanti
+            val sforo = MathX.lerp(SFORO_MAX, SFORO_MIN, personality.budgetDiscipline)
+            val riserva = (mancanti - 1).toDouble() * config.market.minimumRaise
+
+            // La quota equa e' sempre spendibile, e il `maxOf` che la protegge non e' una
+            // pezza: e' l'unica cosa che impedisce al club di bloccarsi.
+            //
+            // Spendendo esattamente la media per casella, il disponibile e le caselle
+            // calano insieme e **la media resta identica** — quindi si puo' ripetere fino
+            // all'ultimo posto senza restare mai a secco. Senza questo pavimento, verso
+            // fine mercato la riserva supera il disponibile, il tetto diventa zero e il club
+            // smette di comprare del tutto: e' stato misurato, si fermavano a quattordici
+            // giocatori con trecentomila in tasca e mille giocatori liberi sul mercato.
+            maxOf(mediaPerCasella, minOf(mediaPerCasella * sforo, available - riserva))
+        }
 
         return StrictMath.round(minOf(desired, hardCap)).toInt().coerceIn(0, available)
     }
+
+    /**
+     * Quante volte la media per casella si puo' spendere su un giocatore solo.
+     *
+     * Quattro per chi ha poca disciplina, due per chi ne ha tanta. Il valore centrale, tre,
+     * e' quello misurato: con cento milioni e diciotto caselle fa un tetto di sedici e
+     * mezzo sul primo acquisto — bastano per tre o quattro pezzi pregiati, e poi la media
+     * cala e tocca riempire con giocatori onesti.
+     */
+    private const val SFORO_MAX = 4.0
+    private const val SFORO_MIN = 2.0
+
+    /**
+     * Il gradimento minimo di un giocatore qualsiasi, quando la rosa non e' completa.
+     *
+     * Sta appena sopra la soglia di [TargetAppeal.isInterested], che e' 0,15: quanto basta
+     * perche' un club a cui manca gente non possa mai rispondere "no grazie" a tutto il
+     * listino. Piu' alto, e le AI pagherebbero i mediocri come se li volessero davvero.
+     */
+    private const val OBBLIGO_DI_ROSA = 0.2
+
+    /**
+     * Il gradimento di un portiere per chi non ne ha nessuno.
+     *
+     * Sopra il limite superiore di 1,5 di proposito: deve battere **qualunque** altro
+     * giocatore, compreso il fuoriclasse assoluto del listino. Restando sotto il limite
+     * pareggerebbe soltanto, e a parita' vince chi costa di piu' — cioe' mai il portiere.
+     */
+    private const val PORTIERE_MANCANTE = 1.8
 
     /**
      * L'offerta massima da dichiarare in un'asta, o null per passare.
@@ -257,6 +376,7 @@ object AiManager {
         }
         // Sotto la rosa minima si compra qualsiasi cosa: e' un obbligo, non una scelta.
         val sizeNeed = if (squadSize < minSize) 1.4 else 1.0
+
         return roleNeed * sizeNeed
     }
 
