@@ -20,7 +20,10 @@ import dev.mfoot.android.data.DealRepository
 import dev.mfoot.android.data.TradeKind
 import dev.mfoot.android.data.TradeRepository
 import dev.mfoot.android.data.SavedLineup
+import dev.mfoot.android.data.Scouted
+import dev.mfoot.android.data.ScoutingRepository
 import dev.mfoot.android.data.Session
+import dev.mfoot.android.data.SquadRepository
 import dev.mfoot.android.data.Supabase
 import dev.mfoot.android.data.TableRepository
 import dev.mfoot.android.data.SupabaseApi
@@ -257,6 +260,11 @@ class AppViewModel : ViewModel() {
                             it.copy(divisionLevel = livelli[it.id] ?: 1)
                         },
                     )
+                    // Prima le stime, poi le righe: `righe` le legge, e calcolarle con la
+                    // mappa vuota vorrebbe dire mostrare forbici larghe per un istante e
+                    // poi vederle cambiare sotto gli occhi.
+                    scouting = lega.myClub?.let { ScoutingRepository.load(it.id) }.orEmpty()
+
                     val rows = withContext(Dispatchers.Default) { righe(lega) }
                     val aste = AuctionRepository.openAuctions(leagueId)
                     _state.value = AppState.Dentro(
@@ -297,16 +305,39 @@ class AppViewModel : ViewModel() {
         val config: LeagueConfig = snapshot.league.config
 
         return snapshot.players.map { player ->
-            val estimate = PotentialEstimator.publicEstimate(player, observerId)
+            // La stima ristretta, se il server ne ha calcolata una per questo club.
+            //
+            // Il potenziale e' nascosto di proposito, e la forbice si stringe con i minuti
+            // che lo hai visto giocare e con il lavoro degli osservatori. Il conto lo fa il
+            // tick, che i valori veri li ha: qui arriva solo l'intervallo, e non c'e' modo
+            // di dedurre il segreto per differenza.
+            //
+            // Quando manca — migrazione non applicata, giocatore che non interessa a
+            // nessuno — si ricade sulla stima pubblica a conoscenza zero, che e' quella che
+            // l'app ha sempre mostrato: la forbice resta larga, ed e' la verita'.
+            val scouted = scouting[player.id.value]
+            val estimate = scouted?.range ?: PotentialEstimator.publicEstimate(player, observerId)
+
             PlayerRow(
                 player = player,
                 estimate = estimate,
                 hasUpside = PotentialEstimator.hasUpside(player),
                 value = Valuation.estimatedValue(player, estimate, config),
                 club = snapshot.clubOfPlayer[player.id.value]?.let(clubById::get),
+                knowledge = scouted?.knowledge ?: 0,
+                isYouth = player.id.value in snapshot.youth,
             )
         }
     }
+
+    /**
+     * Quello che il proprio club sa, per giocatore.
+     *
+     * Si legge una volta a caricamento e resta in memoria: cambia solo quando il tick
+     * ricalcola, cioe' dopo una partita, e rileggerlo a ogni schermata sarebbe una
+     * richiesta in piu' per un dato che si muove una volta al giorno.
+     */
+    private var scouting: Map<Long, Scouted> = emptyMap()
 
     // ------------------------------------------------------------------------ fondazione
 
@@ -1092,6 +1123,32 @@ class AppViewModel : ViewModel() {
     }
 
     private fun segno(delta: Int) = if (delta >= 0) "+$delta" else "$delta"
+
+    // ---------------------------------------------------------------------- primavera
+
+    /**
+     * Manda un giovane in Primavera, o lo promuove in prima squadra.
+     *
+     * Le regole — l'eta' massima, il minimo di prima squadra, il massimo tornando su — le
+     * fa rispettare il database, e il rifiuto arriva come una frase da mostrare: "Ha 24
+     * anni: in Primavera si sta fino a 21" e' una risposta di gioco, non un guasto.
+     */
+    fun spostaSquadra(row: PlayerRow) {
+        val dentro = statoCorrente() ?: return
+        val destinazione = if (row.isYouth) "prima" else "primavera"
+
+        viewModelScope.launch {
+            when (val esito = SquadRepository.move(row.player.id.value, destinazione)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    val dove = if (destinazione == "primavera") "in Primavera" else "in prima squadra"
+                    Session.leagueId?.let { carica(it, avviso = "${row.player.shortName} $dove.") }
+                }
+            }
+        }
+    }
 
     // --------------------------------------------------------------------- divisioni
 

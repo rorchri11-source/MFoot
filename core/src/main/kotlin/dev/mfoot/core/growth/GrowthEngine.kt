@@ -94,6 +94,57 @@ object GrowthEngine {
     }
 
     /**
+     * La crescita di chi sta in Primavera e si allena senza giocare.
+     *
+     * ## Perche' serve
+     *
+     * Senza, la Primavera e' un magazzino: ci si parcheggia un diciassettenne e lo si
+     * ritrova diciassettenne. Il gioco dice che i giovani maturano — c'e' una curva di
+     * sviluppo, c'e' un moltiplicatore d'eta' che a diciotto anni vale il doppio che a
+     * ventotto — ma tutta quella crescita passa da `processMatch`, e chi non scende in
+     * campo non ne vede niente.
+     *
+     * ## Perche' rende molto meno di una partita
+     *
+     * Perche' deve restare vero che **giocare e' il modo migliore di crescere**. Un
+     * allenamento vale una frazione di una partita: parcheggiare un talento in Primavera
+     * e' un modo di non perderlo del tutto, non una scorciatoia per farlo crescere senza
+     * rischiare risultati. Chi vuole un ventenne da ottanta lo deve mandare in campo.
+     *
+     * Il fattore dell'allenatore vale intero: e' l'unico posto del gioco in cui uno staff
+     * bravo lavora anche quando non si gioca, ed e' il motivo per cui vale la pena pagarlo.
+     */
+    fun trainYouth(player: Player, context: GrowthContext): GrowthOutcome {
+        val rules = context.config.rules
+        if (!rules.youthTeamEnabled) return unchanged(player)
+
+        val ageFactor = ageMultiplier(player.age, rules)
+        // Chi e' gia' in parabola discendente non "si allena in negativo": semplicemente
+        // non guadagna niente. Il declino lo paga giocando, che e' dove si consuma.
+        if (ageFactor <= 0.0) return unchanged(player)
+
+        val xp = BASE_XP_PER_FULL_MATCH * TRAINING_SHARE *
+            rules.youthMatchGrowthFactor *
+            rules.growthMultiplier *
+            coachMultiplier(context.coachStars) *
+            player.traits.growthFactor() *
+            (if (player.isCustom) rules.customGrowthMultiplier else 1.0) *
+            ageFactor *
+            slowdownNear(player)
+
+        return applyExperience(player, xp, PlayerMatchStats(player.id), rules)
+    }
+
+    /**
+     * Quanto vale un allenamento rispetto a una partita intera.
+     *
+     * Un quinto. Con il fattore Primavera sopra, un giovane parcheggiato cresce a circa un
+     * settimo della velocita' di uno che gioca: si vede muovere nell'arco di una stagione,
+     * non di una settimana.
+     */
+    private const val TRAINING_SHARE = 0.20
+
+    /**
      * Esperienza guadagnata in questa partita. Puo' essere negativa: dopo l'eta' di
      * declino giocare consuma invece di far crescere.
      */

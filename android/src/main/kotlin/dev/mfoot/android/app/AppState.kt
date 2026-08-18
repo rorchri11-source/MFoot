@@ -25,6 +25,16 @@ data class PlayerRow(
     val value: Int,
     /** Il club che lo possiede, se qualcuno lo possiede. */
     val club: ClubInfo?,
+    /**
+     * Quanto il tuo club lo conosce, da 0 a 100.
+     *
+     * Zero non vuol dire "scarso": vuol dire che non lo hai mai visto giocare e non hai
+     * osservatori che ci lavorino sopra. La forbice larga che vedi accanto e un' ammissione
+     * di ignoranza, non un giudizio sul giocatore.
+     */
+    val knowledge: Int = 0,
+    /** Sta in Primavera: si allena e non gioca. */
+    val isYouth: Boolean = false,
 ) {
     val isFreeAgent: Boolean get() = club == null
 

@@ -76,6 +76,8 @@ data class LeagueSnapshot(
     val players: List<Player>,
     /** Chi possiede chi. I giocatori che non compaiono sono svincolati. */
     val clubOfPlayer: Map<Long, Long>,
+    /** Chi sta in Primavera: si allena, non gioca, e non conta per la prima squadra. */
+    val youth: Set<Long> = emptySet(),
 ) {
     val myClub: ClubInfo? get() = clubs.firstOrNull { it.isMine }
 
@@ -127,8 +129,8 @@ object LeagueRepository {
         readLeague(leagueId).then { info ->
             readClubs(leagueId).then { clubs ->
                 readPlayers(leagueId).then { players ->
-                    readContracts(leagueId).then { contracts ->
-                        ApiResult.Ok(LeagueSnapshot(info, clubs, players, contracts))
+                    readContracts(leagueId).then { (contratti, giovani) ->
+                        ApiResult.Ok(LeagueSnapshot(info, clubs, players, contratti, giovani))
                     }
                 }
             }
@@ -279,13 +281,23 @@ object LeagueRepository {
         return SupabaseApi.rpc("update_league_config", w.toString()).then { ApiResult.Ok(Unit) }
     }
 
-    private suspend fun readContracts(leagueId: Long): ApiResult<Map<Long, Long>> {
-        val path = "/rest/v1/contracts?select=player_id,club_id&league_id=eq.$leagueId"
+    /**
+     * Chi possiede chi, e chi sta in Primavera.
+     *
+     * `squad` esiste dal primo schema, quindi chiederlo non rischia di rompere niente su
+     * nessun database: e la colonna che dice se un giocatore fa parte della prima squadra
+     * o del settore giovanile, e senza di essa la Primavera resta invisibile all app.
+     */
+    private suspend fun readContracts(leagueId: Long): ApiResult<Pair<Map<Long, Long>, Set<Long>>> {
+        val path = "/rest/v1/contracts?select=player_id,club_id,squad&league_id=eq.$leagueId"
 
         return SupabaseApi.get(path).then { body ->
+            val righe = JsonNode.parse(body).asList()
             ApiResult.Ok(
-                JsonNode.parse(body).asList()
-                    .associate { it["player_id"].long(0) to it["club_id"].long(0) },
+                righe.associate { it["player_id"].long(0) to it["club_id"].long(0) } to
+                    righe.filter { it["squad"].str("prima") == "primavera" }
+                        .map { it["player_id"].long(0) }
+                        .toSet(),
             )
         }
     }

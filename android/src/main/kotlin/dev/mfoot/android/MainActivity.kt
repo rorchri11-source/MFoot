@@ -244,6 +244,17 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                                 (row.isFreeAgent || row.club?.isMine == true) &&
                                 current.auctions.none { it.auction.targetId == row.player.id.value },
                             isSelling = row.club?.isMine == true,
+                            // Il pulsante compare solo dove ha senso: sui propri, e solo
+                            // se l'eta' lo consente. Mostrarlo su chiunque vorrebbe dire
+                            // farlo premere per scoprire da un errore che non si poteva.
+                            youthAction = when {
+                                row.club?.isMine != true -> null
+                                row.isYouth -> "In prima squadra"
+                                row.player.age <= current.lega.league.config.rules.youthMaxAge ->
+                                    "In Primavera"
+                                else -> null
+                            },
+                            onYouth = { viewModel.spostaSquadra(row) },
                             onAuction = { viewModel.mettiAllAsta(row) },
                             onClose = { viewModel.select(null) },
                         )

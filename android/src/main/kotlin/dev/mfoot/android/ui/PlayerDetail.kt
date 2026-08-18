@@ -55,6 +55,9 @@ fun PlayerDetailScreen(
     /** Vero quando il giocatore e mio: cambia solo la parola sul pulsante, ma cambiarla
      * conta — "metti all asta" e "vendi" sono due gesti diversi. */
     isSelling: Boolean = false,
+    /** Il testo del pulsante Primavera, o null se non si puo spostare questo giocatore. */
+    youthAction: String? = null,
+    onYouth: () -> Unit = {},
     onAuction: () -> Unit = {},
     onClose: () -> Unit,
 ) {
@@ -94,7 +97,7 @@ fun PlayerDetailScreen(
                     Stars(row)
                     Traits(row)
                 }
-                Footer(row, canAuction, isSelling, onAuction, onClose)
+                Footer(row, canAuction, isSelling, youthAction, onYouth, onAuction, onClose)
             }
         }
     }
@@ -295,10 +298,36 @@ private fun growthHeadline(row: PlayerRow): String {
     }
 }
 
-private fun growthDetail(row: PlayerRow): String = if (row.hasUpside) {
-    "Potrebbe arrivare fra ${row.estimate.first} e ${row.estimate.last}"
-} else {
-    "Tetto stimato ${row.estimate.last}"
+/**
+ * Quanto puo' arrivare, e **quanto ne sai**.
+ *
+ * ## Perche' la seconda meta' conta quanto la prima
+ *
+ * Una forbice larga puo' voler dire due cose opposte: che il giocatore e' imprevedibile,
+ * o che non lo hai mai visto giocare. Senza dirlo, chi guarda non sa se aspettare che si
+ * stringa o se quello e' tutto cio' che si potra' mai sapere — e la scommessa, che e' la
+ * meccanica centrale del gioco, resta muta.
+ *
+ * La conoscenza cresce con i minuti che lo hai visto in campo e con gli osservatori che
+ * paghi. E' il motivo per cui vale la pena assumerli, e il motivo per cui un giovane
+ * comprato oggi e' un rischio piu' grande di uno cresciuto in casa.
+ */
+private fun growthDetail(row: PlayerRow): String {
+    val base = if (row.hasUpside) {
+        "Potrebbe arrivare fra ${row.estimate.first} e ${row.estimate.last}"
+    } else {
+        "Tetto stimato ${row.estimate.last}"
+    }
+
+    val quanto = when {
+        row.knowledge >= 70 -> "lo conosci bene"
+        row.knowledge >= 40 -> "lo conosci abbastanza"
+        row.knowledge >= 15 -> "lo conosci poco"
+        // Zero copre due casi che si assomigliano: non lo hai mai visto, oppure la lega
+        // non ha ancora lo scouting. In tutti e due la frase e' vera.
+        else -> "non lo conosci"
+    }
+    return "$base · $quanto"
 }
 
 /**
@@ -452,6 +481,8 @@ private fun Footer(
     row: PlayerRow,
     canAuction: Boolean,
     isSelling: Boolean,
+    youthAction: String?,
+    onYouth: () -> Unit,
     onAuction: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -476,6 +507,22 @@ private fun Footer(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // Anche la Primavera si decide guardando la scheda: e' li' che si vede l'eta'
+            // accanto alla forbice di crescita, cioe' esattamente i due numeri che dicono
+            // se conviene farlo maturare o farlo giocare.
+            youthAction?.let { testo ->
+                Text(
+                    testo,
+                    style = MFootType.value,
+                    color = MFootColors.ink2,
+                    modifier = Modifier
+                        .border(1.dp, MFootColors.lineStrong, MFootShapes.pill)
+                        .clickable(onClick = onYouth)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+
             // L'asta si apre da qui e non da un menu: e' la decisione che si prende
             // guardando la scheda, e farla cercare altrove significa non farla prendere.
             if (canAuction) {

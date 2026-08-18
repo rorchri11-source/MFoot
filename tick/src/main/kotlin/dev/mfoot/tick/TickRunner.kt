@@ -61,6 +61,7 @@ import dev.mfoot.core.model.Player
 import dev.mfoot.core.model.PlayerId
 import dev.mfoot.core.model.Position
 import dev.mfoot.core.model.StaffId
+import dev.mfoot.core.world.PotentialEstimator
 import dev.mfoot.core.model.Trait
 import dev.mfoot.core.tick.TickEffect
 import dev.mfoot.core.tick.TickInput
@@ -254,6 +255,13 @@ class TickRunner(
         // e un colloquio aperto blocca quello successivo.
         notes += rispondiAiColloqui(league)
 
+        // La Primavera si allena una volta per giornata: la colonna `trained_on` sul
+        // contratto e' cio' che impedisce dodici allenamenti l'ora.
+        notes += allenaLaPrimavera(league, MatchDay(league.currentMatchDay))
+
+        // Lo scouting dopo le partite: i minuti visti sono appena cambiati.
+        notes += aggiornaLoScouting(league, dopoUnaPartita = settled != null)
+
         // La consegna per ultima, quando tutto quello che e' successo in questo giro e'
         // gia' scritto: cosi' una notifica non puo' raccontare un fatto che la transazione
         // annullera' un attimo dopo.
@@ -403,6 +411,247 @@ class TickRunner(
             st.executeUpdate()
         }
     }
+
+    // ---------------------------------------------------------------------- primavera
+
+    /**
+     * I giovani in Primavera si allenano.
+     *
+     * ## Perche' e' il pezzo che rende la Primavera una cosa
+     *
+     * Senza, e' un magazzino: ci si parcheggia un diciassettenne e lo si ritrova
+     * diciassettenne. Tutta la crescita del gioco passa dalle partite, e chi non scende in
+     * campo non ne vede niente — quindi mandare un ragazzo in Primavera sarebbe solo un
+     * modo di rinunciarci.
+     *
+     * ## Perche' una volta per giornata e non a ogni giro
+     *
+     * Il tick passa ogni cinque minuti. Allenare a ogni passaggio farebbe crescere un
+     * ragazzo di dodici allenamenti l'ora, cioe' piu' in un pomeriggio che in una stagione
+     * di partite. E' lo stesso difetto per cui le promesse si mantenevano da sole in un
+     * quarto d'ora: l'unita' di tempo del gioco e' la **giornata**, e tutto quello che
+     * cresce deve crescere con quella.
+     */
+    private fun allenaLaPrimavera(league: LeagueRow, oggi: MatchDay): List<String> {
+        if (!league.config.rules.youthTeamEnabled) return emptyList()
+
+        val giovani = caricaPrimavera(league.id, oggi)
+        if (giovani.isEmpty()) return emptyList()
+
+        var cresciuti = 0
+        connection.prepareStatement(
+            """
+            update players
+            set experience = ?, attributes = ?::jsonb, overall = ?
+            where id = ?
+            """.trimIndent(),
+        ).use { st ->
+            for ((player, clubId) in giovani) {
+                val esito = GrowthEngine.trainYouth(
+                    player,
+                    GrowthContext(league.config, coachStarsOf(clubId), isYouthMatch = true),
+                )
+
+                st.setDouble(1, esito.player.experience)
+                st.setString(2, MatchJson.attributes(esito.player))
+                st.setInt(3, esito.player.overall)
+                st.setLong(4, player.id.value)
+                st.addBatch()
+                if (esito.changes.isNotEmpty()) cresciuti++
+            }
+            st.executeBatch()
+        }
+
+        connection.prepareStatement(
+            "update contracts set trained_on = ? where club_id in " +
+                "(select id from clubs where league_id = ?) and squad = 'primavera'",
+        ).use { st ->
+            st.setInt(1, oggi.value)
+            st.setLong(2, league.id)
+            st.executeUpdate()
+        }
+
+        return if (cresciuti > 0) {
+            listOf("$cresciuti giovani sono cresciuti in Primavera.")
+        } else {
+            emptyList()
+        }
+    }
+
+    /** I giovani che non si sono ancora allenati in questa giornata. */
+    private fun caricaPrimavera(leagueId: Long, oggi: MatchDay): List<Pair<Player, ClubId>> {
+        val out = mutableListOf<Pair<Player, ClubId>>()
+        connection.prepareStatement(
+            """
+            select p.*, c.club_id as squadra
+            from players p
+            join contracts c on c.player_id = p.id
+            where p.league_id = ? and c.squad = 'primavera'
+              and coalesce(c.trained_on, -1) < ?
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setInt(2, oggi.value)
+            st.executeQuery().use { rs ->
+                while (rs.next()) out += readPlayer(rs) to ClubId(rs.getLong("squadra"))
+            }
+        }
+        return out
+    }
+
+    // ----------------------------------------------------------------------- scouting
+
+    /**
+     * Aggiorna quanto ogni club umano sa dei giocatori che gli interessano.
+     *
+     * ## Perche' il conto sta qui e non sul telefono
+     *
+     * Perche' stringere la forbice vuol dire avvicinarla al valore vero, e il valore vero
+     * non lascia mai il server: `players_public` non contiene i potenziali proprio per
+     * questo. Un client che calcolasse la stima ristretta dovrebbe prima ricevere la
+     * verita', e allora tanto varrebbe mostrarla.
+     *
+     * ## Chi si osserva
+     *
+     * I propri giocatori, di cui si accumulano minuti guardandoli giocare, e chi e'
+     * all'asta, su cui lavorano solo gli osservatori. Non tutti i milletrecento del mondo:
+     * la forbice serve a decidere se tenere un ragazzo o se puntarci sopra, e su chi non si
+     * puo' ne' schierare ne' comprare non serve a niente.
+     *
+     * ## Solo per i club umani
+     *
+     * L'AI non legge questa tabella: valuta con `PotentialEstimator` al momento di
+     * decidere, e a conoscenza zero. E' voluto — un'AI che sapesse piu' di te sarebbe
+     * un'AI che bara — ed evita di calcolare venti volte qualcosa che nessuno guarda.
+     */
+    private fun aggiornaLoScouting(league: LeagueRow, dopoUnaPartita: Boolean): List<String> {
+        val clubUmani = loadHumanClubIds(league.id)
+        if (clubUmani.isEmpty()) return emptyList()
+
+        // Si ricalcola dopo una partita — perche' allora i minuti visti sono cambiati — e
+        // quando mancano righe, cioe' dopo un acquisto o all'apertura di un'asta nuova.
+        // Ogni cinque minuti sarebbe lavoro sprecato: la conoscenza non cambia da sola.
+        if (!dopoUnaPartita && !mancanoStimeDaCalcolare(league.id)) return emptyList()
+
+        val inAsta = loadOpenAuctions(league.id)
+            .mapNotNull { (it.target as? AuctionTarget.ForPlayer)?.playerId }
+        var scritte = 0
+
+        connection.prepareStatement(
+            """
+            insert into scouting (club_id, player_id, league_id, est_min, est_max,
+                                  knowledge, updated_at)
+            values (?, ?, ?, ?, ?, ?, now())
+            on conflict (club_id, player_id) do update
+              set est_min = excluded.est_min,
+                  est_max = excluded.est_max,
+                  knowledge = excluded.knowledge,
+                  updated_at = now()
+            """.trimIndent(),
+        ).use { st ->
+            for (clubId in clubUmani) {
+                val precisione = precisioneOsservatori(clubId)
+                val minutiVisti = minutiVistiDa(clubId)
+
+                val squad = loadSquad(league.id, clubId)
+                val altri = inAsta.mapNotNull { loadPlayerRow(it)?.player }
+                    .filterNot { p -> squad.any { it.id == p.id } }
+
+                for (player in squad + altri) {
+                    val minuti = minutiVisti[player.id.value] ?: 0
+                    val stima = PotentialEstimator.estimate(
+                        player = player,
+                        observerId = clubId.value,
+                        minutesObserved = minuti,
+                        scoutAccuracy = precisione,
+                    )
+                    val conoscenza = PotentialEstimator.knowledge(minuti, precisione)
+
+                    st.setLong(1, clubId.value)
+                    st.setLong(2, player.id.value)
+                    st.setLong(3, league.id)
+                    st.setInt(4, stima.first)
+                    st.setInt(5, stima.last)
+                    st.setInt(6, StrictMath.round(conoscenza * 100).toInt())
+                    st.addBatch()
+                    scritte++
+                }
+            }
+            st.executeBatch()
+        }
+
+        return if (scritte > 0) listOf("$scritte stime di scouting aggiornate.") else emptyList()
+    }
+
+    private fun loadHumanClubIds(leagueId: Long): List<ClubId> {
+        val out = mutableListOf<ClubId>()
+        connection.prepareStatement(
+            "select id from clubs where league_id = ? and owner_user_id is not null",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> while (rs.next()) out += ClubId(rs.getLong(1)) }
+        }
+        return out
+    }
+
+    /**
+     * Quanto valgono gli osservatori di questo club, da 0 a 1.
+     *
+     * Un solo osservatore a cinque stelle non deve bastare a sapere tutto: pesa 0,8, e
+     * `PotentialEstimator` gli da' comunque meno peso dei minuti visti. Guardare un
+     * ragazzo giocare venti partite deve valere piu' che pagare qualcuno perche' lo
+     * guardi per te.
+     */
+    private fun precisioneOsservatori(clubId: ClubId): Double {
+        val stelle = connection.prepareStatement(
+            "select max(stars) from staff where club_id = ? and role = 'OSSERVATORE'",
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs ->
+                if (rs.next()) rs.getInt(1).takeIf { !rs.wasNull() } ?: 0 else 0
+            }
+        }
+        if (stelle <= 1) return 0.0
+        return (stelle - 1) / 4.0 * 0.8
+    }
+
+    /**
+     * Quanti minuti questo club ha visto giocare ognuno dei suoi.
+     *
+     * Le presenze rendono possibile la domanda: prima esisteva solo `players.minutes_observed`,
+     * che sono i minuti giocati **in totale** da quel giocatore, per chiunque. Un giocatore
+     * comprato ieri con duemila minuti alle spalle sarebbe stato "conosciutissimo" dal suo
+     * nuovo club, che non lo ha mai visto in campo.
+     */
+    private fun minutiVistiDa(clubId: ClubId): Map<Long, Int> {
+        val out = mutableMapOf<Long, Int>()
+        connection.prepareStatement(
+            "select player_id, sum(minutes) from appearances where club_id = ? group by player_id",
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs -> while (rs.next()) out[rs.getLong(1)] = rs.getInt(2) }
+        }
+        return out
+    }
+
+    /** C'e' qualcuno, fra i tesserati dei club umani, per cui non esiste ancora una stima? */
+    private fun mancanoStimeDaCalcolare(leagueId: Long): Boolean =
+        connection.prepareStatement(
+            """
+            select 1
+            from contracts c
+            join clubs cl on cl.id = c.club_id
+            where cl.league_id = ? and cl.owner_user_id is not null
+              and not exists (
+                  select 1 from scouting s
+                  where s.club_id = c.club_id and s.player_id = c.player_id
+              )
+            limit 1
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { it.next() }
+        }
 
     // ---------------------------------------------------------------------- notifiche
 

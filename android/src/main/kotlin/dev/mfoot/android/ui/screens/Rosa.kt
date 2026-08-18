@@ -74,7 +74,15 @@ fun RosaScreen(
         return
     }
 
-    val rosa = state.rows.filter { it.club?.id == clubId }
+    val tutti = state.rows.filter { it.club?.id == clubId }
+
+    // La Primavera sta a parte, non mescolata ai reparti. Sono giocatori che **non
+    // scendono in campo**: metterli in mezzo alla difesa farebbe contare quattro difensori
+    // dove ce ne sono tre disponibili, che e' precisamente la domanda a cui questa
+    // schermata deve rispondere.
+    val rosa = tutti.filterNot { it.isYouth }
+    val primavera = tutti.filter { it.isYouth }.sortedByDescending { it.estimate.last }
+
     // Per reparto e non per overall: la domanda e' come e' fatta la squadra, e un elenco
     // ordinato per forza non fa vedere che mancano i terzini.
     val perReparto = Reparto.entries.map { reparto ->
@@ -105,7 +113,34 @@ fun RosaScreen(
             }
         }
 
-        if (rosa.isEmpty()) {
+        if (primavera.isNotEmpty()) {
+            item {
+                Column(
+                    Modifier.padding(
+                        MFootSpacing.section,
+                        MFootSpacing.section,
+                        MFootSpacing.section,
+                        8.dp,
+                    ),
+                ) {
+                    Label("Primavera · ${primavera.size}")
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Si allenano e non giocano. Crescono piu' piano di chi scende in " +
+                            "campo, ma crescono.",
+                        style = MFootType.chip,
+                        color = MFootColors.ink3,
+                    )
+                }
+            }
+            // Per potenziale e non per overall: in Primavera la domanda non e' chi e' piu'
+            // forte oggi, e' su chi vale la pena aspettare.
+            items(primavera, key = { it.player.id.value }) { riga ->
+                Giocatore(riga, onSelect)
+            }
+        }
+
+        if (tutti.isEmpty()) {
             item {
                 Box(
                     Modifier.fillMaxWidth().padding(40.dp),

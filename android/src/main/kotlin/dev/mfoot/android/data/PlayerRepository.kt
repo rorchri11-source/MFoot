@@ -73,3 +73,38 @@ object PromiseRepository {
         }
     }
 }
+
+/**
+ * Prima squadra o Primavera.
+ *
+ * ## Perche' una funzione e non un update su `contracts`
+ *
+ * Perche' spostare qualcuno ha regole che il telefono puo' dimenticare e il database no:
+ * l'eta' massima, il minimo di prima squadra che non si puo' sfondare, il massimo che non
+ * si puo' superare tornando su. Un update diretto le aggirerebbe tutte, e una rosa sotto il
+ * minimo non scende in campo — il danno si scoprirebbe alla prima partita persa a tavolino.
+ */
+object SquadRepository {
+
+    suspend fun move(playerId: Long, squad: String): ApiResult<Unit> {
+        val w = JsonWriter(128)
+        w.beginObject()
+        w.field("p_player_id", playerId)
+        w.field("p_squad", squad)
+        w.endObject()
+
+        return SupabaseApi.rpc("set_squad", w.toString()).then { body ->
+            val node = JsonNode.parse(body).let { if (it.asList().isNotEmpty()) it[0] else it }
+            if (node["ok"].bool(false)) ApiResult.Ok(Unit)
+            else ApiResult.Error(node["reason"].str("Spostamento rifiutato."))
+        }.mapMissing()
+    }
+
+    private fun ApiResult<Unit>.mapMissing(): ApiResult<Unit> = when {
+        this is ApiResult.Error && message.contains("set_squad") -> ApiResult.Error(
+            "La Primavera ha bisogno della migrazione 0017_primavera.sql, che non e' " +
+                "ancora stata applicata a questo database.",
+        )
+        else -> this
+    }
+}
