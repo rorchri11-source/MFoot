@@ -2,4 +2,12 @@
 <resources>
     <!-- Deve combaciare con MFootColors.bg in Theme.kt. -->
     <color name="mfoot_bg">#FF07080A</color>
+
+    <!--
+      Il blu dello stadio, campionato dal logo (docs/brand/logo-mfoot.jpeg).
+
+      E' anche il colore che il ritaglio dell'emblema si porta dietro: se i due non
+      combaciassero, attorno all'emblema si vedrebbe il bordo del rettangolo ritagliato.
+    -->
+    <color name="mfoot_icon_bg">#FF0E1D34</color>
 </resources>

@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Icona adattiva: sfondo e primo piano separati, cosi' il launcher puo' ritagliarla nella
+  forma che preferisce e animarla.
+
+  Serve solo la versione v26 perche' l'app parte da Android 8: sotto quella soglia non
+  arriva, e le vecchie icone quadrate a piu' risoluzioni sarebbero peso morto.
+
+  Il primo piano e' l'emblema del logo ritagliato (vedi docs/brand/), non un disegno
+  vettoriale: un marchio dipinto con gradienti e bagliori non si rifa' a mano in XML senza
+  peggiorarlo. Lo sfondo e' il blu campionato dal logo stesso, cosi' il ritaglio ci sparisce
+  dentro.
+
+  Il monochrome resta il vettore: il tema a icone monocromatiche di Android 13 appiattisce
+  tutto in una tinta sola, e una fotografia appiattita diventa una macchia. Li' serve un
+  segno a tratto — la porta di calcio — che in una tinta sola si legge ancora.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@color/mfoot_icon_bg" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
     <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>
