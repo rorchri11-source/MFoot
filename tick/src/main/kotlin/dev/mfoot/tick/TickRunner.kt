@@ -1,6 +1,8 @@
 package dev.mfoot.tick
 
+import dev.mfoot.core.ai.AiInitiative
 import dev.mfoot.core.ai.AiManager
+import dev.mfoot.core.ai.SquadAction
 import dev.mfoot.core.ai.AiObsession
 import dev.mfoot.core.ai.AiPersonality
 import dev.mfoot.core.ai.AiScheduler
@@ -13,6 +15,7 @@ import dev.mfoot.core.calendar.FixtureGenerator
 import dev.mfoot.core.config.ConfigJson
 import dev.mfoot.core.conversation.AppearanceFact
 import dev.mfoot.core.conversation.ConversationEngine
+import dev.mfoot.core.conversation.ConversationTopic
 import dev.mfoot.core.conversation.ConversationTrigger
 import dev.mfoot.core.conversation.LeagueFacts
 import dev.mfoot.core.conversation.PlayerHistory
@@ -257,6 +260,10 @@ class TickRunner(
         // giocato, e non dirgli niente della promessa che gli hai appena tradito.
         notes += apriIColloqui(league)
 
+        // I club del computer rispondono subito ai propri: aspettare non avrebbe senso,
+        // e un colloquio aperto blocca quello successivo.
+        notes += rispondiAiColloqui(league)
+
         saveTickState(league.id, plan.processedUpTo, notes.joinToString(" | "), settled)
 
         return LeagueSummary(league.id, league.name, plan.effects.size, applied, pending, notes)
@@ -477,6 +484,85 @@ class TickRunner(
         return if (aperte > 0) listOf("$aperte colloqui aperti nello spogliatoio.") else emptyList()
     }
 
+    /**
+     * I club dell'AI parlano con i propri giocatori.
+     *
+     * ## Perche' serve
+     *
+     * Perche' i colloqui li apre il tick per tutti, e un club gestito dal computer non ha
+     * nessuno che li chiuda. Senza questo pezzo, le sue conversazioni si accumulerebbero
+     * aperte per sempre — l'indice ne ammette una per giocatore, quindi bloccherebbero
+     * anche quelle nuove — e il morale delle sue rose scenderebbe per tutta la stagione
+     * senza che niente lo risollevi. Alla decima giornata giocheresti contro squadre col
+     * morale a terra per un motivo che nessuno ha scelto.
+     *
+     * ## Perche' non promette mai
+     *
+     * Le opzioni che creano una promessa rendono di piu' sul momento, e un'AI che le
+     * scegliesse sempre farebbe la figura del furbo per due giornate e poi crollerebbe
+     * tutta insieme quando il tick le dichiara tradite. Le lascia agli umani, per cui
+     * mantenere la parola e' una decisione e non un tiro di dado.
+     */
+    private fun rispondiAiColloqui(league: LeagueRow): List<String> {
+        val aperti = connection.prepareStatement(
+            """
+            select cv.id, cv.player_id, cv.topic, cv.spontaneous
+            from conversations cv
+            join clubs c on c.id = cv.club_id
+            where cv.league_id = ? and cv.status = 'APERTA' and c.is_ai
+            limit 40
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.executeQuery().use { rs ->
+                val out = mutableListOf<Triple<Long, Long, String>>()
+                while (rs.next()) {
+                    out += Triple(rs.getLong("id"), rs.getLong("player_id"), rs.getString("topic"))
+                }
+                out
+            }
+        }
+        if (aperti.isEmpty()) return emptyList()
+
+        var chiusi = 0
+        for ((id, playerId, topicName) in aperti) {
+            val topic = ConversationTopic.entries.firstOrNull { it.name == topicName } ?: continue
+            val player = loadPlayerRow(PlayerId(playerId))?.player ?: continue
+
+            // Sceglie l'opzione che le va meglio con **quel** giocatore: e' la stessa
+            // tabella dei tratti che ha davanti un umano, applicata senza esitare.
+            val migliore = ConversationEngine.optionsFor(topic)
+                .filter { it.createsPromise == null }
+                .maxByOrNull { opzione ->
+                    ConversationEngine.resolve(
+                        player, topic, opzione, MatchDay(league.currentMatchDay),
+                        league.config.rules,
+                    ).moraleDelta
+                } ?: continue
+
+            val esito = ConversationEngine.resolve(
+                player, topic, migliore, MatchDay(league.currentMatchDay), league.config.rules,
+            )
+
+            salvaMorale(PlayerId(playerId), esito.player.morale)
+            connection.prepareStatement(
+                """
+                update conversations
+                set status = 'CHIUSA', tone = ?, morale_delta = ?, closed_at = now()
+                where id = ?
+                """.trimIndent(),
+            ).use { st ->
+                st.setString(1, migliore.tone.name)
+                st.setInt(2, esito.moraleDelta)
+                st.setLong(3, id)
+                st.executeUpdate()
+            }
+            chiusi++
+        }
+
+        return if (chiusi > 0) listOf("$chiusi colloqui gestiti dai club del computer.") else emptyList()
+    }
+
     private data class ContrattoBreve(val clubId: Long, val signedOn: Int, val expiresOn: Int)
 
     private fun caricaRosePerColloqui(leagueId: Long): List<Pair<Player, ContrattoBreve>> {
@@ -636,6 +722,14 @@ class TickRunner(
             val club = loadClub(trade.to) ?: continue
             val squad = loadSquad(league.id, trade.to)
 
+            // Prestiti e amichevoli hanno regole loro. Farli passare dal valutatore degli
+            // scambi darebbe risposte senza senso: un prestito non e' un acquisto piccolo,
+            // e un'amichevole non ha nessun valore da confrontare.
+            if (trade.kind != "SCAMBIO") {
+                note += rispondiAUnaTrattativa(league, trade, stato, club, squad)
+                continue
+            }
+
             // I giocatori offerti stanno nella rosa dell'altro club: il valutatore vede solo
             // la propria, quindi glieli si porta gia' valutati.
             val offerti = loadSquad(league.id, trade.from).filter { it.id in trade.offer.offered }
@@ -666,13 +760,129 @@ class TickRunner(
         val from: ClubId,
         val to: ClubId,
         val offer: TradeOffer,
+        val kind: String = "SCAMBIO",
+        val terms: JsonNode = JsonNode.parse("{}"),
     )
+
+    /**
+     * La risposta a un prestito o a un'amichevole.
+     *
+     * Accettare passa dalle stesse scritture della funzione SQL — riga in `loans`,
+     * contratto spostato, oppure una partita in calendario — perche' l'esito deve essere
+     * identico che ad accettare sia una persona o un computer. Due strade che producono
+     * stati diversi si scoprono a stagione finita.
+     */
+    private fun rispondiAUnaTrattativa(
+        league: LeagueRow,
+        trade: PendingTrade,
+        stato: AiState,
+        club: Club,
+        squad: List<Player>,
+    ): String {
+        when (trade.kind) {
+            "PRESTITO" -> {
+                val playerId = trade.offer.offered.firstOrNull()
+                    ?: return chiudiConNota(trade, club, "proposta vuota")
+                val player = loadPlayerRow(playerId)?.player
+                    ?: return chiudiConNota(trade, club, "il giocatore non c'e' piu'")
+
+                val giornate = trade.terms["matchDays"].int(0)
+                val canone = trade.terms["fee"].int(0)
+
+                val si = AiInitiative.answerLoan(
+                    stato, club, squad, player, giornate, canone, league.config,
+                )
+                if (!si) return chiudiConNota(trade, club, "non ci serve alle sue condizioni")
+
+                connection.prepareStatement(
+                    """
+                    insert into loans (league_id, player_id, owner_club_id, borrower_club_id,
+                                       starts_on, ends_on, fee_per_match_day,
+                                       wage_paid_by_borrower, can_play_against_owner, active)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, true)
+                    """.trimIndent(),
+                ).use { st ->
+                    st.setLong(1, league.id)
+                    st.setLong(2, playerId.value)
+                    st.setLong(3, trade.from.value)
+                    st.setLong(4, trade.to.value)
+                    st.setInt(5, league.currentMatchDay)
+                    st.setInt(6, league.currentMatchDay + maxOf(1, giornate))
+                    st.setInt(7, canone)
+                    st.setBoolean(8, trade.terms["wagePaidByBorrower"].bool(true))
+                    st.setBoolean(9, trade.terms["canPlayAgainstOwner"].bool(false))
+                    st.executeUpdate()
+                }
+                spostaContratto(playerId, trade.from, trade.to)
+                chiudiScambio(trade.id, "ACCETTATA", "Ci sta bene.")
+                return "${club.name} accetta un prestito."
+            }
+
+            "AMICHEVOLE" -> {
+                val quando = trade.terms["kickoff"].strOrNull()
+                    ?: return chiudiConNota(trade, club, "orario mancante")
+
+                val si = AiInitiative.answerFriendly(
+                    stato, squad, league.config,
+                    giornateAllaProssimaPartita(league.id, trade.to) - league.currentMatchDay,
+                )
+                if (!si) return chiudiConNota(trade, club, "abbiamo le gambe pesanti")
+
+                val competizione = competizioneAmichevoli(league.id)
+                connection.prepareStatement(
+                    """
+                    insert into fixtures (league_id, competition_id, round, round_label,
+                                          home_club_id, away_club_id, match_day, kickoff)
+                    values (?, ?, 0, 'Amichevole', ?, ?, 0, ?::timestamptz)
+                    """.trimIndent(),
+                ).use { st ->
+                    st.setLong(1, league.id)
+                    st.setLong(2, competizione)
+                    st.setLong(3, trade.from.value)
+                    st.setLong(4, trade.to.value)
+                    st.setString(5, quando)
+                    st.executeUpdate()
+                }
+                chiudiScambio(trade.id, "ACCETTATA", "Ci stiamo.")
+                return "${club.name} accetta un'amichevole."
+            }
+
+            else -> return chiudiConNota(trade, club, "proposta di tipo sconosciuto")
+        }
+    }
+
+    private fun chiudiConNota(trade: PendingTrade, club: Club, motivo: String): String {
+        chiudiScambio(trade.id, "RIFIUTATA", motivo.replaceFirstChar { it.uppercase() } + ".")
+        return "${club.name} rifiuta: $motivo."
+    }
+
+    /** La competizione nascosta delle amichevoli, creata alla prima che se ne gioca. */
+    private fun competizioneAmichevoli(leagueId: Long): Long {
+        connection.prepareStatement(
+            "select id from competitions where league_id = ? and kind = 'AMICHEVOLE' limit 1",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> if (rs.next()) return rs.getLong(1) }
+        }
+
+        return connection.prepareStatement(
+            """
+            insert into competitions (league_id, name, type, config, participants, kind)
+            values (?, 'Amichevoli', 'GIRONE', '{}'::jsonb, '{}', 'AMICHEVOLE')
+            returning id
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else 0L }
+        }
+    }
 
     private fun loadPendingTrades(leagueId: Long): List<PendingTrade> {
         val out = mutableListOf<PendingTrade>()
         connection.prepareStatement(
             """
-            select t.id, t.from_club, t.to_club, t.offered, t.wanted, t.cash
+            select t.id, t.from_club, t.to_club, t.offered, t.wanted, t.cash,
+                   t.kind, t.terms
             from trades t
             join clubs c on c.id = t.to_club
             where t.league_id = ? and t.status = 'PROPOSTA' and c.is_ai
@@ -696,6 +906,8 @@ class TickRunner(
                             wanted = ids(rs.getArray("wanted")),
                             cash = rs.getInt("cash"),
                         ),
+                        kind = rs.getString("kind") ?: "SCAMBIO",
+                        terms = JsonNode.parse(rs.getString("terms") ?: "{}"),
                     )
                 }
             }
@@ -1174,8 +1386,19 @@ class TickRunner(
         // Prima si guarda cosa c'e' gia' sul mercato, poi eventualmente si apre qualcosa.
         // L'ordine conta: un'AI che aprisse aste senza guardare quelle in corso
         // riempirebbe il listino di doppioni sugli stessi ruoli scoperti.
+        //
+        // Le iniziative — scambi, amichevoli, ordine in rosa — vengono **dopo** e solo a
+        // rosa completa. Un club che deve ancora arrivare a undici titolari non ha niente
+        // da proporre a nessuno: quello che gli avanza non avanza, gli manca.
         val acted = tryBid(league, state, club, squad, today) ||
-            tryOpenAuction(league, state, club, squad)
+            tryOpenAuction(league, state, club, squad) ||
+            (
+                !allestimento && (
+                    tieniInOrdineLaRosa(league, state, club, squad, today) ||
+                        proponiUnoScambio(league, state, club, squad, today) ||
+                        chiediUnAmichevole(league, state, club, squad)
+                    )
+                )
 
         val after = if (acted) AiScheduler.recordAction(state, now) else state
         val next = AiScheduler.scheduleNext(after, now, league.config.setup.worldSeed)
@@ -1192,6 +1415,231 @@ class TickRunner(
                 next
             },
         )
+    }
+
+    // ------------------------------------------------------- l'AI fa il primo passo
+
+    /**
+     * Rinnova a chi serve, saluta chi non gioca.
+     *
+     * ## Perche' un'AI deve farlo
+     *
+     * Perche' altrimenti le sue rose si svuotano da sole: i contratti scadono, i giocatori
+     * tornano svincolati e a meta' stagione ci si ritrova a giocare contro squadre di
+     * dodici. Nessuno vede succedere niente — non c'e' una notifica per "il computer non ha
+     * rinnovato" — e il campionato diventa piatto senza che si capisca perche'.
+     */
+    private fun tieniInOrdineLaRosa(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+        today: MatchDay,
+    ): Boolean {
+        val contratti = loadContractsOf(club.id)
+        val azioni = AiInitiative.squadHousekeeping(
+            state, club, squad, contratti, league.config, today,
+        )
+        if (azioni.isEmpty()) return false
+
+        // Una per risveglio. Il tetto delle azioni esiste per non far succedere venti cose
+        // fra un'occhiata all'app e l'altra, e vale anche per le cose che non si vedono.
+        when (val azione = azioni.first()) {
+            is SquadAction.Rinnova -> {
+                connection.prepareStatement(
+                    """
+                    update contracts set signed_on = ?, expires_on = ?
+                    where player_id = ? and club_id = ?
+                    """.trimIndent(),
+                ).use { st ->
+                    st.setInt(1, today.value)
+                    st.setInt(2, today.value + league.config.market.defaultContractMatchDays)
+                    st.setLong(3, azione.playerId.value)
+                    st.setLong(4, club.id.value)
+                    st.executeUpdate()
+                }
+                connection.prepareStatement(
+                    "update clubs set credits = credits - ? where id = ?",
+                ).use { st ->
+                    st.setInt(1, azione.cost)
+                    st.setLong(2, club.id.value)
+                    st.executeUpdate()
+                }
+            }
+
+            is SquadAction.Svincola -> expireContract(league, azione.playerId, club.id)
+        }
+        return true
+    }
+
+    /**
+     * Propone uno scambio a qualcuno.
+     *
+     * ## Perche' il bersaglio si sceglie a caso fra chi non ha appena rifiutato
+     *
+     * Perche' valutare tutte le rose di tutti i club a ogni risveglio, per venti club,
+     * ogni cinque minuti, e' lavoro che quasi sempre finisce in "niente da proporre". Una
+     * squadra per volta, presa a caso, produce dopo qualche giro lo stesso risultato a un
+     * ventesimo del costo — e somiglia di piu' a come si guarda davvero in giro.
+     *
+     * `refusalCooldowns` esisteva gia' per le trattative e vale anche qui: chi ti ha appena
+     * detto di no non va richiamato domani.
+     */
+    private fun proponiUnoScambio(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+        today: MatchDay,
+    ): Boolean {
+        if (!league.config.market.swapsEnabled) return false
+
+        val altri = loadClubIds(league.id)
+            .filter { it != club.id && state.canActOn(it, today) }
+            .filterNot { haGiaUnaPropostaAperta(club.id, it) }
+        if (altri.isEmpty()) return false
+
+        val bersaglio = altri[(club.id.value + today.value).toInt().mod(altri.size)]
+        val suaRosa = loadSquad(league.id, bersaglio)
+        if (suaRosa.isEmpty()) return false
+
+        val offerta = AiInitiative.proposeTrade(
+            state, club, squad, bersaglio, suaRosa, league.config,
+        ) ?: return false
+
+        connection.prepareStatement(
+            """
+            insert into trades (league_id, from_club, to_club, offered, wanted, cash,
+                                message, kind)
+            values (?, ?, ?, ?, ?, ?, ?, 'SCAMBIO')
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, club.id.value)
+            st.setLong(3, bersaglio.value)
+            st.setArray(4, connection.createArrayOf("bigint", offerta.offered.map { it.value }.toTypedArray()))
+            st.setArray(5, connection.createArrayOf("bigint", offerta.wanted.map { it.value }.toTypedArray()))
+            st.setInt(6, offerta.cash)
+            st.setString(7, offerta.message)
+            st.executeUpdate()
+        }
+
+        notify(
+            league.id, bersaglio,
+            "${clubNameOf(club.id)} ti ha proposto uno scambio.",
+            kind = "scambio",
+            urgency = "immediata",
+        )
+        return true
+    }
+
+    /**
+     * Chiede un'amichevole.
+     *
+     * Sempre a due giorni di distanza e in prima serata: un'amichevole proposta per fra
+     * dieci minuti non la accetta nessuno, e una per fra tre settimane non la ricorda
+     * nessuno.
+     */
+    private fun chiediUnAmichevole(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+    ): Boolean {
+        if (!league.config.rules.friendliesEnabled) return false
+
+        val prossima = giornateAllaProssimaPartita(league.id, club.id)
+        if (!AiInitiative.wantsFriendly(state, squad, league.config, prossima)) return false
+
+        val altri = loadClubIds(league.id).filter { it != club.id }
+        if (altri.isEmpty()) return false
+        val bersaglio = altri[(club.id.value * 7L).toInt().mod(altri.size)]
+        if (haGiaUnaPropostaAperta(club.id, bersaglio)) return false
+
+        val quando = java.time.LocalDate.now(league.config.calendar.timeZone)
+            .plusDays(2)
+            .atTime(21, 0)
+            .atZone(league.config.calendar.timeZone)
+            .toInstant()
+
+        connection.prepareStatement(
+            """
+            insert into trades (league_id, from_club, to_club, offered, wanted, cash,
+                                message, kind, terms)
+            values (?, ?, ?, '{}', '{}', 0, ?, 'AMICHEVOLE', ?::jsonb)
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, club.id.value)
+            st.setLong(3, bersaglio.value)
+            st.setString(4, "Ci va di giocare? Abbiamo le gambe fresche.")
+            st.setString(5, """{"kickoff":"$quando"}""")
+            st.executeUpdate()
+        }
+
+        notify(
+            league.id, bersaglio,
+            "${clubNameOf(club.id)} ti ha chiesto un'amichevole.",
+            kind = "amichevole",
+            urgency = "riepilogo",
+        )
+        return true
+    }
+
+    /** Una proposta aperta per volta verso lo stesso club: due sarebbero insistenza. */
+    private fun haGiaUnaPropostaAperta(from: ClubId, to: ClubId): Boolean =
+        connection.prepareStatement(
+            "select 1 from trades where from_club = ? and to_club = ? and status = 'PROPOSTA' limit 1",
+        ).use { st ->
+            st.setLong(1, from.value)
+            st.setLong(2, to.value)
+            st.executeQuery().use { it.next() }
+        }
+
+    /** Quante giornate mancano alla prossima partita di questo club. Grande se non ce n'e'. */
+    private fun giornateAllaProssimaPartita(leagueId: Long, clubId: ClubId): Int =
+        connection.prepareStatement(
+            """
+            select min(match_day) from fixtures
+            where league_id = ? and not played and match_day > 0
+              and (home_club_id = ? or away_club_id = ?)
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setLong(2, clubId.value)
+            st.setLong(3, clubId.value)
+            st.executeQuery().use { rs ->
+                if (!rs.next()) return@use 99
+                val prossima = rs.getInt(1)
+                if (rs.wasNull()) 99 else prossima
+            }
+        }
+
+    private fun loadContractsOf(clubId: ClubId): List<Contract> {
+        val out = mutableListOf<Contract>()
+        connection.prepareStatement(
+            """
+            select player_id, club_id, signed_on, expires_on, wage_per_match_day,
+                   price_paid, release_clause
+            from contracts where club_id = ?
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += Contract(
+                        playerId = PlayerId(rs.getLong("player_id")),
+                        clubId = ClubId(rs.getLong("club_id")),
+                        signedOn = MatchDay(rs.getInt("signed_on")),
+                        expiresOn = MatchDay(rs.getInt("expires_on")),
+                        wagePerMatchDay = rs.getInt("wage_per_match_day"),
+                        pricePaid = rs.getInt("price_paid"),
+                        releaseClause = rs.getInt("release_clause").takeIf { !rs.wasNull() },
+                    )
+                }
+            }
+        }
+        return out
     }
 
     /**
