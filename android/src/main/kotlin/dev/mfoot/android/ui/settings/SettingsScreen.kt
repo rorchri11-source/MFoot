@@ -18,8 +18,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.mfoot.android.app.DivisionsAdmin
 import dev.mfoot.android.app.SettingsSection
 import dev.mfoot.android.ui.Hairline
+import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Notice
 import dev.mfoot.android.ui.PrimaryButton
 import dev.mfoot.android.ui.theme.MFootColors
@@ -118,6 +120,8 @@ fun SettingsScreen(
     errore: String?,
     onChange: (LeagueConfig) -> Unit,
     onSave: () -> Unit,
+    /** Cio' che va sotto la sezione: oggi solo i pulsanti delle divisioni. */
+    azioni: (@Composable () -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxSize().background(MFootColors.bg)) {
         Column(
@@ -136,6 +140,7 @@ fun SettingsScreen(
                 SettingsSection.CRESCITA -> Crescita(config, canEdit, onChange)
                 SettingsSection.CUSTOM -> Custom(config, canEdit, onChange)
             }
+            azioni?.invoke()
             Spacer(Modifier.height(24.dp))
         }
 
@@ -259,6 +264,78 @@ private fun Divisioni(config: LeagueConfig, edit: Boolean, onChange: (LeagueConf
     ) { Switch(d.twoLeggedPlayoffs, edit) { set { copy(twoLeggedPlayoffs = it) } } }
 
     ScalettaFineStagione(config)
+}
+
+/**
+ * I due gesti che **applicano** le divisioni, sotto la scaletta che dice cosa succedera'.
+ *
+ * ## Perche' chiudere la stagione e' un pulsante
+ *
+ * Il gioco non ha un concetto di stagione: le competizioni le crea l'admin quando vuole,
+ * quante ne vuole. Non esiste un momento in cui si possa dire che la stagione e' finita, e
+ * inventarlo — l'ultima partita dell'ultima competizione? — vorrebbe dire indovinare, e
+ * sbagliare la volta in cui si voleva solo aggiungere una coppa.
+ *
+ * Chiedendolo l'ambiguita' si toglie invece di nasconderla. E chi preme sa cosa succede,
+ * perche' la scaletta e' scritta qui sopra.
+ */
+@Composable
+fun DivisioniAzioni(
+    abilitate: Boolean,
+    giaAssegnate: Boolean,
+    stato: DivisionsAdmin,
+    onAssegna: () -> Unit,
+    onChiudiStagione: () -> Unit,
+    onChiudiAvviso: () -> Unit,
+) {
+    if (!abilitate) return
+
+    Column(Modifier.fillMaxWidth().padding(top = MFootSpacing.section)) {
+        stato.errore?.let {
+            Notice(it, MFootColors.gamble, Modifier.clickable(onClick = onChiudiAvviso))
+            Spacer(Modifier.height(MFootSpacing.related))
+        }
+        stato.avviso?.let {
+            Notice(it, MFootColors.elite, Modifier.clickable(onClick = onChiudiAvviso))
+            Spacer(Modifier.height(MFootSpacing.related))
+        }
+
+        Text(
+            if (giaAssegnate) {
+                "Le squadre sono gia' divise. Riassegnare rimescola tutto da capo e " +
+                    "cancella promozioni e retrocessioni gia' avvenute."
+            } else {
+                "Nessuna squadra e' ancora assegnata: sono tutte nella prima divisione. " +
+                    "L'assegnazione distribuisce le piu' forti fra le divisioni, cosi' " +
+                    "nessuna nasce gia' decisa."
+            },
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+        Spacer(Modifier.height(MFootSpacing.related))
+
+        GhostButton(
+            text = stato.busy ?: if (giaAssegnate) "Riassegna le divisioni" else "Assegna le divisioni",
+            onClick = onAssegna,
+        )
+
+        if (giaAssegnate) {
+            Spacer(Modifier.height(MFootSpacing.related))
+            Text(
+                "Chiudere la stagione applica quello che c'e' scritto qui sopra: promuove, " +
+                    "retrocede, e riscrive la scala. Chi e' agli spareggi resta dov'e' " +
+                    "finche' non li gioca.",
+                style = MFootType.chip,
+                color = MFootColors.ink3,
+            )
+            Spacer(Modifier.height(MFootSpacing.related))
+            PrimaryButton(
+                text = stato.busy ?: "Chiudi la stagione",
+                onClick = onChiudiStagione,
+                enabled = stato.busy == null,
+            )
+        }
+    }
 }
 
 /**

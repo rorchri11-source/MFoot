@@ -230,3 +230,16 @@ data class TradeDraft(
 ) {
     val isEmpty: Boolean get() = offered.isEmpty() && wanted.isEmpty() && cash == 0
 }
+
+/**
+ * I due gesti dell'admin sulle divisioni: comporre la scala, e chiudere la stagione.
+ *
+ * Sono rari e pesanti — riscrivono dove gioca ogni club — quindi hanno uno stato loro con
+ * il proprio "sto lavorando": mescolarli allo stato della lega vorrebbe dire un avviso di
+ * lavorazione che compare in schermate che non c'entrano niente.
+ */
+data class DivisionsAdmin(
+    val busy: String? = null,
+    val avviso: String? = null,
+    val errore: String? = null,
+)

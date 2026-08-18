@@ -264,6 +264,125 @@ class DivisionTest {
         assertEquals(SeasonOutcome.RETROCESSO, serieB[3].outcome)
     }
 
+    // ------------------------------------------------------------ la prima divisione
+
+    /**
+     * La serpentina distribuisce la forza, non la concentra.
+     *
+     * Con l'ordine di forza in ingresso, spezzare a blocchi darebbe una Serie C fatta solo
+     * di deboli: si comincerebbe gia' sapendo come finisce. A serpentina ogni divisione
+     * riceve una squadra forte, una media e una debole.
+     */
+    @Test
+    fun `la divisione iniziale distribuisce le squadre a serpentina`() {
+        val forza = clubs(1, 9)
+        val livelli = SeasonEnd.split(forza, 3)
+
+        // Prime tre: una per divisione.
+        assertEquals(1, livelli.getValue(ClubId(1)))
+        assertEquals(2, livelli.getValue(ClubId(2)))
+        assertEquals(3, livelli.getValue(ClubId(3)))
+        // Il giro dopo risale: quarta in C, quinta in B, sesta in A.
+        assertEquals(3, livelli.getValue(ClubId(4)))
+        assertEquals(2, livelli.getValue(ClubId(5)))
+        assertEquals(1, livelli.getValue(ClubId(6)))
+    }
+
+    @Test
+    fun `ogni divisione riceve lo stesso numero di squadre`() {
+        val livelli = SeasonEnd.split(clubs(1, 18), 3)
+        val perLivello = livelli.values.groupingBy { it }.eachCount()
+
+        assertEquals(mapOf(1 to 6, 2 to 6, 3 to 6), perLivello)
+    }
+
+    @Test
+    fun `con una sola divisione stanno tutti al primo livello`() {
+        val livelli = SeasonEnd.split(clubs(1, 7), 1)
+        assertTrue(livelli.values.all { it == 1 })
+    }
+
+    // ------------------------------------------------------- applicare gli esiti
+
+    /**
+     * Chi sale sale, chi scende scende, e i numeri tornano.
+     *
+     * E' l'invariante che conta: se una stagione la Serie A finisse con un club in piu' e
+     * la C con uno in meno, l'anno dopo nessuno saprebbe rimetterle a posto.
+     */
+    @Test
+    fun `applicare gli esiti non cambia la dimensione delle divisioni`() {
+        val prima = SeasonEnd.settle(tre, classificheIdentiche(tre), DivisionRules())
+
+        // Gli spareggi li vince chi e' arrivato davanti: e' l'esito piu' probabile e serve
+        // solo a far muovere qualcuno.
+        val playoff = prima.filter { it.outcome == SeasonOutcome.PLAYOFF }
+            .groupBy { it.level }
+            .mapNotNull { (_, gruppo) -> gruppo.minByOrNull { it.position }?.club }
+            .toSet()
+        val playout = prima.filter { it.outcome == SeasonOutcome.PLAYOUT }
+            .groupBy { it.level }
+            .mapNotNull { (_, gruppo) -> gruppo.minByOrNull { it.position }?.club }
+            .toSet()
+
+        val dopo = SeasonEnd.apply(prima, playoff, playout)
+
+        assertEquals(
+            tre.associate { it.level to it.clubs.size },
+            dopo.values.groupingBy { it }.eachCount(),
+            "le divisioni hanno cambiato dimensione: $dopo",
+        )
+    }
+
+    @Test
+    fun `il campione della massima divisione resta dov e`() {
+        val fates = listOf(ClubFate(ClubId(1), 1, 1, SeasonOutcome.CAMPIONE))
+        assertEquals(1, SeasonEnd.apply(fates).getValue(ClubId(1)))
+    }
+
+    @Test
+    fun `chi vince il playoff sale, chi lo perde resta`() {
+        val fates = listOf(
+            ClubFate(ClubId(10), 2, 2, SeasonOutcome.PLAYOFF),
+            ClubFate(ClubId(11), 2, 3, SeasonOutcome.PLAYOFF),
+        )
+        val dopo = SeasonEnd.apply(fates, playoffWinners = setOf(ClubId(10)))
+
+        assertEquals(1, dopo.getValue(ClubId(10)))
+        assertEquals(2, dopo.getValue(ClubId(11)))
+    }
+
+    @Test
+    fun `chi vince il playout resta, chi lo perde scende`() {
+        val fates = listOf(
+            ClubFate(ClubId(20), 1, 5, SeasonOutcome.PLAYOUT),
+            ClubFate(ClubId(21), 1, 6, SeasonOutcome.PLAYOUT),
+        )
+        val dopo = SeasonEnd.apply(fates, playoutWinners = setOf(ClubId(20)))
+
+        assertEquals(1, dopo.getValue(ClubId(20)))
+        assertEquals(2, dopo.getValue(ClubId(21)))
+    }
+
+    /**
+     * Senza spareggi giocati, chi era in bilico non si muove.
+     *
+     * E' il caso che si presenta subito dopo la stagione regolare, ed e' importante che
+     * produca uno stato coerente: muovere chi non ha ancora giocato lo spareggio vorrebbe
+     * dire promuovere una squadra che potrebbe perderlo.
+     */
+    @Test
+    fun `senza spareggi giocati chi e' in bilico resta dov e`() {
+        val fates = listOf(
+            ClubFate(ClubId(30), 2, 2, SeasonOutcome.PLAYOFF),
+            ClubFate(ClubId(31), 1, 5, SeasonOutcome.PLAYOUT),
+        )
+        val dopo = SeasonEnd.apply(fates)
+
+        assertEquals(2, dopo.getValue(ClubId(30)))
+        assertEquals(2, dopo.getValue(ClubId(31)))
+    }
+
     // ------------------------------------------------------------------ accoppiamenti
 
     /**

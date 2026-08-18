@@ -251,6 +251,73 @@ object SeasonEnd {
     }
 
     /**
+     * Divide i club fra le divisioni, la prima volta.
+     *
+     * ## Perche' a serpentina e non a blocchi
+     *
+     * L'ordine che arriva e' quello di forza — chi ha speso di piu', chi ha la rosa
+     * migliore. Prendendo i primi cinque per la Serie A, i secondi cinque per la B e cosi'
+     * via, la Serie C sarebbe un campionato fra i piu' deboli e nessuno di loro avrebbe mai
+     * la sensazione di poter risalire: si comincia gia' sapendo come finisce.
+     *
+     * A serpentina — primo in A, secondo in B, terzo in C, quarto ancora in C, quinto in B,
+     * sesto in A — ogni divisione riceve una squadra forte, una media e una debole. Le tre
+     * classifiche sono incerte dal primo giorno, ed e' il massimo che si possa fare senza
+     * conoscere nessuno.
+     *
+     * Alla seconda stagione questa funzione non serve piu': le divisioni le decidono
+     * promozioni e retrocessioni.
+     */
+    fun split(clubs: List<ClubId>, divisions: Int): Map<ClubId, Int> {
+        if (divisions <= 1 || clubs.isEmpty()) return clubs.associateWith { 1 }
+
+        val out = LinkedHashMap<ClubId, Int>(clubs.size)
+        clubs.forEachIndexed { index, club ->
+            val giro = index / divisions
+            val posizione = index % divisions
+            // I giri pari scendono, i dispari risalgono: e' la serpentina.
+            val livello = if (giro % 2 == 0) posizione else divisions - 1 - posizione
+            out[club] = livello + 1
+        }
+        return out
+    }
+
+    /**
+     * Le divisioni dopo promozioni e retrocessioni.
+     *
+     * Prende gli esiti di [settle] e restituisce il livello nuovo di ogni club. Chi ha
+     * vinto uno spareggio va indicato in [playoffWinners] o [playoutWinners]: senza,
+     * restano dove sono, che e' la cosa giusta da fare finche' quelle partite non si sono
+     * giocate.
+     *
+     * ## L'invariante
+     *
+     * Le divisioni devono restare della stessa dimensione. Se un club sale, un altro deve
+     * scendere: questa funzione non lo garantisce da sola — dipende da regole equilibrate —
+     * ma non lo rompe mai da sola, perche' muove solo chi ha un esito che lo prevede.
+     */
+    fun apply(
+        fates: List<ClubFate>,
+        playoffWinners: Set<ClubId> = emptySet(),
+        playoutWinners: Set<ClubId> = emptySet(),
+    ): Map<ClubId, Int> = fates.associate { fate ->
+        val nuovo = when (fate.outcome) {
+            SeasonOutcome.CAMPIONE, SeasonOutcome.PROMOSSO -> fate.level - 1
+            SeasonOutcome.RETROCESSO -> fate.level + 1
+
+            // Chi vince il playoff sale, chi lo perde resta. Simmetricamente per il playout:
+            // chi lo vince resta, chi lo perde scende.
+            SeasonOutcome.PLAYOFF -> if (fate.club in playoffWinners) fate.level - 1 else fate.level
+            SeasonOutcome.PLAYOUT -> if (fate.club in playoutWinners) fate.level else fate.level + 1
+
+            SeasonOutcome.RESTA -> fate.level
+        }
+        // Il campione della massima divisione non sale da nessuna parte: `coerceAtLeast`
+        // non e' una pezza, e' la definizione di primo livello.
+        fate.club to nuovo.coerceAtLeast(1)
+    }
+
+    /**
      * Chi passa il turno, dato l'esito degli accoppiamenti.
      *
      * Un accoppiamento senza partite giocate non produce nessun vincitore: si aspetta.

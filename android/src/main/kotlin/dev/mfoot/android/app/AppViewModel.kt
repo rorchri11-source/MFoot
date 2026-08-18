@@ -10,6 +10,7 @@ import dev.mfoot.android.data.CompetitionRepository
 import dev.mfoot.android.data.LeagueDeskRepository
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
+import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
 import dev.mfoot.android.data.TradeRepository
 import dev.mfoot.android.data.SavedLineup
@@ -18,12 +19,18 @@ import dev.mfoot.android.data.Supabase
 import dev.mfoot.android.data.TableRepository
 import dev.mfoot.android.data.SupabaseApi
 import dev.mfoot.android.data.WorldUpload
+import dev.mfoot.core.calendar.ClubFate
+import dev.mfoot.core.calendar.Division
+import dev.mfoot.core.calendar.DivisionRules
+import dev.mfoot.core.calendar.SeasonEnd
+import dev.mfoot.core.calendar.SeasonOutcome
 import dev.mfoot.core.config.ConfigPresets
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.market.Valuation
 import dev.mfoot.core.match.AutoLineup
 import dev.mfoot.core.match.Tactics
 import dev.mfoot.core.model.Attr
+import dev.mfoot.core.model.ClubId
 import dev.mfoot.core.model.MatchDay
 import dev.mfoot.core.model.Position
 import dev.mfoot.core.world.CustomPlayerBuilder
@@ -202,6 +209,8 @@ class AppViewModel : ViewModel() {
         viewModelScope.launch {
             _state.value = AppState.Caricamento("Leggo la lega…")
 
+            val livelli = DivisionRepository.levels(leagueId)
+
             when (val snapshot = LeagueRepository.snapshot(leagueId)) {
                 is ApiResult.Error -> {
                     // Non si cancella la lega salvata: quasi sempre e' un problema di rete
@@ -214,21 +223,28 @@ class AppViewModel : ViewModel() {
 
                 is ApiResult.Ok -> {
                     ultimaConfig = snapshot.value.league.config
-                    val rows = withContext(Dispatchers.Default) { righe(snapshot.value) }
+                    // Le divisioni arrivano da una lettura separata: si attaccano qui,
+                    // dove i club esistono gia.
+                    val lega = snapshot.value.copy(
+                        clubs = snapshot.value.clubs.map {
+                            it.copy(divisionLevel = livelli[it.id] ?: 1)
+                        },
+                    )
+                    val rows = withContext(Dispatchers.Default) { righe(lega) }
                     val aste = AuctionRepository.openAuctions(leagueId)
                     _state.value = AppState.Dentro(
-                        lega = snapshot.value,
+                        lega = lega,
                         rows = rows,
-                        auctions = asteViste(aste, rows, snapshot.value),
+                        auctions = asteViste(aste, rows, lega),
                         browse = BrowseState(
-                            // Chi ha gia' una rosa vuole vedere la sua rosa; chi non ce
-                            // l'ha ancora vuole vedere cosa c'e' da prendere.
-                            scope = if (snapshot.value.myClub != null) ListScope.MIA_ROSA
+                            // Chi ha gia. una rosa vuole vedere la sua rosa; chi non ce
+                            // l.ha ancora vuole vedere cosa c.e. da prendere.
+                            scope = if (lega.myClub != null) ListScope.MIA_ROSA
                             else ListScope.SVINCOLATI,
                         ),
                         avviso = avviso,
                     )
-                    caricaFormazione(snapshot.value)
+                    caricaFormazione(lega)
                     // Ripulito a ogni ricarica: dopo che qualcuno fonda un club, un elenco
                     // partecipanti in memoria dalla volta prima lo mostrerebbe ancora senza.
                     _desk.value = DeskState()
@@ -773,6 +789,154 @@ class AppViewModel : ViewModel() {
                     _desk.value = _desk.value.copy(tick = esito.value, tickLetto = true, errore = null)
             }
         }
+    }
+
+    // --------------------------------------------------------------------- divisioni
+
+    private val _divisioni = MutableStateFlow(DivisionsAdmin())
+    val divisioni: StateFlow<DivisionsAdmin> = _divisioni
+
+    /**
+     * Assegna i club alle divisioni per la prima volta.
+     *
+     * L'ordine di partenza e' quello di **forza attuale**, cioe' quanto vale la rosa: e' il
+     * meglio che si possa fare prima che si sia giocata una partita. La serpentina di
+     * [SeasonEnd.split] poi lo distribuisce, cosi' nessuna divisione nasce gia' decisa.
+     */
+    fun assegnaDivisioni() {
+        val dentro = statoCorrente() ?: return
+        val config = dentro.lega.league.config.divisions
+        if (!config.enabled) return
+
+        viewModelScope.launch {
+            _divisioni.value = _divisioni.value.copy(busy = "Assegno le divisioni…", errore = null)
+
+            val perForza = dentro.lega.clubs
+                .sortedByDescending { club ->
+                    dentro.lega.squadOf(club.id).sumOf { it.overall.toLong() }
+                }
+                .map { ClubId(it.id) }
+
+            val livelli = SeasonEnd.split(perForza, config.count)
+            applicaLivelli(dentro.lega.league.id, livelli, "Divisioni assegnate.")
+        }
+    }
+
+    /**
+     * Chiude la stagione: promuove, retrocede, e riscrive la scala.
+     *
+     * ## Perche' e' un pulsante e non qualcosa che succede da solo
+     *
+     * Il gioco non ha un concetto di "stagione": le competizioni le crea l'admin quando
+     * vuole, quante ne vuole, con le date che vuole. Non esiste da nessuna parte un momento
+     * in cui si possa dire che la stagione e' finita, e inventarlo — l'ultima partita
+     * dell'ultima competizione? — vorrebbe dire indovinare al posto di chi gioca, e
+     * sbagliare la volta in cui l'admin voleva aggiungere una coppa.
+     *
+     * Chiedendolo si toglie l'ambiguita' invece di nasconderla, e chi preme sa cosa sta
+     * facendo perche' la scaletta di cosa succedera' e' scritta nella stessa schermata.
+     */
+    fun chiudiStagione() {
+        val dentro = statoCorrente() ?: return
+        val config = dentro.lega.league.config.divisions
+        if (!config.enabled) return
+        val leagueId = dentro.lega.league.id
+
+        viewModelScope.launch {
+            _divisioni.value = _divisioni.value.copy(busy = "Chiudo la stagione…", errore = null)
+
+            val classifiche = classifichePerDivisione(leagueId, dentro)
+            if (classifiche == null) {
+                _divisioni.value = _divisioni.value.copy(
+                    busy = null,
+                    errore = "Non riesco a leggere le classifiche: serve almeno una competizione.",
+                )
+                return@launch
+            }
+
+            val divisioni = (1..config.count).map { livello ->
+                Division(
+                    level = livello,
+                    name = config.nameOf(livello),
+                    clubs = dentro.lega.clubs
+                        .filter { it.divisionLevel == livello }
+                        .map { ClubId(it.id) },
+                )
+            }
+
+            val esiti = SeasonEnd.settle(divisioni, classifiche, DivisionRules.of(config))
+            // Gli spareggi non li ha ancora giocati nessuno: chi e' in bilico resta dov'e',
+            // che e' l'unica cosa onesta da fare finche' quelle partite non esistono.
+            val livelli = SeasonEnd.apply(esiti)
+
+            applicaLivelli(leagueId, livelli, riassunto(esiti))
+        }
+    }
+
+    /**
+     * Le classifiche vere, una per divisione.
+     *
+     * Si leggono dalle competizioni esistenti e si calcolano con [Standings], lo stesso
+     * codice della schermata Classifica: due modi di ordinare la stessa tabella
+     * produrrebbero un retrocesso diverso da quello mostrato.
+     */
+    private suspend fun classifichePerDivisione(
+        leagueId: Long,
+        dentro: AppState.Dentro,
+    ): Map<Int, List<ClubId>>? {
+        val competizioni = when (val esito = CompetitionRepository.list(leagueId)) {
+            is ApiResult.Error -> return null
+            is ApiResult.Ok -> esito.value
+        }
+        if (competizioni.isEmpty()) return null
+
+        val perDivisione = mutableMapOf<Int, List<ClubId>>()
+        for (competizione in competizioni) {
+            val vista = caricaTabella(leagueId, competizione) ?: continue
+            if (vista.rows.isEmpty()) continue
+
+            // La divisione di una competizione e' quella dei suoi partecipanti: l'admin ne
+            // crea una per divisione, e chiedergli di dichiararlo di nuovo sarebbe chiedere
+            // due volte la stessa cosa.
+            val livello = vista.rows
+                .mapNotNull { riga ->
+                    dentro.lega.clubs.firstOrNull { it.id == riga.club.value }?.divisionLevel
+                }
+                .groupingBy { it }.eachCount()
+                .maxByOrNull { it.value }?.key
+                ?: continue
+
+            perDivisione[livello] = vista.rows.map { it.club }
+        }
+        return perDivisione.ifEmpty { null }
+    }
+
+    private suspend fun applicaLivelli(
+        leagueId: Long,
+        livelli: Map<ClubId, Int>,
+        avviso: String,
+    ) {
+        when (val esito = DivisionRepository.assign(leagueId, livelli)) {
+            is ApiResult.Error ->
+                _divisioni.value = _divisioni.value.copy(busy = null, errore = esito.message)
+
+            is ApiResult.Ok -> {
+                _divisioni.value = DivisionsAdmin(avviso = avviso)
+                carica(leagueId, avviso = avviso)
+            }
+        }
+    }
+
+    private fun riassunto(esiti: List<ClubFate>): String {
+        val promossi = esiti.count {
+            it.outcome == SeasonOutcome.PROMOSSO || (it.outcome == SeasonOutcome.CAMPIONE && it.level > 1)
+        }
+        val retrocessi = esiti.count { it.outcome == SeasonOutcome.RETROCESSO }
+        return "Stagione chiusa: $promossi promosse, $retrocessi retrocesse."
+    }
+
+    fun chiudiAvvisoDivisioni() {
+        _divisioni.value = _divisioni.value.copy(avviso = null, errore = null)
     }
 
     // ------------------------------------------------------------------------ scambi

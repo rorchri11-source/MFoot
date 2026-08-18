@@ -62,6 +62,8 @@ data class ClubInfo(
      * nessuna modifica al database ne' una migrazione da far incollare a qualcuno.
      */
     val crest: Crest = Crest.DEFAULT,
+    /** In quale divisione gioca. 1 e' la massima; con una sola divisione vale sempre 1. */
+    val divisionLevel: Int = 1,
 ) {
     /** Quello che si puo' davvero spendere: i crediti impegnati nelle aste sono gia' via. */
     val available: Int get() = credits - committedCredits

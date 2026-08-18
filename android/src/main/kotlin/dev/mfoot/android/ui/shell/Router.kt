@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AuctionRow
 import dev.mfoot.android.app.DeskState
+import dev.mfoot.android.app.DivisionsAdmin
+import dev.mfoot.android.app.SettingsSection
 import dev.mfoot.android.app.TradeDraft
 import dev.mfoot.android.app.TradesState
 import dev.mfoot.android.app.LineupEdit
@@ -26,6 +28,7 @@ import dev.mfoot.android.app.RoleFilter
 import dev.mfoot.android.app.Route
 import dev.mfoot.android.app.SettingsEdit
 import dev.mfoot.android.ui.settings.SettingsIndexScreen
+import dev.mfoot.android.ui.settings.DivisioniAzioni
 import dev.mfoot.android.ui.settings.SettingsScreen
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.android.ui.Label
@@ -77,6 +80,10 @@ fun Router(
     onRespondTrade: (Long, Boolean) -> Unit,
     onWithdrawTrade: (Long) -> Unit,
     onDismissTradeNotice: () -> Unit,
+    divisioni: DivisionsAdmin,
+    onAssignDivisions: () -> Unit,
+    onCloseSeason: () -> Unit,
+    onDismissDivisionNotice: () -> Unit,
     lineup: LineupEdit,
     onLineupChange: (LineupEdit) -> Unit,
     onLineupSave: () -> Unit,
@@ -119,6 +126,22 @@ fun Router(
         }
 
         is Route.Regolamento -> SettingsScreen(
+            // I pulsanti che applicano le divisioni compaiono solo in quella sezione e solo
+            // per l'admin: altrove sarebbero un pulsante che da' sempre errore.
+            azioni = if (route.sezione == SettingsSection.DIVISIONI && state.lega.league.isAdmin) {
+                @Composable {
+                    DivisioniAzioni(
+                        abilitate = (settings.bozza ?: state.lega.league.config).divisions.enabled,
+                        giaAssegnate = state.lega.clubs.any { it.divisionLevel > 1 },
+                        stato = divisioni,
+                        onAssegna = onAssignDivisions,
+                        onChiudiStagione = onCloseSeason,
+                        onChiudiAvviso = onDismissDivisionNotice,
+                    )
+                }
+            } else {
+                null
+            },
             section = route.sezione,
             config = settings.bozza ?: state.lega.league.config,
             canEdit = state.lega.league.isAdmin,

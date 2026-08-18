@@ -73,6 +73,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val lineup by viewModel.lineupEdit.collectAsStateWithLifecycle()
     val desk by viewModel.desk.collectAsStateWithLifecycle()
     val scambi by viewModel.trades.collectAsStateWithLifecycle()
+    val divisioni by viewModel.divisioni.collectAsStateWithLifecycle()
 
     Box(
         Modifier
@@ -170,6 +171,10 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onRespondTrade = viewModel::rispondiScambio,
                         onWithdrawTrade = viewModel::ritiraScambio,
                         onDismissTradeNotice = viewModel::chiudiAvvisoScambi,
+                        divisioni = divisioni,
+                        onAssignDivisions = viewModel::assegnaDivisioni,
+                        onCloseSeason = viewModel::chiudiStagione,
+                        onDismissDivisionNotice = viewModel::chiudiAvvisoDivisioni,
                         lineup = lineup,
                         onLineupChange = viewModel::modificaFormazione,
                         onLineupSave = viewModel::salvaFormazione,
