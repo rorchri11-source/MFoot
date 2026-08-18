@@ -2,8 +2,11 @@ package dev.mfoot.core.config
 
 import dev.mfoot.core.model.Position
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * Tutte le regole di una lega, decise dall'admin al momento della creazione.
@@ -241,7 +244,29 @@ data class CalendarConfig(
     val matchSpeed: MatchSpeed = MatchSpeed.RAPIDA,
     /** Durata in minuti reali della finestra di intervallo per cambi e correzioni. */
     val halfTimeWindowMinutes: Int = 3,
-)
+
+    /**
+     * Il fuso in cui vive la lega.
+     *
+     * ## Perche' serve, invece di usare l'ora del telefono
+     *
+     * Perche' [kickoffSlots] sono orari senza data e senza fuso: `21:00` da solo non e' un
+     * momento, e' un numero. Qualcuno deve dire *le nove di dove*, e la risposta giusta e'
+     * "di casa della lega": una partita e' un appuntamento fra persone, e un appuntamento
+     * fissato alle nove deve restare alle nove anche per chi lo guarda da un altro paese.
+     *
+     * Senza questo campo il codice faceva la cosa piu' comoda e sbagliata: prendeva le
+     * 21:00 scelte dall'admin e le marcava come UTC. In Italia d'estate la partita
+     * finiva alle 23:00, e nessuno capiva perche'.
+     */
+    val timeZone: ZoneId = ZoneId.of("Europe/Rome"),
+) {
+    /** Il momento vero in cui comincia una partita programmata a quest'ora locale. */
+    fun instantOf(local: LocalDateTime): Instant = local.atZone(timeZone).toInstant()
+
+    /** L'ora di lega di un momento: quella che si mostra e quella che si e' scelta. */
+    fun localOf(instant: Instant): LocalDateTime = LocalDateTime.ofInstant(instant, timeZone)
+}
 
 // ----------------------------------------------------------------------- regole gioco
 

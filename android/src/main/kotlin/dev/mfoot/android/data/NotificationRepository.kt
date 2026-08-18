@@ -85,14 +85,5 @@ object NotificationRepository {
      * Senza la normalizzazione ogni riga del registro perderebbe la data e mostrerebbe un
      * trattino: l'errore non si vedrebbe come errore, solo come un registro inutile.
      */
-    private fun parseInstant(raw: String): Instant? = runCatching {
-        val normalized = raw.trim().let {
-            when {
-                it.endsWith("Z") -> it
-                it.contains('+') -> it.substringBeforeLast('+') + "Z"
-                else -> "${it}Z"
-            }
-        }
-        Instant.parse(normalized)
-    }.getOrNull()
+    private fun parseInstant(raw: String): Instant? = Istanti.parse(raw)
 }

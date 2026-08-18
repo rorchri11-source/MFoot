@@ -70,7 +70,7 @@ object AuctionRepository {
                             targetType = row["target_type"].str("player"),
                             targetId = row["target_id"].long(0),
                             startedBy = row["started_by"].long(0),
-                            endsAt = Instant.parse(normalizeInstant(row["ends_at"].str(""))),
+                            endsAt = Istanti.parse(row["ends_at"].str("")) ?: Instant.EPOCH,
                             currentPrice = row["current_price"].int(0),
                             bidCount = row["bid_count"].int(0),
                             leaderClubId = row["leader_club_id"].long(0).takeIf { it > 0 },
@@ -154,19 +154,7 @@ object AuctionRepository {
 
     data class BidOutcome(val currentPrice: Int, val youLead: Boolean)
 
-    /**
-     * Postgres scrive `+00:00`, `Instant.parse` vuole `Z`.
-     *
-     * Sembra un dettaglio da niente: senza questa riga ogni asta solleva un'eccezione al
-     * momento di leggerne la scadenza, e la schermata del mercato resta vuota senza
-     * spiegare perche'.
-     */
-    private fun normalizeInstant(raw: String): String {
-        val trimmed = raw.trim()
-        return when {
-            trimmed.endsWith("Z") -> trimmed
-            trimmed.contains('+') -> trimmed.substringBeforeLast('+') + "Z"
-            else -> "${trimmed}Z"
-        }
-    }
+    // La scadenza si legge con [Istanti]. La versione precedente tagliava lo scostamento e
+    // ci appiccicava una `Z`, spostando la chiusura di ogni asta di due ore: il conto alla
+    // rovescia diceva "due ore e dieci" quando ne mancavano dieci minuti.
 }

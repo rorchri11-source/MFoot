@@ -6,6 +6,7 @@ import dev.mfoot.core.model.Position
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * La configurazione della lega su filo, in entrambe le direzioni.
@@ -171,6 +172,7 @@ object ConfigJson {
         w.endArray()
         w.field("matchSpeed", c.matchSpeed.name)
         w.field("halfTimeWindowMinutes", c.halfTimeWindowMinutes)
+        w.field("timeZone", c.timeZone.id)
         w.endObject()
     }
 
@@ -395,6 +397,12 @@ object ConfigJson {
         },
         matchSpeed = n["matchSpeed"].enum(d.matchSpeed),
         halfTimeWindowMinutes = n["halfTimeWindowMinutes"].int(d.halfTimeWindowMinutes),
+        // Un fuso sconosciuto non deve impedire di aprire la lega: si ricade su quello
+        // predefinito, che e' sbagliato di un'ora al massimo, invece di lanciare
+        // un'eccezione che lascerebbe l'app su una schermata bianca.
+        timeZone = n["timeZone"].strOrNull()
+            ?.let { runCatching { ZoneId.of(it) }.getOrNull() }
+            ?: d.timeZone,
     )
 
     private fun readRules(n: JsonNode, d: RulesConfig) = RulesConfig(

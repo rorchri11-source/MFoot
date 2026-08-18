@@ -2067,7 +2067,17 @@ class TickRunner(
                         home = ClubId(rs.getLong("home_club_id")),
                         away = ClubId(rs.getLong("away_club_id")),
                         matchDay = MatchDay(rs.getInt("match_day")),
-                        kickoff = rs.getTimestamp("kickoff")?.toLocalDateTime(),
+                        // In UTC, non nel fuso della macchina.
+                        //
+                        // `toLocalDateTime()` converte nel fuso predefinito della JVM, e
+                        // `WorldTick` poi rilegge quel valore come se fosse UTC: le due
+                        // cose si annullano solo se la macchina gira a UTC. Su GitHub
+                        // Actions e' cosi', quindi funzionava; eseguito da un portatile
+                        // italiano, il tick avrebbe giocato ogni partita con due ore di
+                        // ritardo. Un difetto che si presenta solo fuori dal server e'
+                        // peggio di uno che si presenta sempre.
+                        kickoff = rs.getTimestamp("kickoff")?.toInstant()
+                            ?.atZone(ZoneOffset.UTC)?.toLocalDateTime(),
                         tieId = rs.getString("tie_id"),
                         isSecondLeg = rs.getBoolean("is_second_leg"),
                     )

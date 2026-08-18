@@ -125,8 +125,19 @@ data class TableState(
     val myClubId: Long? = null,
     val tab: TableTab = TableTab.CLASSIFICA,
     val errore: String? = null,
+    /**
+     * Il fuso della lega.
+     *
+     * Gli orari si mostrano in ora di lega e non in ora del telefono: una partita e' un
+     * appuntamento fra persone, e "alle nove" deve voler dire la stessa cosa per tutti.
+     */
+    val zone: java.time.ZoneId = java.time.ZoneId.of("Europe/Rome"),
 ) {
     fun clubName(id: Long): String = clubs.firstOrNull { it.id == id }?.name ?: "Club #$id"
+
+    /** L'ora di lega di una partita, o null se non e' ancora programmata. */
+    fun oraDi(match: dev.mfoot.android.data.MatchRow): java.time.LocalDateTime? =
+        match.kickoff?.let { java.time.LocalDateTime.ofInstant(it, zone) }
 
     fun kitOf(id: Long): dev.mfoot.android.ui.kit.Kit? = clubs.firstOrNull { it.id == id }?.kit
 }

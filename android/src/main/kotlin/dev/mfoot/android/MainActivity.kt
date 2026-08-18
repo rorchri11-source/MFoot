@@ -45,6 +45,7 @@ import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.PlayerDetailScreen
 import dev.mfoot.android.ui.PlayerListScreen
 import dev.mfoot.android.ui.TableScreen
+import dev.mfoot.android.ui.screens.CalendarioScreen
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootMotion
 import dev.mfoot.android.ui.theme.MFootTheme
@@ -96,6 +97,13 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
             is AppState.Guasto -> Guasto(current.motivo, viewModel::avvia)
 
+            is AppState.Calendario -> CalendarioScreen(
+                state = current.calendario,
+                onMese = viewModel::sfogliaCalendario,
+                onGiorno = viewModel::scegliGiorno,
+                onChiudi = viewModel::chiudiCalendario,
+            )
+
             is AppState.Classifica -> TableScreen(
                 state = current.table,
                 onPickCompetition = viewModel::scegliCompetizione,
@@ -139,7 +147,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         // guscio invece di essere infilate dentro il contenuto.
                         when (route) {
                             is Route.Classifica -> viewModel.apriClassifica(TableTab.CLASSIFICA)
-                            is Route.Calendario -> viewModel.apriClassifica(TableTab.CALENDARIO)
+                            is Route.Calendario -> viewModel.apriCalendario()
                             is Route.Competizioni -> viewModel.apriCompetizioni()
                             else -> viewModel.vai(route)
                         }

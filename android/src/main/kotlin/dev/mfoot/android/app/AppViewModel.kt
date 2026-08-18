@@ -6,6 +6,7 @@ import dev.mfoot.android.data.ApiResult
 import dev.mfoot.android.data.AuctionRepository
 import dev.mfoot.android.data.AuctionView
 import dev.mfoot.android.data.ClubUpload
+import dev.mfoot.android.data.CalendarRepository
 import dev.mfoot.android.data.CompetitionRepository
 import dev.mfoot.android.data.ConversationRepository
 import dev.mfoot.android.data.LeagueDeskRepository
@@ -23,6 +24,7 @@ import dev.mfoot.android.data.TableRepository
 import dev.mfoot.android.data.SupabaseApi
 import dev.mfoot.android.data.WorldUpload
 import dev.mfoot.core.calendar.ClubFate
+import dev.mfoot.core.calendar.LeagueCalendar
 import dev.mfoot.core.calendar.Division
 import dev.mfoot.core.calendar.DivisionRules
 import dev.mfoot.core.calendar.SeasonEnd
@@ -50,6 +52,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.YearMonth
 import kotlin.random.Random
 
 /**
@@ -452,6 +455,7 @@ class AppViewModel : ViewModel() {
                         clubs = dentro.lega.clubs,
                         myClubId = dentro.lega.myClub?.id,
                         tab = tab,
+                        zone = dentro.lega.league.config.calendar.timeZone,
                     )
                     _state.value = AppState.Classifica(
                         if (prima == null) base else base.copy(view = caricaTabella(leagueId, prima))
@@ -460,6 +464,89 @@ class AppViewModel : ViewModel() {
             }
         }
     }
+
+    // -------------------------------------------------------------------- il calendario
+
+    /**
+     * Apre la griglia del mese.
+     *
+     * Si carica una volta sola e poi si sfoglia in memoria: cambiare mese e' il gesto piu'
+     * frequente qui, e una richiesta a ogni freccia renderebbe insopportabile guardare
+     * avanti di due mesi.
+     */
+    fun apriCalendario() {
+        val dentro = statoCorrente() ?: return
+        val lega = dentro.lega
+        val zona = lega.league.config.calendar.timeZone
+        val oggi = LocalDate.now(zona)
+
+        viewModelScope.launch {
+            _state.value = AppState.Calendario(
+                CalendarState(
+                    mese = YearMonth.from(oggi),
+                    oggi = oggi,
+                    riposi = lega.league.config.calendar.restWeekdays,
+                    caricamento = true,
+                ),
+            )
+
+            val esito = CalendarRepository.load(
+                leagueId = lega.league.id,
+                myClubId = lega.myClub?.id,
+                zone = zona,
+                clubName = { id -> lega.clubs.firstOrNull { it.id == id }?.shortName ?: "Club #$id" },
+                playerName = { id ->
+                    lega.players.firstOrNull { it.id.value == id }?.shortName ?: "giocatore #$id"
+                },
+                friendlyCompetitions = competizioniAmichevoli,
+            )
+
+            val corrente = (_state.value as? AppState.Calendario)?.calendario ?: return@launch
+            _state.value = AppState.Calendario(
+                when (esito) {
+                    is ApiResult.Error -> corrente.copy(caricamento = false, errore = esito.message)
+                    is ApiResult.Ok -> corrente.copy(
+                        caricamento = false,
+                        errore = null,
+                        eventi = LeagueCalendar.build(
+                            matches = esito.value.matches,
+                            auctions = esito.value.auctions,
+                            contracts = esito.value.contracts,
+                            promises = esito.value.promises,
+                        ),
+                    )
+                },
+            )
+        }
+    }
+
+    fun sfogliaCalendario(mesi: Int) {
+        val corrente = (_state.value as? AppState.Calendario)?.calendario ?: return
+        _state.value = AppState.Calendario(corrente.copy(mese = corrente.mese.plusMonths(mesi.toLong())))
+    }
+
+    fun scegliGiorno(giorno: LocalDate) {
+        val corrente = (_state.value as? AppState.Calendario)?.calendario ?: return
+        // Ritoccare sullo stesso giorno lo deseleziona: e' il modo di tornare a "il
+        // prossimo impegno" senza cercare un pulsante che lo faccia.
+        _state.value = AppState.Calendario(
+            corrente.copy(
+                selezionato = if (corrente.selezionato == giorno) null else giorno,
+                mese = YearMonth.from(giorno),
+            ),
+        )
+    }
+
+    fun chiudiCalendario() = ricarica()
+
+    /**
+     * Le competizioni che non fanno classifica.
+     *
+     * Si riempie leggendo le competizioni, e resta vuota finche' la migrazione delle
+     * amichevoli non e' applicata: senza, un'amichevole si colora come una partita
+     * qualsiasi, che e' un difetto piccolo e non un guasto.
+     */
+    private var competizioniAmichevoli: Set<Long> = emptySet()
 
     fun cambiaSchedaTabella(tab: TableTab) {
         val schermata = (_state.value as? AppState.Classifica)?.table ?: return

@@ -113,25 +113,6 @@ object LeagueDeskRepository {
         }
     }
 
-    /**
-     * Una data come la scrive Postgres, o null se non si capisce.
-     *
-     * ## Perche' tre tentativi e non uno
-     *
-     * Postgres restituisce `2026-08-18T15:04:05.123456+00:00`: ha il fuso scritto come
-     * scostamento, non come `Z`. La prima versione di questa funzione accodava una `Z`
-     * quando non c'era, producendo `...+00:00Z` — che non e' una data valida in nessun
-     * formato. Risultato: il registro diceva **"mai"** accanto a un giro appena avvenuto, e
-     * il fallimento era silenzioso perche' un formato inatteso qui non deve svuotare la
-     * schermata.
-     *
-     * Le tre forme sono quelle che si incontrano davvero: con scostamento, gia' in UTC, e
-     * con lo spazio al posto della T che alcuni strumenti producono.
-     */
-    internal fun istante(testo: String): Instant? {
-        val pulito = testo.trim()
-        return runCatching { OffsetDateTime.parse(pulito).toInstant() }.getOrNull()
-            ?: runCatching { Instant.parse(pulito) }.getOrNull()
-            ?: runCatching { OffsetDateTime.parse(pulito.replace(' ', 'T')).toInstant() }.getOrNull()
-    }
+    /** Sta in [Istanti], perche' averne due copie e' come una e' rimasta rotta. */
+    internal fun istante(testo: String): Instant? = Istanti.parse(testo)
 }

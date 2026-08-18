@@ -267,7 +267,7 @@ private fun MatchLine(match: MatchRow, state: TableState) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                match.kickoff?.format(QUANDO) ?: "giornata ${match.matchDay}",
+                state.oraDi(match)?.format(QUANDO) ?: "giornata ${match.matchDay}",
                 style = MFootType.chip,
                 color = MFootColors.ink3,
             )

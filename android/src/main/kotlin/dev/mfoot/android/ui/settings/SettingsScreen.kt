@@ -715,7 +715,41 @@ private fun Partita(config: LeagueConfig, edit: Boolean, onChange: (LeagueConfig
             onChange(config.copy(calendar = config.calendar.copy(halfTimeWindowMinutes = it)))
         }
     }
+
+    GroupTitle("L'ora della lega")
+
+    // Senza questa impostazione il codice faceva la cosa piu' comoda: prendeva le 21:00
+    // scelte qui e le marcava come UTC. In Italia d'estate la partita finiva in calendario
+    // alle 23:00, e nessuno capiva perche'.
+    EnumRow(
+        label = "Fuso orario",
+        help = "\"Alle 21\" vuol dire le 21 di qui, per tutti. Chi guarda da un altro " +
+            "paese legge lo stesso orario, non il proprio.",
+        options = FUSI,
+        selected = FUSI.firstOrNull { it.zone == config.calendar.timeZone } ?: FUSI.first(),
+        enabled = edit,
+        labelOf = { it.label },
+    ) { onChange(config.copy(calendar = config.calendar.copy(timeZone = it.zone))) }
 }
+
+/**
+ * I fusi fra cui scegliere.
+ *
+ * Un elenco corto e non tutti i seicento identificatori del sistema: questa lega la
+ * giocano una ventina di amici, e una tendina con seicento voci per sceglierne uno che
+ * nel novanta per cento dei casi e' Roma non e' liberta', e' un ostacolo.
+ */
+private enum class FusoOrario(val label: String, val zone: java.time.ZoneId) {
+    ROMA("Italia (Roma)", java.time.ZoneId.of("Europe/Rome")),
+    LONDRA("Regno Unito (Londra)", java.time.ZoneId.of("Europe/London")),
+    MADRID("Spagna (Madrid)", java.time.ZoneId.of("Europe/Madrid")),
+    ATENE("Grecia (Atene)", java.time.ZoneId.of("Europe/Athens")),
+    NEW_YORK("Stati Uniti est (New York)", java.time.ZoneId.of("America/New_York")),
+    SAN_PAOLO("Brasile (San Paolo)", java.time.ZoneId.of("America/Sao_Paulo")),
+    UTC("UTC", java.time.ZoneId.of("UTC")),
+}
+
+private val FUSI = FusoOrario.entries
 
 // ----------------------------------------------------------------------------- crescita
 

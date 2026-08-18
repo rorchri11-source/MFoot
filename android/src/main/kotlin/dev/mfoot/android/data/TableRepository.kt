@@ -9,8 +9,6 @@ import dev.mfoot.core.json.JsonNode
 import dev.mfoot.core.model.ClubId
 import dev.mfoot.core.model.CompetitionId
 import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
 
 /** Una partita in calendario, giocata o no. */
 data class MatchRow(
@@ -21,7 +19,8 @@ data class MatchRow(
     val homeClubId: Long,
     val awayClubId: Long,
     val matchDay: Int,
-    val kickoff: LocalDateTime?,
+    /** Il momento vero. L ora di lega si ricava con `config.calendar.localOf`. */
+    val kickoff: Instant?,
     val played: Boolean,
     val homeGoals: Int?,
     val awayGoals: Int?,
@@ -128,19 +127,18 @@ object TableRepository {
     }
 
     /**
-     * L'orario arriva in UTC e va mostrato nell'ora locale.
+     * L'orario resta un **istante**, e diventa un'ora solo quando si mostra.
      *
-     * Senza la conversione, una partita delle 21 comparirebbe alle 19 a chi la guarda —
-     * ed e' il genere di dettaglio per cui qualcuno si perde davvero il fischio d'inizio.
+     * ## Perche' non si converte qui
+     *
+     * Prima questa funzione faceva due cose sbagliate insieme. Tagliava lo scostamento di
+     * fuso e ci appiccicava una `Z`, buttando via due ore; poi convertiva nell'ora del
+     * telefono, che e' la domanda sbagliata. Una partita e' un appuntamento fra persone: si
+     * fissa alle nove **di casa della lega**, e deve leggersi alle nove su ogni telefono,
+     * non alle dieci su quello di chi e' in vacanza.
+     *
+     * L'ora giusta la sa solo chi conosce il fuso della lega, che sta nella
+     * configurazione. Qui si conserva il momento e basta.
      */
-    private fun parseKickoff(raw: String): LocalDateTime? = runCatching {
-        val normalized = raw.trim().let {
-            when {
-                it.endsWith("Z") -> it
-                it.contains('+') -> it.substringBeforeLast('+') + "Z"
-                else -> "${it}Z"
-            }
-        }
-        LocalDateTime.ofInstant(Instant.parse(normalized), ZoneId.systemDefault())
-    }.getOrNull()
+    private fun parseKickoff(raw: String): Instant? = Istanti.parse(raw)
 }

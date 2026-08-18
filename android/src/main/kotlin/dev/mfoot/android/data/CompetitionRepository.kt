@@ -129,7 +129,11 @@ object CompetitionRepository {
             w.field("home", f.home.value)
             w.field("away", f.away.value)
             w.field("matchDay", f.matchDay.value)
-            w.field("kickoff", f.kickoff?.toInstant(ZoneOffset.UTC)?.toString())
+            // L'ora scelta dall'admin e' l'ora **della lega**, e va convertita nel momento
+            // vero prima di partire. Prima si scriveva `toInstant(ZoneOffset.UTC)`, cioe'
+            // si dichiarava che le 21:00 di Roma fossero le 21:00 di Greenwich: la partita
+            // finiva sul database due ore piu' tardi di quando doveva giocarsi.
+            w.field("kickoff", f.kickoff?.let { calendar.instantOf(it) }?.toString())
             w.field("tieId", f.tieId)
             w.field("secondLeg", f.isSecondLeg)
             w.endObject()
