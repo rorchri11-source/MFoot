@@ -1,5 +1,6 @@
 package dev.mfoot.android.data
 
+import dev.mfoot.android.ui.kit.Crest
 import dev.mfoot.android.ui.kit.Kit
 import dev.mfoot.core.json.JsonWriter
 import dev.mfoot.core.world.CustomPlayerBuilder
@@ -19,6 +20,7 @@ object ClubUpload {
         clubName: String,
         clubShort: String,
         kit: Kit,
+        crest: Crest,
         draft: CustomPlayerBuilder.Draft,
     ): String {
         val w = JsonWriter(1024)
@@ -35,6 +37,18 @@ object ClubUpload {
         w.field("secondary", hex(kit.secondary))
         w.field("detail", hex(kit.detail))
         kit.number?.let { w.field("number", it) }
+
+        // Lo stemma dentro lo stesso blocco della maglia: `create_club` lo salva cosi'
+        // com'e', quindi non serve ne' una colonna nuova ne' una migrazione.
+        w.objectField("crest")
+        w.field("shape", crest.shape.name)
+        w.field("symbol", crest.symbol.name)
+        w.field("band", crest.band.name)
+        w.field("field", hex(crest.field))
+        w.field("trim", hex(crest.trim))
+        w.field("emblem", hex(crest.emblem))
+        w.endObject()
+
         w.endObject()
 
         w.objectField("p_player")

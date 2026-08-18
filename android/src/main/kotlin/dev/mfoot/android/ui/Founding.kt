@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.FoundingState
 import dev.mfoot.android.ui.kit.Kit
+import dev.mfoot.android.ui.kit.CrestEditor
 import dev.mfoot.android.ui.kit.KitEditor
 import dev.mfoot.android.ui.pitch.Pitch
 import dev.mfoot.android.ui.pitch.pitchSlots
@@ -142,6 +143,14 @@ private fun ClubStep(state: FoundingState, onChange: ((FoundingState) -> Foundin
     Spacer(Modifier.height(14.dp))
 
     KitEditor(kit = state.kit, onChange = { nuova -> onChange { it.copy(kit = nuova) } })
+
+    Spacer(Modifier.height(MFootSpacing.section))
+
+    CrestEditor(
+        crest = state.crest,
+        initials = state.clubShort,
+        onChange = { nuovo -> onChange { it.copy(crest = nuovo) } },
+    )
 }
 
 @Composable

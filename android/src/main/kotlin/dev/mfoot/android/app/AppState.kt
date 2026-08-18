@@ -3,6 +3,7 @@ package dev.mfoot.android.app
 import dev.mfoot.android.data.AuctionView
 import dev.mfoot.android.data.ClubInfo
 import dev.mfoot.android.data.LeagueSnapshot
+import dev.mfoot.android.ui.kit.Crest
 import dev.mfoot.android.ui.kit.Kit
 import dev.mfoot.core.config.CustomPlayerConfig
 import dev.mfoot.core.model.Attributes
@@ -103,6 +104,7 @@ data class FoundingState(
     val clubName: String = "",
     val clubShort: String = "",
     val kit: Kit = Kit.DEFAULT,
+    val crest: Crest = Crest.DEFAULT,
     val draft: CustomPlayerBuilder.Draft = CustomPlayerBuilder.Draft(),
     val busy: String? = null,
     val errore: String? = null,

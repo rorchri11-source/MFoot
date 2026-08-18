@@ -27,6 +27,7 @@ import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.PlayerRow
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
+import dev.mfoot.android.ui.kit.CrestBadge
 import dev.mfoot.android.ui.kit.Shirt
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
@@ -139,7 +140,10 @@ private fun Intestazione(
             .padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Shirt(club.kit, Modifier.size(108.dp, 121.dp), showNumber = false)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            CrestBadge(club.crest, Modifier.size(78.dp), club.shortName)
+            Shirt(club.kit, Modifier.size(96.dp, 108.dp), showNumber = false)
+        }
         Spacer(Modifier.height(14.dp))
         Text(club.name, style = MFootType.playerName, color = MFootColors.ink)
         Spacer(Modifier.height(3.dp))

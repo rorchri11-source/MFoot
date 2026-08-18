@@ -311,6 +311,7 @@ class AppViewModel : ViewModel() {
                 clubName = fondazione.clubName,
                 clubShort = fondazione.clubShort,
                 kit = fondazione.kit,
+                crest = fondazione.crest,
                 draft = fondazione.draft,
             )
 

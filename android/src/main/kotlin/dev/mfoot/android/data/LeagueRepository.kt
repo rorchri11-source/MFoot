@@ -2,6 +2,7 @@ package dev.mfoot.android.data
 
 import android.util.JsonReader
 import android.util.JsonToken
+import dev.mfoot.android.ui.kit.Crest
 import dev.mfoot.android.ui.kit.Kit
 import dev.mfoot.core.config.ConfigJson
 import dev.mfoot.core.config.LeagueConfig
@@ -53,6 +54,14 @@ data class ClubInfo(
      * separata darebbe un elenco che compare grigio e si colora mezzo secondo dopo.
      */
     val kit: Kit = Kit.DEFAULT,
+    /**
+     * Lo stemma.
+     *
+     * Viaggia dentro lo stesso JSON della maglia, e non e' pigrizia: `create_club` salva
+     * quel blocco cosi' com'e', quindi aggiungere lo stemma li' dentro non ha richiesto
+     * nessuna modifica al database ne' una migrazione da far incollare a qualcuno.
+     */
+    val crest: Crest = Crest.DEFAULT,
 ) {
     /** Quello che si puo' davvero spendere: i crediti impegnati nelle aste sono gia' via. */
     val available: Int get() = credits - committedCredits
@@ -189,6 +198,7 @@ object LeagueRepository {
                         committedCredits = row["committed_credits"].int(0),
                         customPlayerId = row["custom_player_id"].long(0).takeIf { it > 0 },
                         kit = readKit(row["kit"], row["id"].long(0)),
+                        crest = readCrest(row["kit"]["crest"], row["id"].long(0)),
                     )
                 },
             )
@@ -216,6 +226,20 @@ object LeagueRepository {
             secondary = colore(node["secondary"].strOrNull(), d.secondary),
             detail = colore(node["detail"].strOrNull(), d.detail),
             number = node["number"].int(0).takeIf { it > 0 },
+        )
+    }
+
+    /** Lo stemma salvato, o quello ricavato dall'id per chi non ne ha scelto uno. */
+    private fun readCrest(node: JsonNode, clubId: Long): Crest {
+        val d = Crest.forClub(clubId)
+        if (node["field"].strOrNull() == null) return d
+        return Crest(
+            shape = node["shape"].enum(d.shape),
+            symbol = node["symbol"].enum(d.symbol),
+            band = node["band"].enum(d.band),
+            field = colore(node["field"].strOrNull(), d.field),
+            trim = colore(node["trim"].strOrNull(), d.trim),
+            emblem = colore(node["emblem"].strOrNull(), d.emblem),
         )
     }
 

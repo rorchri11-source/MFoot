@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.data.ClubInfo
 import dev.mfoot.android.ui.Label
+import dev.mfoot.android.ui.kit.CrestBadge
 import dev.mfoot.android.ui.kit.Shirt
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
@@ -91,7 +92,9 @@ private fun ClubRow(club: ClubInfo, inRosa: Int, minimo: Int, onClick: () -> Uni
         // Prima il colore si ricavava dall'id e non aveva niente a che vedere con la maglia
         // che il proprietario aveva disegnato: lo stesso club aveva due identita' diverse a
         // seconda della schermata. Qui c'e' quella che scende in campo.
-        Shirt(club.kit, Modifier.size(38.dp, 43.dp), showNumber = false)
+        CrestBadge(club.crest, Modifier.size(40.dp), club.shortName)
+        Spacer(Modifier.width(8.dp))
+        Shirt(club.kit, Modifier.size(30.dp, 34.dp), showNumber = false)
 
         Spacer(Modifier.width(MFootSpacing.related))
 
