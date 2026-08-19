@@ -267,7 +267,24 @@ object SeasonEnd {
      *
      * Alla seconda stagione questa funzione non serve piu': le divisioni le decidono
      * promozioni e retrocessioni.
+     *
+     * ## SUPERATA — non la chiama piu' nessuno
+     *
+     * Il ragionamento qui sopra e' corretto per un campionato di squadre anonime e sbagliato
+     * per una lega fra amici: chi si iscrive vuole giocare contro gli altri amici, e la
+     * serpentina lo spediva in seconda divisione contro otto squadre del computer perche'
+     * la sua rosa iniziale valeva tre punti di meno.
+     *
+     * La regola in vigore e' in [DivisionAssignment]: i club dei giocatori veri partono
+     * tutti in prima divisione, le AI riempiono i posti che restano. Questa resta con i
+     * suoi test perche' documenta il perche' della scelta precedente — ed e' un
+     * ragionamento che vale la pena non perdere se un giorno la lega diventasse di soli
+     * club generati.
      */
+    @Deprecated(
+        "Sostituita da DivisionAssignment.initial: gli umani partono dalla massima serie.",
+        ReplaceWith("DivisionAssignment.initial(clubs, divisions)"),
+    )
     fun split(clubs: List<ClubId>, divisions: Int): Map<ClubId, Int> {
         if (divisions <= 1 || clubs.isEmpty()) return clubs.associateWith { 1 }
 

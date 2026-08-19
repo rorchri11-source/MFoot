@@ -17,6 +17,11 @@ import kotlin.test.assertTrue
  * Serie A ha diciannove club e nessuno sa piu' come rimetterla a posto. E' una delle poche
  * parti del gioco dove sbagliare non si corregge, si ricomincia.
  */
+// `SeasonEnd.split` e' superata da `DivisionAssignment.initial` e non la chiama piu'
+// nessuno in produzione. I suoi test restano: descrivono perche' la serpentina era la
+// scelta giusta per una lega di soli club generati, e sono il documento a cui tornare se
+// un giorno lo diventasse.
+@Suppress("DEPRECATION")
 class DivisionTest {
 
     private fun clubs(from: Int, count: Int): List<ClubId> =

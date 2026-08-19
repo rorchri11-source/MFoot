@@ -128,7 +128,15 @@ fun Router(
     onWithdrawTrade: (Long) -> Unit,
     onDismissTradeNotice: () -> Unit,
     divisioni: DivisionsAdmin,
-    avvisiDivisioni: List<String>,
+    /**
+     * Cosa non torrebbe assegnando le divisioni adesso.
+     *
+     * Una funzione e non una lista gia' pronta: il conto passa su ogni club e su ogni
+     * giocatore della lega, e come valore verrebbe rifatto a ogni ridisegno del guscio —
+     * anche scorrendo il listone, dove di divisioni non importa a nessuno. Cosi' invece
+     * gira solo dentro il ramo che lo mostra.
+     */
+    avvisiDivisioni: () -> List<String>,
     onAssignDivisions: () -> Unit,
     onCloseSeason: () -> Unit,
     onDismissDivisionNotice: () -> Unit,
@@ -309,7 +317,7 @@ fun Router(
                         abilitate = (settings.bozza ?: state.lega.league.config).divisions.enabled,
                         giaAssegnate = state.lega.clubs.any { it.divisionLevel > 1 },
                         stato = divisioni,
-                        avvisi = avvisiDivisioni,
+                        avvisi = avvisiDivisioni(),
                         onAssegna = onAssignDivisions,
                         onChiudiStagione = onCloseSeason,
                         onChiudiAvviso = onDismissDivisionNotice,

@@ -1860,9 +1860,15 @@ class AppViewModel : ViewModel() {
     /**
      * Assegna i club alle divisioni per la prima volta.
      *
-     * L'ordine di partenza e' quello di **forza attuale**, cioe' quanto vale la rosa: e' il
-     * meglio che si possa fare prima che si sia giocata una partita. La serpentina di
-     * [SeasonEnd.split] poi lo distribuisce, cosi' nessuna divisione nasce gia' decisa.
+     * La regola sta in [DivisionAssignment]: **i club dei giocatori veri partono tutti in
+     * prima divisione**, le seconde squadre dall'ultima, le AI riempiono i posti che
+     * restano dalla piu' forte alla piu' debole.
+     *
+     * Prima si distribuivano tutti a serpentina in base alla forza — umani e AI mescolati,
+     * cosi' nessuna divisione nasceva gia' decisa. Sensato per un campionato vero,
+     * sbagliato per una lega fra amici: chi si iscrive vuole giocare contro gli altri
+     * amici, e finiva in seconda divisione contro otto squadre del computer perche' la sua
+     * rosa iniziale valeva tre punti di meno.
      */
     fun assegnaDivisioni() {
         val dentro = statoCorrente() ?: return
