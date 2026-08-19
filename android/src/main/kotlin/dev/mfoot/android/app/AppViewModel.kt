@@ -13,6 +13,7 @@ import dev.mfoot.android.data.LeagueDeskRepository
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.data.MatchRepository
+import dev.mfoot.android.data.MyLeaguesRepository
 import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
 import dev.mfoot.android.data.PlayerRepository
@@ -243,9 +244,6 @@ class AppViewModel : ViewModel() {
         viewModelScope.launch {
             _state.value = AppState.Caricamento("Leggo la lega…")
 
-            val livelli = DivisionRepository.levels(leagueId)
-            val padri = YouthRepository.parents(leagueId)
-
             when (val snapshot = LeagueRepository.snapshot(leagueId)) {
                 is ApiResult.Error -> {
                     // Non si cancella la lega salvata: quasi sempre e' un problema di rete
@@ -258,16 +256,12 @@ class AppViewModel : ViewModel() {
 
                 is ApiResult.Ok -> {
                     ultimaConfig = snapshot.value.league.config
-                    // Le divisioni arrivano da una lettura separata: si attaccano qui,
-                    // dove i club esistono gia.
-                    val lega = snapshot.value.copy(
-                        clubs = snapshot.value.clubs.map {
-                            it.copy(
-                                divisionLevel = livelli[it.id] ?: 1,
-                                parentClubId = padri[it.id],
-                            )
-                        },
-                    )
+                    // Divisioni e club padre arrivano gia' agganciati: li monta
+                    // `LeagueRepository`, dove sta la lettura, e non piu' qui. Finche' il
+                    // montaggio stava in questa riga, ogni altra rilettura dei club — per
+                    // esempio quella dopo un'offerta all'asta — ne restituiva una versione
+                    // a meta', e la Primavera spariva dall'app.
+                    val lega = snapshot.value
                     ultimaLega = lega
 
                     // Lo staff serve gia al primo disegno: le aste sullo staff hanno
@@ -872,19 +866,48 @@ class AppViewModel : ViewModel() {
         // righe, e senza, le aste sullo staff mostravano «Obiettivo #7».
         val staffById = _staff.value.tutti.associateBy { it.id }
 
+        val mio = snapshot.myClub?.id
+
         return auctions.map { auction ->
             AuctionRow(
                 auction = auction,
                 player = if (auction.targetType == "player") playerById[auction.targetId] else null,
                 staff = if (auction.targetType == "staff") staffById[auction.targetId] else null,
                 leaderName = auction.leaderClubId?.let { clubById[it]?.shortName },
+                starterName = clubById[auction.startedBy]?.shortName,
+                startedByMe = mio != null && auction.startedBy == mio,
             )
         }
     }
 
+    /** Cambia quali aste si guardano. Nessuna rilettura: il filtro lavora su cio' che c'e'. */
+    fun filtraAste(filtro: AuctionFilter) {
+        val dentro = statoCorrente() ?: return
+        _state.value = dentro.copy(auctionFilter = filtro)
+    }
+
+    /**
+     * Apre il foglio dell'offerta e va a prendere la cronologia.
+     *
+     * La cronologia arriva **dopo**: il foglio si apre subito col prezzo e il tempo, che
+     * sono gia' in memoria, e l'elenco di chi ha offerto compare un istante dopo. Farlo
+     * aspettare vorrebbe dire un tocco che non fa niente per mezzo secondo.
+     */
     fun apriOfferta(row: AuctionRow?) {
         val dentro = _state.value as? AppState.Dentro ?: return
-        _state.value = dentro.copy(bidding = row, errore = null)
+        _state.value = dentro.copy(bidding = row, biddingHistory = emptyList(), errore = null)
+        if (row == null) return
+
+        viewModelScope.launch {
+            val storia = AuctionRepository.history(row.auction.id)
+            val corrente = statoCorrente() ?: return@launch
+            // Solo se si sta ancora guardando quella: fra la richiesta e la risposta si
+            // puo' aver chiuso il foglio o aperto un'altra asta, e attaccare la
+            // cronologia sbagliata e' peggio che non averne nessuna.
+            if (corrente.bidding?.auction?.id == row.auction.id) {
+                _state.value = corrente.copy(biddingHistory = storia)
+            }
+        }
     }
 
     /**
@@ -1070,6 +1093,70 @@ class AppViewModel : ViewModel() {
                 // "sto ancora caricando".
                 is ApiResult.Ok ->
                     _desk.value = _desk.value.copy(tick = esito.value, tickLetto = true, errore = null)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------- le mie leghe
+
+    private val _mieLeghe = MutableStateFlow(MyLeaguesState())
+    val mieLeghe: StateFlow<MyLeaguesState> = _mieLeghe
+
+    /**
+     * Rilegge l'elenco delle proprie leghe.
+     *
+     * Sempre, a ogni apertura della schermata: e' l'unico posto da cui ci si accorge che un
+     * amico e' entrato in una lega diversa dalla propria, e un elenco vecchio di dieci
+     * minuti risponderebbe alla domanda sbagliata.
+     */
+    fun caricaMieLeghe() {
+        viewModelScope.launch {
+            _mieLeghe.value = _mieLeghe.value.copy(busy = "Cerco le tue leghe…", errore = null)
+            when (val esito = MyLeaguesRepository.mine(Session.leagueId)) {
+                is ApiResult.Error ->
+                    _mieLeghe.value = _mieLeghe.value.copy(busy = null, errore = esito.message)
+                is ApiResult.Ok ->
+                    _mieLeghe.value = MyLeaguesState(leghe = esito.value, letto = true)
+            }
+        }
+    }
+
+    /**
+     * Passa a un'altra delle proprie leghe.
+     *
+     * Ricarica tutto da capo: la lega e' la radice di ogni altro dato in memoria — club,
+     * giocatori, aste, formazione — e portarne anche solo un pezzo dentro un'altra lega
+     * vorrebbe dire mostrare i giocatori di un mondo dentro le squadre di un altro.
+     */
+    fun cambiaLega(leagueId: Long) {
+        if (leagueId == Session.leagueId) return
+        Session.leagueId = leagueId
+        Session.clubId = null
+        _mieLeghe.value = MyLeaguesState()
+        _desk.value = DeskState()
+        _staff.value = StaffState()
+        _trades.value = TradesState()
+        carica(leagueId, avviso = "Sei passato a un'altra lega.")
+    }
+
+    /** Cambia il codice d'accesso della lega aperta. Solo l'amministratore. */
+    fun cambiaCodice(nuovo: String) {
+        val dentro = statoCorrente() ?: return
+        val pulito = nuovo.trim()
+        if (pulito.isBlank()) return
+
+        viewModelScope.launch {
+            _mieLeghe.value = _mieLeghe.value.copy(busy = "Cambio il codice…", errore = null)
+            when (val esito = MyLeaguesRepository.setAccessCode(dentro.lega.league.id, pulito)) {
+                is ApiResult.Error ->
+                    _mieLeghe.value = _mieLeghe.value.copy(busy = null, errore = esito.message)
+                is ApiResult.Ok -> {
+                    _mieLeghe.value = _mieLeghe.value.copy(
+                        busy = null,
+                        avviso = "Il codice ora e' ${esito.value}.",
+                    )
+                    caricaMieLeghe()
+                }
             }
         }
     }

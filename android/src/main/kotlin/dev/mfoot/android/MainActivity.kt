@@ -75,6 +75,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val settings by viewModel.configEdit.collectAsStateWithLifecycle()
     val lineup by viewModel.lineupEdit.collectAsStateWithLifecycle()
     val desk by viewModel.desk.collectAsStateWithLifecycle()
+    val mieLeghe by viewModel.mieLeghe.collectAsStateWithLifecycle()
     val scambi by viewModel.trades.collectAsStateWithLifecycle()
     val divisioni by viewModel.divisioni.collectAsStateWithLifecycle()
     val spogliatoio by viewModel.spogliatoio.collectAsStateWithLifecycle()
@@ -175,6 +176,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onSelect = viewModel::select,
                         onOpenBid = viewModel::apriOfferta,
                         onRefreshAuctions = { viewModel.aggiornaAste() },
+                        onAuctionFilter = viewModel::filtraAste,
                         onFoundClub = viewModel::fondaClub,
                         onSwitchTeam = viewModel::guardaLaPrimavera,
                         onCreateYouth = viewModel::fondaLaPrimavera,
@@ -192,6 +194,10 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onConfigChange = viewModel::modificaRegolamento,
                         onConfigSave = viewModel::salvaRegolamento,
                         desk = desk,
+                        mieLeghe = mieLeghe,
+                        onLoadLeagues = viewModel::caricaMieLeghe,
+                        onSwitchLeague = viewModel::cambiaLega,
+                        onChangeCode = viewModel::cambiaCodice,
                         onLoadMembers = viewModel::caricaPartecipanti,
                         onLoadTick = viewModel::caricaRegistro,
                         scambi = scambi,
@@ -249,6 +255,8 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                             row = row,
                             available = current.lega.myClub?.available ?: 0,
                             minimumRaise = current.lega.league.config.market.minimumRaise,
+                            storia = current.biddingHistory,
+                            myClubId = current.lega.myClub?.id,
                             onBid = { viewModel.offri(row.auction.id, it) },
                             onClose = { viewModel.apriOfferta(null) },
                         )

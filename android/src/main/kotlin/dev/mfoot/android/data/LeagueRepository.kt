@@ -199,7 +199,39 @@ object LeagueRepository {
      */
     suspend fun clubs(leagueId: Long): ApiResult<List<ClubInfo>> = readClubs(leagueId)
 
-    private suspend fun readClubs(leagueId: Long): ApiResult<List<ClubInfo>> {
+    /**
+     * I club **completi**: divisione e club padre compresi.
+     *
+     * ## Il difetto che questa funzione esiste per non far tornare
+     *
+     * `division_level` e `parent_club_id` si leggono a parte — sono colonne aggiunte da una
+     * migrazione, e infilarle nella SELECT principale rende l'app inservibile su un
+     * database che non ce l'ha ancora (vedi [DivisionRepository]). Finche' quel montaggio
+     * viveva nel ViewModel, pero', esisteva **un solo posto** che lo faceva: il caricamento
+     * completo della lega.
+     *
+     * Poi bastava un'offerta all'asta. `aggiornaAste` rileggeva solo i club, per aggiornare
+     * i crediti impegnati, e rimetteva nello stato una lista in cui `parentClubId` era
+     * tornato null per tutti. Da quel momento `myYouthClub` non trovava piu' niente: la
+     * Primavera spariva dall'app, l'interruttore fra le due squadre svaniva e ricompariva
+     * il pulsante «fonda la Primavera» — che poi il server rifiutava, giustamente, dicendo
+     * che ce l'hai gia'. Stessa sorte per le divisioni, tutte riportate al primo livello.
+     *
+     * Adesso il montaggio sta qui, dove sta la lettura: non esiste piu' un modo di
+     * ottenere dei club a meta'.
+     */
+    private suspend fun readClubs(leagueId: Long): ApiResult<List<ClubInfo>> =
+        readClubRows(leagueId).then { clubs ->
+            val livelli = DivisionRepository.levels(leagueId)
+            val padri = YouthRepository.parents(leagueId)
+            ApiResult.Ok(
+                clubs.map {
+                    it.copy(divisionLevel = livelli[it.id] ?: 1, parentClubId = padri[it.id])
+                },
+            )
+        }
+
+    private suspend fun readClubRows(leagueId: Long): ApiResult<List<ClubInfo>> {
         val path = "/rest/v1/clubs?select=id,name,short_name,is_ai,owner_user_id,owner_name," +
             "credits,committed_credits,custom_player_id,kit&league_id=eq.$leagueId&order=name"
         val me = Session.userId

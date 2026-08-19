@@ -201,6 +201,27 @@ data class DeskState(
 )
 
 /**
+ * L'elenco delle proprie leghe.
+ *
+ * ## A cosa serve, che e' meno ovvio del nome
+ *
+ * L'app apre **una** lega: quella salvata sul telefono. Finche' se ne ha una sola non c'e'
+ * niente da scegliere e questa schermata sembra inutile. Serve nel momento esatto in cui
+ * qualcosa non torna — «vedo la sua squadra ma non le sue mosse», «lui dice di essere
+ * entrato e io non lo trovo» — perche' e' l'unico posto in cui si vede *quante* leghe si
+ * ha, quante persone ci sono in ognuna, e in quale si sta guardando adesso.
+ *
+ * [letto] distingue "non ho ancora chiesto" da "ho chiesto e le leghe sono queste".
+ */
+data class MyLeaguesState(
+    val leghe: List<dev.mfoot.android.data.LeagueCard> = emptyList(),
+    val letto: Boolean = false,
+    val busy: String? = null,
+    val avviso: String? = null,
+    val errore: String? = null,
+)
+
+/**
  * Gli scambi: quelli ricevuti, quelli mandati, e quello che si sta componendo.
  *
  * [bozza] non nullo e' la differenza fra "guardo le proposte" e "ne sto scrivendo una", ed

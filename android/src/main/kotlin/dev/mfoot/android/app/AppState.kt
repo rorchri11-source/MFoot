@@ -84,6 +84,10 @@ data class AuctionRow(
      */
     val staff: dev.mfoot.android.data.StaffMember? = null,
     val leaderName: String?,
+    /** Chi l'ha aperta. Serve al filtro «mie / non mie» e a capire chi sta vendendo. */
+    val starterName: String? = null,
+    /** L'ha aperta il mio club? */
+    val startedByMe: Boolean = false,
 ) {
     val label: String
         get() = player?.player?.fullName
@@ -94,6 +98,25 @@ data class AuctionRow(
     val dettaglio: String?
         get() = player?.let { "${it.player.primaryPosition.short} · ${it.player.overall}" }
             ?: staff?.let { "${"★".repeat(it.stars)} · ${it.effetto}" }
+}
+
+/**
+ * Quali aste si stanno guardando.
+ *
+ * ## Perche' un filtro e non solo un ordine
+ *
+ * Con quindici aste aperte contemporaneamente — che e' il ritmo normale appena le AI si
+ * svegliano — l'elenco unico e' illeggibile: le due su cui si sta giocando davvero stanno
+ * in mezzo alle altre tredici, e l'unico modo di ritrovarle e' scorrere ogni volta.
+ *
+ * Le quattro domande che ci si fa davanti al mercato sono sempre le stesse: cosa c'e' in
+ * giro, cosa ho messo in vendita io, cosa hanno messo gli altri, dove sono impegnato.
+ */
+enum class AuctionFilter(val label: String) {
+    TUTTE("Tutte"),
+    MIE("Aperte da me"),
+    ALTRUI("Degli altri"),
+    OFFERTE("Ho offerto"),
 }
 
 /** Cosa si sta guardando della lista: il mercato o una rosa. */
@@ -224,8 +247,11 @@ sealed interface AppState {
         val rows: List<PlayerRow>,
         val browse: BrowseState = BrowseState(),
         val auctions: List<AuctionRow> = emptyList(),
+        val auctionFilter: AuctionFilter = AuctionFilter.TUTTE,
         /** L'asta aperta a schermo pieno per fare un'offerta. */
         val bidding: AuctionRow? = null,
+        /** La cronologia dell'asta aperta a schermo pieno: chi ha offerto, e a che prezzo. */
+        val biddingHistory: List<dev.mfoot.android.data.BidEvent> = emptyList(),
         /**
          * La pila delle schermate visitate, l'ultima in cima.
          *
@@ -268,6 +294,25 @@ sealed interface AppState {
 
         /** Le aste su cui si e' impegnati: sono quelle che vanno tenute d'occhio. */
         val myAuctions: List<AuctionRow> get() = auctions.filter { it.auction.hasMyBid }
+
+        /** Le aste che il filtro lascia passare. */
+        val asteVisibili: List<AuctionRow>
+            get() = auctions.filter {
+                when (auctionFilter) {
+                    AuctionFilter.TUTTE -> true
+                    AuctionFilter.MIE -> it.startedByMe
+                    AuctionFilter.ALTRUI -> !it.startedByMe
+                    AuctionFilter.OFFERTE -> it.auction.hasMyBid
+                }
+            }
+
+        /** Quante ne contiene ogni filtro: il numero sta sul chip, cosi' non se ne perde una. */
+        fun quanteAste(filtro: AuctionFilter): Int = when (filtro) {
+            AuctionFilter.TUTTE -> auctions.size
+            AuctionFilter.MIE -> auctions.count { it.startedByMe }
+            AuctionFilter.ALTRUI -> auctions.count { !it.startedByMe }
+            AuctionFilter.OFFERTE -> auctions.count { it.auction.hasMyBid }
+        }
 
         val visible: List<PlayerRow>
             get() = rows

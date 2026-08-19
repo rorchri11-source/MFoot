@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
+import dev.mfoot.android.app.AuctionFilter
 import dev.mfoot.android.app.AuctionRow
 import dev.mfoot.android.app.DeskState
 import dev.mfoot.android.app.DivisionsAdmin
@@ -51,6 +52,7 @@ import dev.mfoot.android.ui.screens.AsteConcluseScreen
 import dev.mfoot.android.ui.screens.CampoScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
 import dev.mfoot.android.ui.screens.MercatiScreen
+import dev.mfoot.android.ui.screens.MieLegheScreen
 import dev.mfoot.android.ui.screens.PartecipantiScreen
 import dev.mfoot.android.ui.screens.ProfiloLegaScreen
 import dev.mfoot.android.ui.screens.RegistroScreen
@@ -82,6 +84,7 @@ fun Router(
     onSelect: (PlayerRow) -> Unit,
     onOpenBid: (AuctionRow) -> Unit,
     onRefreshAuctions: () -> Unit,
+    onAuctionFilter: (AuctionFilter) -> Unit,
     onFoundClub: () -> Unit,
     onSwitchTeam: (Boolean) -> Unit,
     onCreateYouth: () -> Unit,
@@ -99,6 +102,10 @@ fun Router(
     onConfigChange: (LeagueConfig) -> Unit,
     onConfigSave: () -> Unit,
     desk: DeskState,
+    mieLeghe: dev.mfoot.android.app.MyLeaguesState,
+    onLoadLeagues: () -> Unit,
+    onSwitchLeague: (Long) -> Unit,
+    onChangeCode: (String) -> Unit,
     onLoadMembers: () -> Unit,
     onLoadTick: () -> Unit,
     scambi: TradesState,
@@ -173,9 +180,9 @@ fun Router(
                 // Le prime tre sono la stessa schermata con un ambito diverso, ed e'
                 // esattamente cio' che erano gia': tre voci di menu che aprivano lo stesso
                 // composable senza dirlo. Adesso lo dicono.
-                TabMercato.ASTE -> Lista(state, ListScope.ASTE, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
-                TabMercato.SVINCOLATI -> Lista(state, ListScope.SVINCOLATI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
-                TabMercato.LISTONE -> Lista(state, ListScope.TUTTI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
+                TabMercato.ASTE -> Lista(state, ListScope.ASTE, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
+                TabMercato.SVINCOLATI -> Lista(state, ListScope.SVINCOLATI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
+                TabMercato.LISTONE -> Lista(state, ListScope.TUTTI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
 
                 TabMercato.CONCLUSE -> AsteConcluseScreen(
                     state = state,
@@ -240,6 +247,14 @@ fun Router(
             LaunchedEffect(state.lega.league.id) { onLoadMembers() }
             PartecipantiScreen(desk)
         }
+
+        is Route.MieLeghe -> MieLegheScreen(
+            stato = mieLeghe,
+            isAdmin = state.lega.league.isAdmin,
+            onCarica = onLoadLeagues,
+            onApri = onSwitchLeague,
+            onCambiaCodice = onChangeCode,
+        )
 
         is Route.Opzioni -> SettingsIndexScreen(state.lega.league.isAdmin) {
             onNavigate(Route.Regolamento(it))
@@ -399,6 +414,7 @@ private fun Lista(
     onSelect: (PlayerRow) -> Unit,
     onOpenBid: (AuctionRow) -> Unit,
     onRefreshAuctions: () -> Unit,
+    onAuctionFilter: (AuctionFilter) -> Unit,
     onDismissNotice: () -> Unit,
 ) {
     // L'ambito lo impone la rotta: chi entra da "Svincolati" deve vedere gli svincolati,
@@ -414,6 +430,7 @@ private fun Lista(
         onDismissNotice = onDismissNotice,
         onOpenBid = onOpenBid,
         onRefreshAuctions = onRefreshAuctions,
+        onAuctionFilter = onAuctionFilter,
     )
 }
 

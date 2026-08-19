@@ -61,9 +61,10 @@ object AuctionRepository {
             "&league_id=eq.$leagueId&status=eq.APERTA&order=ends_at"
 
         return SupabaseApi.get(path).then { body ->
-            myMaxBids().then { mine ->
+            val righe = JsonNode.parse(body).asList()
+            myMaxBids(righe.map { it["id"].long(0) }).then { mine ->
                 ApiResult.Ok(
-                    JsonNode.parse(body).asList().map { row ->
+                    righe.map { row ->
                         val id = row["id"].long(0)
                         AuctionView(
                             id = id,
@@ -84,20 +85,50 @@ object AuctionRepository {
     }
 
     /**
-     * Le proprie offerte massime.
+     * Le proprie offerte massime, **sulle aste che si stanno guardando**.
      *
-     * Le Row Level Security fanno gia' il filtro: questa query chiede *tutte* le offerte
-     * e il database restituisce solo quelle del proprio club. Non e' una svista, e' il
-     * punto — la riservatezza non dipende da cosa chiede il client.
+     * ## Perche' l'elenco delle aste va passato, e non basta chiederle tutte
+     *
+     * Le Row Level Security fanno il filtro sul contenuto: chiedendo tutte le offerte, il
+     * database restituisce le proprie. Fin qui e' il punto — la riservatezza non dipende
+     * da cosa chiede il client.
+     *
+     * Poi pero' le aste concluse hanno smesso di essere segrete: da `0020` le offerte di
+     * chiunque su un'asta chiusa sono leggibili da tutta la lega, ed e' giusto, perche' e'
+     * la parte piu' bella dell'asta. Ma «tutte le offerte» ha smesso di voler dire «le
+     * mie»: e' diventato *ogni offerta di ogni club su ogni asta gia' finita*.
+     *
+     * PostgREST tronca a mille righe e non lo dice. Con un mercato vivo quelle mille righe
+     * si riempiono di storia — le aste vecchie stanno in fondo alla tabella, quindi
+     * arrivano per prime — e le proprie offerte sulle aste **aperte** finivano oltre il
+     * taglio. Effetto visto: aste su cui si era offerto che comparivano come se non si
+     * fosse mai offerto, senza il distintivo «in testa» e senza il massimo gia' dichiarato.
+     *
+     * Si chiedono quindi solo le offerte delle aste in elenco, a blocchi: il filtro sta
+     * nella domanda, non nella speranza che la risposta ci stia.
      */
-    private suspend fun myMaxBids(): ApiResult<Map<Long, Int>> =
-        SupabaseApi.get("/rest/v1/bids?select=auction_id,max_amount").then { body ->
-            ApiResult.Ok(
-                JsonNode.parse(body).asList()
-                    .groupBy { it["auction_id"].long(0) }
-                    .mapValues { (_, rows) -> rows.maxOf { it["max_amount"].int(0) } },
-            )
+    private suspend fun myMaxBids(auctionIds: List<Long>): ApiResult<Map<Long, Int>> {
+        if (auctionIds.isEmpty()) return ApiResult.Ok(emptyMap())
+
+        val massimi = HashMap<Long, Int>(auctionIds.size)
+        // A blocchi: un `in.(...)` con dentro trecento id diventa una URL che qualche
+        // proxy taglia, e una richiesta tagliata torna come "nessuna offerta".
+        auctionIds.chunked(80).forEach { blocco ->
+            val path = "/rest/v1/bids?select=auction_id,max_amount" +
+                "&auction_id=in.(${blocco.joinToString(",")})"
+
+            when (val esito = SupabaseApi.get(path)) {
+                is ApiResult.Error -> return esito
+                is ApiResult.Ok -> JsonNode.parse(esito.value).asList().forEach { row ->
+                    val asta = row["auction_id"].long(0)
+                    val importo = row["max_amount"].int(0)
+                    massimi[asta] = maxOf(massimi[asta] ?: 0, importo)
+                }
+            }
         }
+
+        return ApiResult.Ok(massimi)
+    }
 
     suspend fun startAuction(
         leagueId: Long,
@@ -154,10 +185,55 @@ object AuctionRepository {
 
     data class BidOutcome(val currentPrice: Int, val youLead: Boolean)
 
+    /**
+     * La cronologia pubblica di un'asta: chi ha offerto e dove ha portato il prezzo.
+     *
+     * ## Cosa c'e' e cosa non c'e'
+     *
+     * C'e' il nome del club e il prezzo **pubblico** raggiunto dopo la sua offerta. Non
+     * c'e' il massimo dichiarato, che resta segreto fino alla chiusura: e' quello che
+     * permette di dichiarare il proprio limite e andare a dormire.
+     *
+     * Restituisce una lista vuota se la vista non c'e': una lega su un database senza la
+     * migrazione `0023` vede l'asta come la vedeva prima, non una schermata rotta.
+     */
+    suspend fun history(auctionId: Long): List<BidEvent> {
+        val path = "/rest/v1/auction_bids_public?select=club_id,club_name,club_short," +
+            "public_price,placed_at&auction_id=eq.$auctionId&order=placed_at.desc"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            is ApiResult.Error -> emptyList()
+            is ApiResult.Ok -> JsonNode.parse(esito.value).asList().map { row ->
+                BidEvent(
+                    clubId = row["club_id"].long(0),
+                    clubName = row["club_name"].str("?"),
+                    clubShort = row["club_short"].str("?"),
+                    publicPrice = row["public_price"].int(0).takeIf { it > 0 },
+                    placedAt = Istanti.parse(row["placed_at"].str("")),
+                )
+            }
+        }
+    }
+
     // La scadenza si legge con [Istanti]. La versione precedente tagliava lo scostamento e
     // ci appiccicava una `Z`, spostando la chiusura di ogni asta di due ore: il conto alla
     // rovescia diceva "due ore e dieci" quando ne mancavano dieci minuti.
 }
+
+/**
+ * Un rilancio, come lo vede la lega mentre l'asta e' ancora aperta.
+ *
+ * Il [publicPrice] e' il prezzo a cui l'asta e' arrivata **dopo** questa offerta, cioe' il
+ * numero che tutti hanno visto in cima. Non e' il massimo di chi ha offerto: quello si
+ * scopre a chiusura.
+ */
+data class BidEvent(
+    val clubId: Long,
+    val clubName: String,
+    val clubShort: String,
+    val publicPrice: Int?,
+    val placedAt: java.time.Instant?,
+)
 
 /** Un'offerta a fine asta: chi, e fino a quanto si era spinto. */
 data class BidRow(val clubId: Long, val maxAmount: Int)

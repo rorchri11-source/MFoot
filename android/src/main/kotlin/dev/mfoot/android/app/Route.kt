@@ -85,6 +85,7 @@ sealed interface Route {
             is Lega -> tab.label
             ProfiloLega -> "Profilo lega"
             Partecipanti -> "Partecipanti"
+            MieLeghe -> "Le mie leghe"
             Opzioni -> "Regolamento e opzioni"
             is Regolamento -> sezione.label
             Mercati -> "Finestre di mercato"
@@ -104,8 +105,14 @@ sealed interface Route {
      * apre con un proxy HTTP.
      */
     val isSetup: Boolean
-        get() = this is ProfiloLega || this is Partecipanti || this is Opzioni ||
-            this is Regolamento || this is Mercati || this is Competizioni
+        get() = this is Opzioni || this is Regolamento || this is Mercati ||
+            this is Competizioni
+
+    // `ProfiloLega` e `Partecipanti` erano qui dentro, cioe' visibili solo all'admin. Era
+    // un errore di categoria: non configurano niente, **raccontano** — che lega e' questa,
+    // chi c'e' dentro, chi si e' iscritto e non ha ancora fondato. Sono precisamente le
+    // due schermate a cui serve rispondere quando un amico dice «io ti vedo e tu no», e
+    // l'amico in questione quasi mai e' l'amministratore.
 
     /**
      * E' uno dei cinque posti della barra in basso?
@@ -155,6 +162,14 @@ sealed interface Route {
 
     data object ProfiloLega : Route
     data object Partecipanti : Route
+
+    /**
+     * Tutte le leghe di cui si fa parte, con quella aperta adesso in evidenza.
+     *
+     * Non e' una voce di setup: e' la risposta a «siamo nella stessa partita?», ed e' una
+     * domanda che si fa chi non e' amministratore almeno quanto chi lo e'.
+     */
+    data object MieLeghe : Route
 
     /**
      * L'elenco delle sezioni del regolamento.

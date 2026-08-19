@@ -243,10 +243,18 @@ private fun Drawer(
             )
         }
 
+        // Prima di tutto il resto: in quale lega sono, e chi c'e' con me.
+        //
+        // Erano tre voci riservate all'amministratore, ed era il posto sbagliato. Non
+        // configurano niente: dicono dove sei. La domanda «siamo nella stessa partita?»
+        // se la fa soprattutto chi amministratore non e'.
+        Section("Dove sono")
+        Item("Le mie leghe", Route.MieLeghe, route, onNavigate)
+        Item("Profilo lega", Route.ProfiloLega, route, onNavigate)
+        Item("Partecipanti", Route.Partecipanti, route, onNavigate)
+
         if (isAdmin) {
             Section("Setup")
-            Item("Profilo lega", Route.ProfiloLega, route, onNavigate)
-            Item("Partecipanti", Route.Partecipanti, route, onNavigate)
             Item("Regolamento e opzioni", Route.Opzioni, route, onNavigate)
             Item("Competizioni", Route.Competizioni, route, onNavigate)
             // Le divisioni sono una sezione del regolamento, non una schermata a se': la

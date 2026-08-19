@@ -40,12 +40,18 @@ import java.time.Instant
 /**
  * Il profilo della lega: cos'e' questa lega, in che stato, con che regole.
  *
- * ## Il codice d'accesso non c'e', e non e' una dimenticanza
+ * ## Il codice d'accesso adesso c'e', ed era un errore tenerlo nascosto
  *
- * Sul database ne esiste soltanto l'impronta cifrata: nemmeno il server sa qual e'. Chi ha
- * creato la lega lo conosce e lo passa agli amici come vuole. Mostrarlo qui richiederebbe
- * di salvarlo in chiaro, e a quel punto chiunque sia gia' dentro potrebbe farci entrare un
- * estraneo.
+ * L'argomento di prima era che mostrarlo avrebbe richiesto di salvarlo in chiaro, e che a
+ * quel punto chiunque fosse gia' dentro avrebbe potuto farci entrare un estraneo. Il
+ * ragionamento non regge: chi e' dentro il codice **lo ha digitato**, quindi lo conosce
+ * gia'. Nascondendolo non si impediva niente a nessuno.
+ *
+ * Si impediva invece la cosa piu' normale del mondo — «qual era il codice? Rimandamelo» —
+ * e si e' pagata cara: due amici hanno usato codici diversi credendoli lo stesso e sono
+ * finiti in due leghe diverse, senza che niente nell'app potesse dirglielo. Il numero
+ * dell'id della lega e' li' per lo stesso motivo: due leghe possono chiamarsi uguale, l'id
+ * no.
  */
 @Composable
 fun ProfiloLegaScreen(state: AppState.Dentro) {
@@ -67,6 +73,10 @@ fun ProfiloLegaScreen(state: AppState.Dentro) {
             style = MFootType.chip,
             color = if (lega.status == "in_corso") MFootColors.elite else MFootColors.gamble,
         )
+        Spacer(Modifier.height(3.dp))
+        // L'id, non per pignoleria: due leghe possono avere lo stesso nome, e quando due
+        // amici confrontano gli schermi e' l'unico numero che non mente.
+        Text("lega #${lega.id}", style = MFootType.chip, color = MFootColors.ink3)
 
         Spacer(Modifier.height(MFootSpacing.section))
 
@@ -93,8 +103,9 @@ fun ProfiloLegaScreen(state: AppState.Dentro) {
 
         Spacer(Modifier.height(MFootSpacing.section))
         Notice(
-            "Il codice per entrare non compare qui: sul database ne esiste solo l'impronta " +
-                "cifrata, e nemmeno il server sa qual e'. Lo conosce chi ha creato la lega.",
+            "Il codice per entrare, e l'elenco di tutte le leghe di cui fai parte, stanno " +
+                "nel menu sotto «Le mie leghe». Se un amico non compare fra i " +
+                "partecipanti, ha usato un codice diverso ed e' entrato altrove.",
             MFootColors.ink2,
         )
 

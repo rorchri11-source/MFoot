@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,7 +32,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
+import dev.mfoot.android.app.AuctionFilter
 import dev.mfoot.android.app.AuctionRow
+import dev.mfoot.android.data.BidEvent
 import dev.mfoot.core.model.Money
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
@@ -55,6 +60,7 @@ fun AuctionList(
     state: AppState.Dentro,
     onOpenBid: (AuctionRow) -> Unit,
     onRefresh: () -> Unit,
+    onFilter: (AuctionFilter) -> Unit = {},
 ) {
     // Un orologio condiviso: ricalcolare il tempo residuo dentro ogni riga farebbe
     // ridisegnare la lista a ritmi diversi e la farebbe sembrare nervosa.
@@ -93,12 +99,79 @@ fun AuctionList(
     }
 
     val myClubId = state.lega.myClub?.id
+    val visibili = state.asteVisibili
 
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(state.auctions, key = { it.auction.id }) { row ->
-            AuctionCard(row, myClubId, now) { onOpenBid(row) }
+    Column(Modifier.fillMaxSize()) {
+        Filtri(state, onFilter)
+
+        if (visibili.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        when (state.auctionFilter) {
+                            AuctionFilter.MIE -> "Non hai aperto nessuna asta."
+                            AuctionFilter.ALTRUI -> "Le aste aperte le hai aperte tutte tu."
+                            AuctionFilter.OFFERTE -> "Non hai offerto su nessuna asta."
+                            AuctionFilter.TUTTE -> "Nessuna asta aperta."
+                        },
+                        style = MFootType.secondary,
+                        color = MFootColors.ink3,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Ce ne sono ${state.auctions.size} in tutto: tocca «Tutte».",
+                        style = MFootType.chip,
+                        color = MFootColors.ink3,
+                    )
+                }
+            }
+            return@Column
+        }
+
+        LazyColumn(Modifier.fillMaxSize()) {
+            items(visibili, key = { it.auction.id }) { row ->
+                AuctionCard(row, myClubId, now) { onOpenBid(row) }
+            }
         }
     }
+}
+
+/**
+ * I quattro filtri, ognuno col suo numero.
+ *
+ * ## Perche' il numero sta sul chip
+ *
+ * Perche' e' il modo di accorgersi che una manca. Con quindici aste in corso, la domanda
+ * «sono tutte qui?» non ha risposta guardando un elenco che si scorre: ha risposta
+ * guardando un totale. Se «Tutte» dice 15 e la somma di «Aperte da me» e «Degli altri»
+ * dice 15, l'elenco e' completo — e se un giorno non lo fosse, si vedrebbe subito.
+ */
+@Composable
+private fun Filtri(state: AppState.Dentro, onFilter: (AuctionFilter) -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(MFootSpacing.section, 10.dp, MFootSpacing.section, 8.dp),
+    ) {
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            AuctionFilter.entries.forEach { filtro ->
+                val quante = state.quanteAste(filtro)
+                Chip("${filtro.label} $quante", filtro == state.auctionFilter) {
+                    onFilter(filtro)
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "${state.auctions.size} aste aperte in lega · ne stai guardando ${state.asteVisibili.size}",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+    }
+    Hairline()
 }
 
 @Composable
@@ -178,6 +251,17 @@ private fun AuctionCard(row: AuctionRow, myClubId: Long?, now: Instant, onClick:
                     color = MFootColors.ink3,
                 )
             }
+
+            // Chi l'ha aperta. Cambia cosa significa l'asta: uno svincolato messo in
+            // vetrina da un avversario e un giocatore che quell'avversario sta **vendendo**
+            // sono due situazioni diverse, e finora si leggevano identiche.
+            Spacer(Modifier.height(2.dp))
+            Text(
+                if (row.startedByMe) "l'hai aperta tu"
+                else row.starterName?.let { "aperta da $it" } ?: "aperta dalla lega",
+                style = MFootType.chip,
+                color = if (row.startedByMe) MFootColors.elite else MFootColors.ink3,
+            )
         }
 
         // Lo stato della propria posizione prima del prezzo: e' la cosa che si cerca
@@ -225,6 +309,8 @@ fun BidSheet(
     row: AuctionRow,
     available: Int,
     minimumRaise: Int,
+    storia: List<BidEvent>,
+    myClubId: Long?,
     onBid: (Int) -> Unit,
     onClose: () -> Unit,
 ) {
@@ -243,6 +329,9 @@ fun BidSheet(
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg)
+            // Scorrevole: con la cronologia sotto, su un telefono corto il pulsante
+            // dell'offerta finiva fuori schermo e l'asta diventava impossibile da fare.
+            .verticalScroll(rememberScrollState())
             .padding(MFootSpacing.section),
     ) {
         Text(
@@ -338,5 +427,84 @@ fun BidSheet(
             style = MFootType.chip,
             color = MFootColors.ink3,
         )
+
+        Spacer(Modifier.height(26.dp))
+        Cronologia(row, storia, myClubId)
+        Spacer(Modifier.height(30.dp))
     }
+}
+
+/**
+ * Chi ha offerto, in ordine dall'ultimo.
+ *
+ * ## Cosa si vede e cosa no, e perche'
+ *
+ * Si vede **il nome e il prezzo a cui l'asta e' arrivata dopo la sua offerta**. Non si vede
+ * fino a quanto quel club sarebbe disposto a spingersi: quello e' il massimo dichiarato, e
+ * resta segreto fino alla chiusura.
+ *
+ * La differenza non e' un dettaglio. Il prezzo l'hanno visto tutti — sta scritto in cima
+ * all'asta — e sapere chi ce l'ha portato non aggiunge nessuna informazione riservata,
+ * aggiunge il **contesto**: se il prezzo e' salito da 12 a 40 in dieci minuti perche' due
+ * club se lo stanno contendendo, e' una cosa; se e' salito perche' uno solo ha alzato la
+ * sua asticella, e' un'altra. Il massimo invece no: sapendolo si offre quel numero piu'
+ * uno e si vince sempre, e l'asta smette di essere un'asta.
+ *
+ * A chiusura cade anche l'ultimo segreto, e i massimi si leggono nella scheda «Concluse».
+ */
+@Composable
+private fun Cronologia(row: AuctionRow, storia: List<BidEvent>, myClubId: Long?) {
+    Label("Chi ha offerto")
+    Spacer(Modifier.height(8.dp))
+
+    if (storia.isEmpty()) {
+        Text(
+            if (row.auction.bidCount == 0) {
+                "Nessuno, ancora. Sei il primo."
+            } else {
+                "${row.auction.bidCount} offerte. L'elenco arriva col prossimo aggiornamento " +
+                    "del database: serve la migrazione 0023."
+            },
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+        return
+    }
+
+    storia.forEach { evento ->
+        val mio = myClubId != null && evento.clubId == myClubId
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    if (mio) MFootColors.elite.copy(alpha = 0.08f) else MFootColors.bg,
+                    RoundedCornerShape(6.dp),
+                )
+                .padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (mio) "${evento.clubName} (tu)" else evento.clubName,
+                style = MFootType.chip,
+                color = if (mio) MFootColors.elite else MFootColors.ink,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                evento.publicPrice?.let { "prezzo a ${Money(it).formatShort()}" } ?: "ha offerto",
+                style = MFootType.chip,
+                color = MFootColors.ink3,
+            )
+        }
+        Spacer(Modifier.height(3.dp))
+    }
+
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "Il massimo che ognuno ha dichiarato resta segreto fino alla chiusura: si legge " +
+            "poi, nella scheda Concluse.",
+        style = MFootType.chip,
+        color = MFootColors.ink3,
+    )
 }

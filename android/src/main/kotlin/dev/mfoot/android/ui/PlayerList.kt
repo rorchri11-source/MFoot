@@ -54,6 +54,7 @@ fun PlayerListScreen(
     onDismissNotice: () -> Unit,
     onOpenBid: (dev.mfoot.android.app.AuctionRow) -> Unit,
     onRefreshAuctions: () -> Unit,
+    onAuctionFilter: (dev.mfoot.android.app.AuctionFilter) -> Unit = {},
 ) {
     Column(
         Modifier
@@ -63,7 +64,7 @@ fun PlayerListScreen(
         ListHeader(state, onQuery, onFilter, onScope, onDismissNotice)
 
         if (state.browse.scope == ListScope.ASTE) {
-            AuctionList(state, onOpenBid, onRefreshAuctions)
+            AuctionList(state, onOpenBid, onRefreshAuctions, onAuctionFilter)
             return@Column
         }
 
