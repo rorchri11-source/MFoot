@@ -212,11 +212,46 @@ class ObjectiveBoardTest {
     }
 
     @Test
-    fun `chi ha il suo giocatore si vede chiedere cinque punti di crescita`() {
+    fun `il traguardo di crescita e' il prossimo multiplo di cinque`() {
         val obiettivi = ObjectiveBoard.forClub(club(rank = 5, custom = 66), config)
         val crescita = obiettivi.first { it.kind == ObjectiveKind.FAI_CRESCERE_IL_TUO }
 
-        assertEquals(71, crescita.target)
+        assertEquals(70, crescita.target, "da 66 si chiede 70, non 71")
+    }
+
+    /**
+     * La svista che questo test esiste per non far tornare: chi e' esattamente sullo
+     * scalino deve sentirsi chiedere il successivo. Un obiettivo gia' raggiunto nel momento
+     * in cui viene assegnato e' un premio regalato, e si scoprirebbe solo vedendo qualcuno
+     * incassare senza aver fatto niente.
+     */
+    @Test
+    fun `chi e' gia' su uno scalino si vede chiedere il successivo`() {
+        val obiettivi = ObjectiveBoard.forClub(club(rank = 5, custom = 70), config)
+        val crescita = obiettivi.first { it.kind == ObjectiveKind.FAI_CRESCERE_IL_TUO }
+
+        assertEquals(75, crescita.target)
+    }
+
+    @Test
+    fun `da 88 il traguardo e' 90`() {
+        val obiettivi = ObjectiveBoard.forClub(club(rank = 5, custom = 88), config)
+        val crescita = obiettivi.first { it.kind == ObjectiveKind.FAI_CRESCERE_IL_TUO }
+
+        assertEquals(90, crescita.target)
+    }
+
+    /**
+     * Il percorso completo, che e' il modo in cui «porta il tuo giocatore a 90» diventa
+     * raggiungibile senza essere un fallimento annunciato per quattro stagioni.
+     */
+    @Test
+    fun `gli scalini portano da 66 a 90 senza salti`() {
+        val tappe = generateSequence(66) { ObjectiveBoard.prossimoScalino(it) }
+            .takeWhile { it <= 90 }
+            .toList()
+
+        assertEquals(listOf(66, 70, 75, 80, 85, 90), tappe)
     }
 
     @Test
@@ -224,7 +259,7 @@ class ObjectiveBoardTest {
         val obiettivi = ObjectiveBoard.forClub(club(rank = 5, custom = 0, best = 74), config)
         val crescita = obiettivi.first { it.kind == ObjectiveKind.PORTA_UN_GIOCATORE_A }
 
-        assertEquals(79, crescita.target)
+        assertEquals(75, crescita.target)
     }
 
     @Test

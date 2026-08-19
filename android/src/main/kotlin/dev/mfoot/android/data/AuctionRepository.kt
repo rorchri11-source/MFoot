@@ -24,6 +24,14 @@ data class AuctionView(
     val leaderClubId: Long?,
     val myMax: Int?,
     val startingPrice: Int,
+    /**
+     * Quante squadre diverse sono dentro quest'asta.
+     *
+     * Diverso da [bidCount], ed e' la differenza che conta: sette offerte fatte da una
+     * persona sola che alza la sua asticella sono una coda, sette offerte fatte da quattro
+     * club sono una gara. Guardando solo il totale delle offerte le due si leggono uguali.
+     */
+    val bidders: Int = 0,
 ) {
     fun isLeading(myClubId: Long?): Boolean = leaderClubId != null && leaderClubId == myClubId
 
@@ -62,7 +70,10 @@ object AuctionRepository {
 
         return SupabaseApi.get(path).then { body ->
             val righe = JsonNode.parse(body).asList()
-            myMaxBids(righe.map { it["id"].long(0) }).then { mine ->
+            val ids = righe.map { it["id"].long(0) }
+            val quantiClub = bidders(ids)
+
+            myMaxBids(ids).then { mine ->
                 ApiResult.Ok(
                     righe.map { row ->
                         val id = row["id"].long(0)
@@ -77,6 +88,7 @@ object AuctionRepository {
                             leaderClubId = row["leader_club_id"].long(0).takeIf { it > 0 },
                             myMax = mine[id],
                             startingPrice = row["starting_price"].int(1),
+                            bidders = quantiClub[id] ?: 0,
                         )
                     },
                 )
@@ -128,6 +140,33 @@ object AuctionRepository {
         }
 
         return ApiResult.Ok(massimi)
+    }
+
+    /**
+     * Quanti club diversi sono dentro ogni asta.
+     *
+     * Passa dalla vista pubblica, che espone chi ha offerto ma mai quanto era disposto a
+     * spendere. Se la vista non c'e' — database senza la migrazione `0023` — si torna a
+     * zero per tutte, e l'elenco mostra solo il numero di offerte come faceva prima:
+     * un'informazione in meno, non una schermata rotta.
+     */
+    private suspend fun bidders(auctionIds: List<Long>): Map<Long, Int> {
+        if (auctionIds.isEmpty()) return emptyMap()
+
+        val quanti = HashMap<Long, MutableSet<Long>>(auctionIds.size)
+        auctionIds.chunked(80).forEach { blocco ->
+            val path = "/rest/v1/auction_bids_public?select=auction_id,club_id" +
+                "&auction_id=in.(${blocco.joinToString(",")})"
+
+            when (val esito = SupabaseApi.get(path)) {
+                is ApiResult.Error -> return emptyMap()
+                is ApiResult.Ok -> JsonNode.parse(esito.value).asList().forEach { row ->
+                    quanti.getOrPut(row["auction_id"].long(0)) { HashSet() }
+                        .add(row["club_id"].long(0))
+                }
+            }
+        }
+        return quanti.mapValues { it.value.size }
     }
 
     suspend fun startAuction(

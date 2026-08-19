@@ -218,7 +218,14 @@ private fun AuctionCard(row: AuctionRow, myClubId: Long?, now: Instant, onClick:
                     row.dettaglio?.let { append(it).append(" · ") }
                     append(row.auction.timeLeft(now))
                     if (row.auction.bidCount > 0) {
-                        append(" · ").append(row.auction.bidCount).append(" offerte")
+                        append(" · ").append(row.auction.bidCount)
+                        append(if (row.auction.bidCount == 1) " offerta" else " offerte")
+                        // Quante **squadre**, non quante offerte: sette rilanci di una
+                        // persona sola sono una coda, sette di quattro club sono una gara,
+                        // e col solo totale si leggono identiche.
+                        if (row.auction.bidders > 1) {
+                            append(" di ").append(row.auction.bidders).append(" squadre")
+                        }
                     }
                 },
                 style = MFootType.chip,
@@ -455,7 +462,7 @@ fun BidSheet(
 @Composable
 private fun Cronologia(row: AuctionRow, storia: List<BidEvent>, myClubId: Long?) {
     Label("Chi ha offerto")
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(6.dp))
 
     if (storia.isEmpty()) {
         Text(
@@ -471,8 +478,23 @@ private fun Cronologia(row: AuctionRow, storia: List<BidEvent>, myClubId: Long?)
         return
     }
 
+    // Il riepilogo che dice se e' una gara.
+    //
+    // Prima c'era solo l'elenco, e per capire se ci fossero due club o cinque bisognava
+    // leggere tutte le righe e ricordarsi i nomi. Il numero risponde in un colpo d'occhio,
+    // che e' quello che si cerca aprendo un'asta a cui si sta pensando di partecipare.
+    val quanti = storia.map { it.clubId }.distinct().size
+    Text(
+        "$quanti ${if (quanti == 1) "squadra dentro" else "squadre dentro"} · " +
+            "${storia.size} ${if (storia.size == 1) "offerta" else "offerte"}",
+        style = MFootType.chip,
+        color = MFootColors.ink2,
+    )
+    Spacer(Modifier.height(9.dp))
+
     storia.forEach { evento ->
         val mio = myClubId != null && evento.clubId == myClubId
+        val capofila = evento.clubId == row.auction.leaderClubId
         Row(
             Modifier
                 .fillMaxWidth()
@@ -483,18 +505,30 @@ private fun Cronologia(row: AuctionRow, storia: List<BidEvent>, myClubId: Long?)
                 .padding(horizontal = 8.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (mio) "${evento.clubName} (tu)" else evento.clubName,
+                    style = MFootType.chip,
+                    color = if (mio) MFootColors.elite else MFootColors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (capofila) {
+                    Spacer(Modifier.height(1.dp))
+                    Text("in testa adesso", style = MFootType.chip, color = MFootColors.elite)
+                }
+            }
+            // «Ha offerto», non «prezzo a».
+            //
+            // E' lo stesso numero — il prezzo pubblico dopo quella mossa — ma la frase
+            // cambia cosa si sta leggendo: una colonna di prezzi e' l'andamento dell'asta,
+            // una colonna di offerte e' l'elenco di chi ha fatto cosa. La seconda e'
+            // quella che serve, ed e' quella che era stata chiesta.
             Text(
-                if (mio) "${evento.clubName} (tu)" else evento.clubName,
-                style = MFootType.chip,
-                color = if (mio) MFootColors.elite else MFootColors.ink,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                evento.publicPrice?.let { "prezzo a ${Money(it).formatShort()}" } ?: "ha offerto",
-                style = MFootType.chip,
-                color = MFootColors.ink3,
+                evento.publicPrice?.let { "ha offerto ${Money(it).formatShort()}" }
+                    ?: "ha offerto",
+                style = MFootType.value,
+                color = if (mio) MFootColors.elite else MFootColors.ink2,
             )
         }
         Spacer(Modifier.height(3.dp))
@@ -502,8 +536,9 @@ private fun Cronologia(row: AuctionRow, storia: List<BidEvent>, myClubId: Long?)
 
     Spacer(Modifier.height(8.dp))
     Text(
-        "Il massimo che ognuno ha dichiarato resta segreto fino alla chiusura: si legge " +
-            "poi, nella scheda Concluse.",
+        "L'importo e' il prezzo a cui l'asta e' arrivata con quella mossa. Fin dove ognuno " +
+            "sarebbe disposto a spingersi resta segreto fino alla chiusura: si legge poi, " +
+            "nella scheda Concluse.",
         style = MFootType.chip,
         color = MFootColors.ink3,
     )

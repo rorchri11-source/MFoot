@@ -278,6 +278,11 @@ private fun PlayerListRow(row: PlayerRow, onClick: () -> Unit) {
             color = MFootColors.ink3,
             modifier = Modifier.width(32.dp),
         )
+
+        // Come nella rosa: la riga si tocca e la scheda esiste. Un carattere che vale una
+        // stagione di attributi mai guardati.
+        Spacer(Modifier.width(4.dp))
+        Text("›", style = MFootType.value, color = MFootColors.ink3)
     }
 
     Hairline()

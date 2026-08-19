@@ -129,24 +129,47 @@ object ObjectiveBoard {
      * schierarlo costa punti. Chi non ce l'ha ancora — perche' il club e' nato senza — si
      * vede chiedere di far crescere qualcun altro.
      *
-     * Il passo e' **cinque punti** e non un traguardo assoluto: chiedere «arriva a 85» a un
-     * custom da 65 e' chiedere quattro stagioni, e un obiettivo che scade a giugno deve
-     * poter essere raggiunto entro giugno.
+     * ## Un traguardo, non un incremento
+     *
+     * Il traguardo e' il **prossimo multiplo di cinque**: da 66 si chiede 70, da 71 si
+     * chiede 75, da 88 si chiede 90. La distanza e' la stessa di un «+5», ma quello che si
+     * legge cambia del tutto — «porta il tuo giocatore a 70» e' un posto dove arrivare,
+     * «porta il tuo giocatore a 71» e' un compito di aritmetica.
+     *
+     * E siccome il premio si paga a ogni scalino, chi arriva a 90 ha incassato a 70, 75,
+     * 80, 85 e 90: la scommessa lunga paga mentre la si fa, invece di pagare una volta
+     * sola dopo tre stagioni o di non pagare affatto.
+     *
+     * ## Perche' non si chiede direttamente 90
+     *
+     * Perche' un obiettivo di stagione che a giugno risulta fallito per forza non e' un
+     * obiettivo: e' una condanna con la data sopra. Chiedere 90 a un custom da 65
+     * significa quattro stagioni di «fallito» prima di un «raggiunto». Gli scalini
+     * raccontano lo stesso percorso dicendo la verita' a ogni tappa.
      */
     private fun diSviluppo(club: ClubStanding, premio: Int): Objective =
         if (club.customOverall > 0) {
             Objective(
                 ObjectiveKind.FAI_CRESCERE_IL_TUO,
-                target = club.customOverall + PASSO_DI_CRESCITA,
+                target = prossimoScalino(club.customOverall),
                 reward = premio,
             )
         } else {
             Objective(
                 ObjectiveKind.PORTA_UN_GIOCATORE_A,
-                target = (club.bestOverall + PASSO_DI_CRESCITA).coerceAtLeast(60),
+                target = prossimoScalino(club.bestOverall.coerceAtLeast(55)),
                 reward = premio,
             )
         }
+
+    /**
+     * Il prossimo multiplo di cinque, **strettamente sopra** dove si e' adesso.
+     *
+     * Lo «strettamente» conta: chi e' esattamente a 70 si deve sentir chiedere 75, non 70.
+     * Un obiettivo gia' raggiunto nel momento in cui viene assegnato e' un premio regalato,
+     * ed e' il genere di svista che si scopre solo quando qualcuno incassa senza far niente.
+     */
+    internal fun prossimoScalino(overall: Int): Int = (overall / PASSO_DI_CRESCITA + 1) * PASSO_DI_CRESCITA
 
     /**
      * L'obiettivo che dura piu' di una stagione.

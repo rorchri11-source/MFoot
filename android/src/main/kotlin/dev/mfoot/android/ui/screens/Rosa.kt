@@ -230,6 +230,20 @@ private fun Intestazione(
                 textAlign = TextAlign.Center,
             )
         }
+
+        // Dire cosa c'e' dietro una riga, una volta, in cima.
+        //
+        // La freccia sulle righe dice «si tocca»; questa riga dice «e vale la pena». Sono
+        // due cose diverse e servono tutte e due: chi non sa che esiste una scheda non ha
+        // motivo di provare a toccare, e la scheda e' il posto dove vivono overall,
+        // attributi, stelle, crescita e condizione.
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Tocca un giocatore per la sua scheda: overall, attributi, crescita e condizione.",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+            textAlign = TextAlign.Center,
+        )
     }
     Hairline()
 }
@@ -331,6 +345,15 @@ private fun Giocatore(riga: PlayerRow, onSelect: (PlayerRow) -> Unit) {
             style = MFootType.overallRow,
             color = MFootColors.rating(p.overall),
         )
+
+        // La freccia che dice che la riga si tocca.
+        //
+        // La scheda del giocatore — overall, ogni attributo, stelle, crescita, condizione —
+        // e' sempre stata li' dietro, e non la trovava nessuno: le righe erano toccabili e
+        // niente lo diceva. Il proprietario della lega ha giocato una stagione senza sapere
+        // che esistesse. Un carattere per riga e' tutto quello che serviva.
+        Spacer(Modifier.width(6.dp))
+        Text("›", style = MFootType.value, color = MFootColors.ink3)
     }
     Hairline()
 }
