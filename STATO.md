@@ -1,7 +1,7 @@
 # MFoot — stato del progetto
 
-**Aggiornato:** 2026-08-19
-**Test:** 638 verdi, 0 falliti
+**Aggiornato:** 2026-08-20
+**Test:** 654 verdi, 0 falliti
 **Verificato:** su emulatore Android e su Supabase, non solo nei test
 
 ---
@@ -80,6 +80,10 @@ gradlew :android:assembleDebug
 | 36 | **Orari veri** | L'ora la scrive chi gioca, e cio' che e' gia' passato non si puo' scegliere. `KickoffRules` in `core` |
 | 37 | **Le cose scritte** | Stamina in rosa, divisione, formazione degli avversari, a quale competizione si sta giocando |
 | 38 | **Obiettivi e premi** | Tre per club, decisi da una regola in `core`. Il premio si paga solo per intero |
+| 39 | **Si entra sapendo dove** | `peek_league` mostra il nome prima di entrare; chi e' in piu' leghe se lo vede scritto |
+| 40 | **I giocatori in prima serie** | `DivisionAssignment`: gli umani partono dalla massima, le AI riempiono, l'admin sceglie le dimensioni |
+| 41 | **Traguardi e offerte** | Obiettivi a multipli di cinque che pagano ogni scalino; l'asta dice «ha offerto» e quante squadre sono dentro |
+| 42 | **`docs/REGOLE.md`** | Le decisioni del proprietario in un posto solo, e un `CLAUDE.md` che le fa leggere a ogni sessione |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -210,6 +214,7 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0022_una_lega_sola.sql` | Codice d'accesso univoco, rileggibile e cambiabile |
 | `supabase/migrations/0023_chi_ha_offerto.sql` | La cronologia pubblica delle aste aperte |
 | `supabase/migrations/0024_obiettivi.sql` | Gli obiettivi di stagione e i premi |
+| `supabase/migrations/0025_entrare_sapendo_dove.sql` | `peek_league`: che lega apre un codice, prima di entrarci |
 
 **`0014` va applicata prima di installare l'APK.** Aggiunge una colonna a `competitions`,
 e una colonna nuova dentro una SELECT condivisa non è un'aggiunta: PostgREST rifiuta
@@ -302,3 +307,19 @@ Non refusi: difetti di logica che sarebbero arrivati fino in produzione.
 14. **La scheda giocatore mostrava sei etichette e cinque caselle vuote.** Presenze,
     minuti, gol e assist passavano una stringa vuota. Si concludeva che non si contassero,
     mentre `appearances` le contava da sempre.
+15. **Gli umani finivano in Serie B dal primo giorno.** L'assegnazione iniziale ordinava
+    tutti i club per forza e li distribuiva a serpentina, umani e AI mescolati. È una
+    regola sensata per un campionato vero e sbagliata per una lega fra amici: chi si
+    iscrive vuole giocare contro gli altri amici, non contro otto squadre del computer
+    perché la sua rosa iniziale valeva tre punti di meno. La regola giusta — i giocatori
+    veri partono tutti dalla massima serie — **era stata detta** e letta come
+    un'osservazione.
+16. **Si entrava in una lega senza sapere quale.** Non un difetto del programma: con codici
+    diversi `join_league` faceva esattamente il suo mestiere. Il difetto è che l'app non
+    diceva mai dove ti aveva portato, e riaprendola ci si rientrava dritto. Due amici hanno
+    giocato in due leghe diverse convinti di essere nella stessa, e nessuno dei due poteva
+    accorgersene.
+17. **La scheda del giocatore non la trovava nessuno.** Esisteva dal principio, con overall,
+    ogni attributo, stelle e crescita, e si apriva toccando una riga qualsiasi. Niente
+    diceva che una riga si potesse toccare, quindi per il proprietario della lega quei dati
+    semplicemente non esistevano.
