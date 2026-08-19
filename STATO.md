@@ -1,7 +1,7 @@
 # MFoot — stato del progetto
 
 **Aggiornato:** 2026-08-19
-**Test:** 613 verdi, 0 falliti
+**Test:** 638 verdi, 0 falliti
 **Verificato:** su emulatore Android e su Supabase, non solo nei test
 
 ---
@@ -75,6 +75,11 @@ gradlew :android:assembleDebug
 | 31 | **Staff e scouting** | Lo staff si vince all asta, gli osservatori vanno in missione, gli under 20 escono dalle aste |
 | 32 | **Aste che si chiudono** | Quelle scadute fuori finestra restavano aperte per sempre. Tetto di lega, e a fine asta si vede chi ha offerto quanto |
 | 33 | **Controproposte** | Si scrive un messaggio quando si propone, e si puo rilanciare invece di rifiutare. Anche le AI |
+| 34 | **Una lega sola** | Il codice d'accesso e' univoco e si rilegge. «Le mie leghe» dice in quale si sta guardando |
+| 35 | **Aste leggibili** | Filtri col loro numero, e la cronologia di chi ha offerto mentre l'asta e' aperta |
+| 36 | **Orari veri** | L'ora la scrive chi gioca, e cio' che e' gia' passato non si puo' scegliere. `KickoffRules` in `core` |
+| 37 | **Le cose scritte** | Stamina in rosa, divisione, formazione degli avversari, a quale competizione si sta giocando |
+| 38 | **Obiettivi e premi** | Tre per club, decisi da una regola in `core`. Il premio si paga solo per intero |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -115,7 +120,7 @@ il suo overall dipende da quattro attributi invece che da sei.
 | Caricamento del mondo | 1.128 giocatori, 120 fra staff, 8 club AI sul database |
 | Row Level Security | Da non membro si vedono zero righe; dopo `join_league` compaiono tutte |
 | `ai_states` invisibile | Anche ai membri: una personalità leggibile renderebbe l'asta un esercizio di lettura |
-| `players_public` | Non contiene i potenziali veri |
+| `players_public` | Non contiene i potenziali veri. Da `0023` gira anche con `security_invoker`: prima, essendo una vista, non applicava la policy `read_players` e un membro qualsiasi poteva leggere i giocatori di **ogni** lega. Mai sfruttato — l'app chiede sempre `league_id=eq.…` — ma era aperto |
 | Sessione persistente | Chiusa e riaperta l'app: si rientra senza reinserire il codice |
 | Conteggio giocatori | 1128 dopo la paginazione (prima ne arrivavano 1000) |
 | Budget del custom | 15 punti su Passaggio → 65→80, costo 4×1 + 8×3 + 3×5 = 43, overall 65→69 |
@@ -146,6 +151,10 @@ trovato perché **qualcuno ha guardato**, non perché una prova ha fallito.
 3. **Il mercato dello staff.** `start_auction` accetta `target_type = 'staff'` e nessuna
    schermata lo usa: allenatori, preparatori e osservatori si assegnano solo alla
    generazione del mondo.
+4. **Provare gli obiettivi su una stagione vera.** La regola e i verdetti hanno
+   ventisei test in `core`, ma il giro completo — assegnazione, stagione, chiusura,
+   premio accreditato — non è mai girato su un database vero. È il punto 1 di questo
+   elenco visto da un'altra angolazione.
 
 ### Cosa fa e cosa non fa il tick, oggi
 
@@ -198,6 +207,9 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0019_staff_e_scouting.sql` | Staff assegnabile, missioni, under 20 fuori dalle aste |
 | `supabase/migrations/0020_aste_trasparenti.sql` | A fine asta si vede chi ha offerto quanto |
 | `supabase/migrations/0021_controproposte.sql` | Le trattative diventano un botta e risposta |
+| `supabase/migrations/0022_una_lega_sola.sql` | Codice d'accesso univoco, rileggibile e cambiabile |
+| `supabase/migrations/0023_chi_ha_offerto.sql` | La cronologia pubblica delle aste aperte |
+| `supabase/migrations/0024_obiettivi.sql` | Gli obiettivi di stagione e i premi |
 
 **`0014` va applicata prima di installare l'APK.** Aggiunge una colonna a `competitions`,
 e una colonna nuova dentro una SELECT condivisa non è un'aggiunta: PostgREST rifiuta
@@ -207,6 +219,12 @@ e aveva rotto tutta l'app.
 Le leghe create prima della migrazione `0003` non hanno i pesi dei ruoli in
 configurazione e **non possono accettare nuovi club**: per provare la fondazione va
 creata una lega nuova.
+
+**Se due leghe hanno lo stesso codice**, `0022` non le separa da sola — non c'è modo di
+sapere in quale volevano entrare. Da lì in poi `join_league` rifiuta il codice ambiguo
+invece di sceglierne una a caso, e l'admin ne cambia uno da «Le mie leghe». Il codice
+delle leghe create prima non compare finché non lo si cambia una volta: dell'originale
+esiste solo l'impronta cifrata.
 
 ---
 
@@ -260,3 +278,27 @@ Non refusi: difetti di logica che sarebbero arrivati fino in produzione.
 8. **Le AI si svegliavano una volta al giorno.** Dopo aver agito, il risveglio successivo
    cadeva nel passato e veniva spinto a domani. `checksPerDay` esisteva e non lo leggeva
    nessuno.
+10. **La correzione delle aste rigiocava le partite.** Insegnare al tick che una cosa
+    scaduta fuori finestra va fatta comunque è giusto per un'asta — se non si chiude
+    adesso non si chiuderà mai più — e disastroso per una partita: il calcio d'inizio
+    resta per sempre prima della finestra, quindi la stessa partita veniva ripianificata
+    a ogni giro. Saltavano anche le due protezioni scritte apposta: al primo giro di una
+    lega nuova si simulavano tutte le partite già in calendario, e col tick fermo da un
+    mese se ne recuperava un mese malgrado il tetto annunciato nelle note. **Tre test lo
+    dicevano e nessuno li aveva più eseguiti.**
+11. **La Primavera spariva dopo un'offerta all'asta.** La rilettura dei soli club — quella
+    che aggiorna i crediti impegnati — non portava `parent_club_id` né `division_level`,
+    perché sono colonne che si chiedono a parte. Il montaggio viveva nel ViewModel, cioè
+    in un posto solo, e ogni altra strada restituiva club a metà. Da lì: l'interruttore
+    fra le due squadre svaniva, ricompariva «fonda la Primavera», e il server rispondeva
+    — giustamente — che ce l'hai già.
+12. **Le proprie offerte sparivano dalle aste aperte.** `bids?select=…` senza filtro
+    contava sulle Row Level Security, ma da `0020` le offerte delle aste chiuse sono
+    pubbliche: «tutte le offerte» ha smesso di voler dire «le mie». PostgREST tronca a
+    mille righe e non lo dice, la storia sta in fondo alla tabella e arriva per prima.
+13. **Due amici, lo stesso codice, due leghe diverse.** `join_league` faceva `limit 1` su
+    un codice che non è mai stato univoco — e chi prova il gioco crea tre leghe di fila
+    riusando lo stesso. Da quel momento il codice identifica un insieme, non una lega.
+14. **La scheda giocatore mostrava sei etichette e cinque caselle vuote.** Presenze,
+    minuti, gol e assist passavano una stringa vuota. Si concludeva che non si contassero,
+    mentre `appearances` le contava da sempre.

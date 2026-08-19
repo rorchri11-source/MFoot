@@ -1263,7 +1263,7 @@ class AppViewModel : ViewModel() {
                 customOverall = club.customPlayerId
                     ?.let { id -> rosa.firstOrNull { it.id.value == id }?.overall }
                     ?: 0,
-                youthPlayed = 0,
+                youthPlayed = giovaniInCampo(dentro, club),
                 finished = true,
             )
 
@@ -1292,6 +1292,32 @@ class AppViewModel : ViewModel() {
 
         caricaObiettivi(forza = true)
         return if (quanti == 0) "" else " $quanti obiettivi chiusi, ${Money(pagati).format()} di premi."
+    }
+
+    /**
+     * Quanti ragazzi hanno davvero giocato in prima squadra.
+     *
+     * ## Cosa conta come «ragazzo»
+     *
+     * L'eta' massima della Primavera scritta nel regolamento — la stessa oltre la quale non
+     * si puo' piu' scendere nella seconda squadra. Usare quel numero e non uno inventato
+     * qui significa che l'obiettivo si sposta da solo se l'admin cambia il limite, invece
+     * di parlare di un'eta' che nel suo gioco non vuol dire niente.
+     *
+     * ## Cosa conta come «giocato»
+     *
+     * Almeno un minuto, per la **prima** squadra. Non essere in rosa: tenere tre
+     * diciottenni in panchina per tutta la stagione e' precisamente la scorciatoia che
+     * l'obiettivo esiste per non pagare.
+     */
+    private suspend fun giovaniInCampo(
+        dentro: AppState.Dentro,
+        club: dev.mfoot.android.data.ClubInfo,
+    ): Int {
+        val limite = dentro.lega.league.config.rules.youthMaxAge
+        val scesi = ObjectiveRepository.chiHaGiocato(club.id)
+
+        return dentro.lega.squadOf(club.id).count { it.age <= limite && it.id.value in scesi }
     }
 
     /**

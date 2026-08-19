@@ -39,8 +39,14 @@ enum class ObjectiveKind(val label: String) {
      */
     FAI_CRESCERE_IL_TUO("Porta il tuo giocatore a"),
 
-    /** Far giocare in prima squadra un certo numero di ragazzi cresciuti in Primavera. */
-    LANCIA_DALLA_PRIMAVERA("Lancia dalla Primavera"),
+    /**
+     * Far scendere in campo in prima squadra un certo numero di ragazzi.
+     *
+     * «Ragazzo» e' chi sta sotto l'eta' massima della Primavera scritta nel regolamento, e
+     * «far giocare» vuol dire almeno un minuto: tenerne tre in panchina tutta la stagione
+     * e' esattamente la scorciatoia che questo obiettivo esiste per non pagare.
+     */
+    LANCIA_DALLA_PRIMAVERA("Fai giocare i giovani"),
 }
 
 /** Com'e' finita. */
@@ -98,7 +104,7 @@ data class Objective(
             ObjectiveKind.PORTA_UN_GIOCATORE_A -> "Porta un giocatore a $target di overall"
             ObjectiveKind.FAI_CRESCERE_IL_TUO -> "Porta il tuo giocatore a $target di overall"
             ObjectiveKind.LANCIA_DALLA_PRIMAVERA ->
-                "Fai giocare $target ragazzi della Primavera in prima squadra"
+                "Fai scendere in campo $target giovani in prima squadra"
         }
 
     /** Si puo' decidere prima della fine della stagione? */

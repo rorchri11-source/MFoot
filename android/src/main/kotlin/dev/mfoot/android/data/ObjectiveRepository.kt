@@ -72,6 +72,30 @@ object ObjectiveRepository {
         }
     }
 
+    /**
+     * Chi ha giocato almeno un minuto per questo club.
+     *
+     * ## Perche' «almeno un minuto» e non «e' in rosa»
+     *
+     * Perche' l'obiettivo che la usa chiede di **far giocare** i ragazzi, non di
+     * tesserarli. Tenere tre diciottenni in panchina tutta la stagione e' esattamente la
+     * cosa che l'obiettivo esiste per rendere insufficiente: comprarli costa poco, farli
+     * scendere in campo costa punti, e il premio paga la seconda.
+     *
+     * Torna gli id, non un conteggio: chi chiama ha gia' le eta' in memoria e sa quali
+     * contare.
+     */
+    suspend fun chiHaGiocato(clubId: Long): Set<Long> {
+        val path = "/rest/v1/appearances?select=player_id&club_id=eq.$clubId&minutes=gt.0"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            is ApiResult.Error -> emptySet()
+            is ApiResult.Ok -> JsonNode.parse(esito.value).asList()
+                .map { it["player_id"].long(0) }
+                .toSet()
+        }
+    }
+
     /** Assegna gli obiettivi a tutta la lega in un colpo solo. Solo l'amministratore. */
     suspend fun assign(
         leagueId: Long,
