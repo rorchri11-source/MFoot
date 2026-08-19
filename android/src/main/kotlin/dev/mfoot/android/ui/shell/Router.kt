@@ -88,6 +88,7 @@ fun Router(
     concluse: List<dev.mfoot.android.data.ClosedAuction>,
     concluseLette: Boolean,
     onLoadClosed: () -> Unit,
+    onStaffName: (Long) -> String,
     staff: dev.mfoot.android.app.StaffState,
     onLoadStaff: () -> Unit,
     onMoveStaff: (Long, Long) -> Unit,
@@ -180,6 +181,7 @@ fun Router(
                     state = state,
                     aste = concluse,
                     letto = concluseLette,
+                    nomeStaff = onStaffName,
                     onCarica = onLoadClosed,
                 )
 

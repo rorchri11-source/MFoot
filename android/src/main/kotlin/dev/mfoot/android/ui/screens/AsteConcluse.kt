@@ -48,6 +48,7 @@ fun AsteConcluseScreen(
     state: AppState.Dentro,
     aste: List<ClosedAuction>,
     letto: Boolean,
+    nomeStaff: (Long) -> String,
     onCarica: () -> Unit,
 ) {
     LaunchedEffect(state.lega.league.id) { onCarica() }
@@ -70,16 +71,16 @@ fun AsteConcluseScreen(
 
     LazyColumn(Modifier.fillMaxSize().background(MFootColors.bg)) {
         items(aste, key = { it.id }) { asta ->
-            Asta(state, asta)
+            Asta(state, asta, nomeStaff)
         }
         item { Spacer(Modifier.height(30.dp)) }
     }
 }
 
 @Composable
-private fun Asta(state: AppState.Dentro, asta: ClosedAuction) {
+private fun Asta(state: AppState.Dentro, asta: ClosedAuction, nomeStaff: (Long) -> String) {
     val nome = if (asta.targetType == "staff") {
-        "Membro dello staff #${asta.targetId}"
+        nomeStaff(asta.targetId)
     } else {
         state.lega.players.firstOrNull { it.id.value == asta.targetId }?.fullName
             ?: "Giocatore #${asta.targetId}"

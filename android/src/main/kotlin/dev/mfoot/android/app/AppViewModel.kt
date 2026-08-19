@@ -270,6 +270,11 @@ class AppViewModel : ViewModel() {
                     )
                     ultimaLega = lega
 
+                    // Lo staff serve gia al primo disegno: le aste sullo staff hanno
+                    // bisogno del nome, e caricarlo solo aprendo la sua scheda le
+                    // lasciava senza. Sono un centinaio di righe.
+                    _staff.value = _staff.value.copy(tutti = StaffRepository.all(leagueId))
+
                     // Prima le stime, poi le righe: `righe` le legge, e calcolarle con la
                     // mappa vuota vorrebbe dire mostrare forbici larghe per un istante e
                     // poi vederle cambiare sotto gli occhi.
@@ -680,6 +685,12 @@ class AppViewModel : ViewModel() {
      * che invecchia per conto suo. Se non si trova — un giocatore uscito dalla lega dopo
      * quella partita — resta il numero, che e' meglio di una riga vuota.
      */
+    /** Il nome di un membro dello staff, per le aste che lo riguardano. */
+    fun nomeStaff(id: Long): String =
+        _staff.value.tutti.firstOrNull { it.id == id }
+            ?.let { "${it.shortName} · ${it.roleLabel}" }
+            ?: "Staff #$id"
+
     fun nomeGiocatore(id: Long): String =
         ultimaLega?.players?.firstOrNull { it.id.value == id }?.shortName ?: "#$id"
 
@@ -857,11 +868,15 @@ class AppViewModel : ViewModel() {
         val auctions = (result as? ApiResult.Ok)?.value ?: return emptyList()
         val playerById = rows.associateBy { it.player.id.value }
         val clubById = snapshot.clubs.associateBy { it.id }
+        // Lo staff si legge una volta al caricamento della lega: sono un centinaio di
+        // righe, e senza, le aste sullo staff mostravano «Obiettivo #7».
+        val staffById = _staff.value.tutti.associateBy { it.id }
 
         return auctions.map { auction ->
             AuctionRow(
                 auction = auction,
                 player = if (auction.targetType == "player") playerById[auction.targetId] else null,
+                staff = if (auction.targetType == "staff") staffById[auction.targetId] else null,
                 leaderName = auction.leaderClubId?.let { clubById[it]?.shortName },
             )
         }

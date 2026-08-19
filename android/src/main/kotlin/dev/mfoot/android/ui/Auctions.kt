@@ -139,11 +139,10 @@ private fun AuctionCard(row: AuctionRow, myClubId: Long?, now: Instant, onClick:
             )
             Text(
                 buildString {
-                    row.player?.let {
-                        append(it.player.primaryPosition.short)
-                        append(" · ").append(it.player.overall)
-                        append(" · ")
-                    }
+                    // Funziona per i giocatori e per lo staff: prima mostrava il ruolo e
+                    // l'overall solo se c'era un giocatore, e le aste sullo staff restavano
+                    // senza niente sotto al nome.
+                    row.dettaglio?.let { append(it).append(" · ") }
                     append(row.auction.timeLeft(now))
                     if (row.auction.bidCount > 0) {
                         append(" · ").append(row.auction.bidCount).append(" offerte")
@@ -152,6 +151,33 @@ private fun AuctionCard(row: AuctionRow, myClubId: Long?, now: Instant, onClick:
                 style = MFootType.chip,
                 color = MFootColors.ink3,
             )
+
+            // Chi e' in testa, sempre — non solo quando sei tu.
+            //
+            // Il nome del capofila si calcolava e si mostrava soltanto in fondo alla riga,
+            // sotto il prezzo, dove si legge come una didascalia del numero invece che
+            // come "questa asta la sta vincendo lui". E' l'informazione per cui si apre il
+            // mercato: senza, un'asta e' un prezzo e un orologio.
+            // Quando sei tu in testa lo dice gia il distintivo a destra: ripeterlo qui
+            // sarebbe la stessa informazione due volte sulla stessa riga.
+            if (!leading) {
+                row.leaderName?.let { capofila ->
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "in testa: $capofila",
+                        style = MFootType.chip,
+                        color = MFootColors.gamble,
+                    )
+                }
+            }
+            if (row.leaderName == null && row.auction.bidCount == 0) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "nessuno ha ancora offerto",
+                    style = MFootType.chip,
+                    color = MFootColors.ink3,
+                )
+            }
         }
 
         // Lo stato della propria posizione prima del prezzo: e' la cosa che si cerca
@@ -178,9 +204,6 @@ private fun AuctionCard(row: AuctionRow, myClubId: Long?, now: Instant, onClick:
                 style = MFootType.price,
                 color = MFootColors.ink,
             )
-            row.leaderName?.let {
-                Text(it, style = MFootType.chip, color = MFootColors.ink3)
-            }
         }
     }
 

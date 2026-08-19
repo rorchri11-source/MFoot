@@ -181,6 +181,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         concluse = concluse,
                         concluseLette = conclusePronte,
                         onLoadClosed = viewModel::caricaAsteConcluse,
+                        onStaffName = viewModel::nomeStaff,
                         staff = staff,
                         onLoadStaff = viewModel::caricaStaff,
                         onMoveStaff = viewModel::spostaStaff,

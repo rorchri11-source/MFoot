@@ -75,9 +75,25 @@ enum class RoleFilter(val label: String) {
 data class AuctionRow(
     val auction: AuctionView,
     val player: PlayerRow?,
+    /**
+     * Il membro dello staff all asta, quando l obiettivo non e un giocatore.
+     *
+     * Senza, la riga mostrava «Obiettivo #7»: le AI hanno cominciato ad aprire aste sullo
+     * staff e la schermata sapeva disegnare solo i giocatori, quindi il listino si e
+     * riempito di numeri senza nome.
+     */
+    val staff: dev.mfoot.android.data.StaffMember? = null,
     val leaderName: String?,
 ) {
-    val label: String get() = player?.player?.fullName ?: "Obiettivo #${auction.targetId}"
+    val label: String
+        get() = player?.player?.fullName
+            ?: staff?.let { "${it.shortName} · ${it.roleLabel}" }
+            ?: "Obiettivo #${auction.targetId}"
+
+    /** La riga sotto al nome: chi e, in una riga. */
+    val dettaglio: String?
+        get() = player?.let { "${it.player.primaryPosition.short} · ${it.player.overall}" }
+            ?: staff?.let { "${"★".repeat(it.stars)} · ${it.effetto}" }
 }
 
 /** Cosa si sta guardando della lista: il mercato o una rosa. */
