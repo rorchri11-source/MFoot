@@ -46,6 +46,7 @@ import dev.mfoot.android.ui.PlayerDetailScreen
 import dev.mfoot.android.ui.PlayerListScreen
 import dev.mfoot.android.ui.TableScreen
 import dev.mfoot.android.ui.screens.CalendarioScreen
+import dev.mfoot.android.ui.screens.PartitaScreen
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootMotion
 import dev.mfoot.android.ui.theme.MFootTheme
@@ -97,10 +98,19 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
             is AppState.Guasto -> Guasto(current.motivo, viewModel::avvia)
 
+            is AppState.Partita -> PartitaScreen(
+                state = current.partita,
+                onPausa = viewModel::pausaPartita,
+                onFine = viewModel::saltaAllaFine,
+                onChiudi = viewModel::chiudiPartita,
+                nomeGiocatore = viewModel::nomeGiocatore,
+            )
+
             is AppState.Calendario -> CalendarioScreen(
                 state = current.calendario,
                 onMese = viewModel::sfogliaCalendario,
                 onGiorno = viewModel::scegliGiorno,
+                onPartita = viewModel::apriPartita,
                 onChiudi = viewModel::chiudiCalendario,
             )
 
@@ -108,6 +118,13 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                 state = current.table,
                 onPickCompetition = viewModel::scegliCompetizione,
                 onPickTab = viewModel::cambiaSchedaTabella,
+                onOpenMatch = { m ->
+                    viewModel.apriPartita(
+                        m.id,
+                        current.table.clubName(m.homeClubId),
+                        current.table.clubName(m.awayClubId),
+                    )
+                },
                 onClose = viewModel::chiudiClassifica,
             )
 

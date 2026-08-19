@@ -264,6 +264,9 @@ sealed interface AppState {
     /** Il calendario del mese: la griglia, non l'elenco delle partite di una competizione. */
     data class Calendario(val calendario: CalendarState) : AppState
 
+    /** Una partita gia' giocata, che si rivede minuto per minuto. */
+    data class Partita(val partita: MatchState) : AppState
+
     /** Qualcosa e' andato storto in modo da cui non si esce da soli. */
     data class Guasto(val motivo: String) : AppState
 }

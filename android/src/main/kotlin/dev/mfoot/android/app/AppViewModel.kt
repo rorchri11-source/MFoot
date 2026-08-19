@@ -12,6 +12,7 @@ import dev.mfoot.android.data.ConversationRepository
 import dev.mfoot.android.data.LeagueDeskRepository
 import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
+import dev.mfoot.android.data.MatchRepository
 import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
 import dev.mfoot.android.data.PlayerRepository
@@ -260,6 +261,8 @@ class AppViewModel : ViewModel() {
                             it.copy(divisionLevel = livelli[it.id] ?: 1)
                         },
                     )
+                    ultimaLega = lega
+
                     // Prima le stime, poi le righe: `righe` le legge, e calcolarle con la
                     // mappa vuota vorrebbe dire mostrare forbici larghe per un istante e
                     // poi vederle cambiare sotto gli occhi.
@@ -580,6 +583,106 @@ class AppViewModel : ViewModel() {
     }
 
     fun chiudiCalendario() = ricarica()
+
+    // ------------------------------------------------------------------------- partita
+
+    /**
+     * Apre una partita gia' giocata e la fa ripartire dal primo minuto.
+     *
+     * ## Perche' non si riproduce in tempo reale
+     *
+     * Perche' novanta minuti sono novanta minuti. La partita si e' gia' giocata mentre il
+     * telefono era spento: quello che si vuole rivedere e' **come e' andata**, e sei
+     * minuti di gioco al secondo la raccontano in un quarto d'ora senza saltare niente.
+     * Chi ha fretta preme "salta alla fine" e legge le pagelle.
+     */
+    fun apriPartita(fixtureId: Long, homeName: String, awayName: String) {
+        viewModelScope.launch {
+            _state.value = AppState.Partita(
+                MatchState(homeName = homeName, awayName = awayName, caricamento = true),
+            )
+
+            when (val esito = MatchRepository.load(fixtureId)) {
+                is ApiResult.Error -> _state.value = AppState.Partita(
+                    MatchState(
+                        homeName = homeName,
+                        awayName = awayName,
+                        caricamento = false,
+                        errore = esito.message,
+                    ),
+                )
+
+                is ApiResult.Ok -> {
+                    val conPagelle = esito.value.copy(ratings = MatchRepository.ratings(fixtureId))
+                    _state.value = AppState.Partita(
+                        MatchState(
+                            partita = conPagelle,
+                            homeName = homeName,
+                            awayName = awayName,
+                            caricamento = false,
+                            inCorso = true,
+                        ),
+                    )
+                    riproduci()
+                }
+            }
+        }
+    }
+
+    /**
+     * L'orologio della riproduzione.
+     *
+     * Un ciclo solo, che si ferma da solo quando la partita finisce o quando si esce dalla
+     * schermata. Il controllo su `AppState.Partita` a ogni giro non e' pignoleria: senza,
+     * chiudere la partita a meta' lascerebbe un ciclo acceso che continua a scrivere sullo
+     * stato di una schermata che non esiste piu'.
+     */
+    private fun riproduci() {
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                val corrente = (_state.value as? AppState.Partita)?.partita ?: return@launch
+                if (!corrente.inCorso || corrente.finita) return@launch
+
+                _state.value = AppState.Partita(
+                    corrente.copy(minuto = (corrente.minuto + corrente.velocita).coerceAtMost(90)),
+                )
+            }
+        }
+    }
+
+    fun pausaPartita() {
+        val corrente = (_state.value as? AppState.Partita)?.partita ?: return
+        val ripresa = !corrente.inCorso
+        _state.value = AppState.Partita(corrente.copy(inCorso = ripresa))
+        if (ripresa) riproduci()
+    }
+
+    fun saltaAllaFine() {
+        val corrente = (_state.value as? AppState.Partita)?.partita ?: return
+        _state.value = AppState.Partita(corrente.copy(minuto = 90, inCorso = false))
+    }
+
+    fun chiudiPartita() = ricarica()
+
+    /**
+     * Il nome di un giocatore, per le pagelle.
+     *
+     * Le presenze portano solo l'identificativo: i giocatori veri li ha gia' in mano lo
+     * stato della lega, e mandarli anche da li' vorrebbe dire una seconda copia della rosa
+     * che invecchia per conto suo. Se non si trova — un giocatore uscito dalla lega dopo
+     * quella partita — resta il numero, che e' meglio di una riga vuota.
+     */
+    fun nomeGiocatore(id: Long): String =
+        ultimaLega?.players?.firstOrNull { it.id.value == id }?.shortName ?: "#$id"
+
+    /**
+     * L'ultima lega letta.
+     *
+     * Serve alle schermate che escono da [AppState.Dentro] — il replay di una partita, per
+     * esempio — dove i giocatori servono ancora ma lo stato corrente non li porta piu'.
+     */
+    private var ultimaLega: LeagueSnapshot? = null
 
     /**
      * Le competizioni che non fanno classifica.

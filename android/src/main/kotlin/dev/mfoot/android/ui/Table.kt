@@ -50,6 +50,7 @@ fun TableScreen(
     state: TableState,
     onPickCompetition: (Long) -> Unit,
     onPickTab: (TableTab) -> Unit,
+    onOpenMatch: (MatchRow) -> Unit,
     onClose: () -> Unit,
 ) {
     Column(
@@ -103,7 +104,7 @@ fun TableScreen(
                     MFootColors.ink3,
                 )
 
-            else -> Content(state, view.matches, state.tab)
+            else -> Content(state, view.matches, state.tab, onOpenMatch)
         }
     }
 }
@@ -122,7 +123,12 @@ private fun Center(text: String, color: androidx.compose.ui.graphics.Color) {
 }
 
 @Composable
-private fun Content(state: TableState, matches: List<MatchRow>, tab: TableTab) {
+private fun Content(
+    state: TableState,
+    matches: List<MatchRow>,
+    tab: TableTab,
+    onOpenMatch: (MatchRow) -> Unit,
+) {
     val view = state.view ?: return
 
     LazyColumn(Modifier.fillMaxSize()) {
@@ -156,7 +162,7 @@ private fun Content(state: TableState, matches: List<MatchRow>, tab: TableTab) {
                     }
                 }
                 items(ofRound, key = { it.id }) { match ->
-                    MatchLine(match, state)
+                    MatchLine(match, state, onOpenMatch)
                 }
             }
         }
@@ -248,13 +254,16 @@ private fun TableRow(
 }
 
 @Composable
-private fun MatchLine(match: MatchRow, state: TableState) {
+private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> Unit) {
     val mine = match.homeClubId == state.myClubId || match.awayClubId == state.myClubId
 
     Row(
         Modifier
             .fillMaxWidth()
             .background(if (mine) MFootColors.elite.copy(alpha = 0.05f) else MFootColors.bg)
+            // Solo le giocate si aprono: una partita che deve ancora cominciare non ha
+            // niente da far rivedere.
+            .then(if (match.played) Modifier.clickable { onOpen(match) } else Modifier)
             .padding(horizontal = MFootSpacing.section, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -267,9 +276,13 @@ private fun MatchLine(match: MatchRow, state: TableState) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                state.oraDi(match)?.format(QUANDO) ?: "giornata ${match.matchDay}",
+                if (match.played) {
+                    "tocca per rivederla"
+                } else {
+                    state.oraDi(match)?.format(QUANDO) ?: "giornata ${match.matchDay}"
+                },
                 style = MFootType.chip,
-                color = MFootColors.ink3,
+                color = if (match.played) MFootColors.elite else MFootColors.ink3,
             )
         }
 

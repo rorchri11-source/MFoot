@@ -66,6 +66,7 @@ fun CalendarioScreen(
     state: CalendarState,
     onMese: (Int) -> Unit,
     onGiorno: (LocalDate) -> Unit,
+    onPartita: (Long, String, String) -> Unit,
     onChiudi: () -> Unit,
 ) {
     Column(
@@ -89,7 +90,7 @@ fun CalendarioScreen(
 
         Spacer(Modifier.height(MFootSpacing.section))
         Hairline()
-        Dettaglio(state)
+        Dettaglio(state, onPartita)
 
         Spacer(Modifier.height(20.dp))
         Box(Modifier.padding(horizontal = MFootSpacing.section)) {
@@ -261,7 +262,7 @@ private fun Legenda() {
 }
 
 @Composable
-private fun Dettaglio(state: CalendarState) {
+private fun Dettaglio(state: CalendarState, onPartita: (Long, String, String) -> Unit) {
     val giorno = state.giornoMostrato
     if (giorno == null) {
         Box(Modifier.fillMaxWidth().padding(36.dp), contentAlignment = Alignment.Center) {
@@ -296,13 +297,28 @@ private fun Dettaglio(state: CalendarState) {
         return
     }
 
-    eventi.forEach { evento -> RigaEvento(evento) }
+    eventi.forEach { evento -> RigaEvento(evento, onPartita) }
 }
 
 @Composable
-private fun RigaEvento(evento: CalendarEvent) {
+private fun RigaEvento(evento: CalendarEvent, onPartita: (Long, String, String) -> Unit) {
+    // Le partite giocate si aprono; tutto il resto no. Rendere toccabile una riga che non
+    // porta da nessuna parte e' peggio che lasciarla ferma: si prova una volta, non succede
+    // niente, e da li' in poi non si prova piu' nemmeno su quelle che funzionano.
+    val squadre = evento.title.split(" — ")
+    val apribile = evento.fixtureId != null && squadre.size == 2
+
     Row(
-        Modifier.fillMaxWidth().padding(MFootSpacing.section, 11.dp),
+        Modifier
+            .fillMaxWidth()
+            .then(
+                if (apribile) {
+                    Modifier.clickable { onPartita(evento.fixtureId!!, squadre[0], squadre[1]) }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(MFootSpacing.section, 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(7.dp).background(coloreDi(evento.kind), CircleShape))
@@ -316,10 +332,12 @@ private fun RigaEvento(evento: CalendarEvent) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (evento.detail.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(evento.detail, style = MFootType.chip, color = MFootColors.ink3)
-            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                if (apribile) "${evento.detail} · tocca per rivederla" else evento.detail,
+                style = MFootType.chip,
+                color = if (apribile) MFootColors.elite else MFootColors.ink3,
+            )
         }
 
         Text(

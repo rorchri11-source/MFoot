@@ -25,12 +25,16 @@ data class CalendarEvent(
     val at: LocalDateTime?,
     val title: String,
     val detail: String = "",
+    /** La partita da cui viene, se e una partita gia giocata. */
+    val fixtureId: Long? = null,
     /** Gia' successo: una partita giocata mostra il risultato al posto dell'ora. */
     val done: Boolean = false,
 )
 
 /** Una partita, come la conosce chi disegna il calendario. */
 data class CalendarMatch(
+    /** Serve ad aprirla: una partita giocata si puo rivedere. */
+    val fixtureId: Long = 0,
     val matchDay: Int,
     /** Ora **di lega**: la conversione dal momento vero e' gia' avvenuta. */
     val kickoff: LocalDateTime?,
@@ -114,6 +118,9 @@ object LeagueCalendar {
                     title = "${m.homeName} — ${m.awayName}",
                     detail = if (m.played) m.scoreline else "giornata ${m.matchDay}",
                     done = m.played,
+                    // Solo le giocate: aprire il replay di una partita che non si e'
+                    // ancora giocata mostrerebbe una schermata vuota con dentro un errore.
+                    fixtureId = m.fixtureId.takeIf { m.played && it > 0 },
                 ),
             )
         }

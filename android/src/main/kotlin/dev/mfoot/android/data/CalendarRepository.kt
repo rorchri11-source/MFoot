@@ -72,7 +72,7 @@ object CalendarRepository {
         clubName: (Long) -> String,
         friendlyCompetitions: Set<Long>,
     ): ApiResult<List<CalendarMatch>> {
-        val path = "/rest/v1/fixtures?select=competition_id,home_club_id,away_club_id," +
+        val path = "/rest/v1/fixtures?select=id,competition_id,home_club_id,away_club_id," +
             "match_day,kickoff,played,match_results(home_goals,away_goals)" +
             "&league_id=eq.$leagueId&order=kickoff"
 
@@ -86,6 +86,7 @@ object CalendarRepository {
                     val giocata = row["played"].bool(false)
 
                     CalendarMatch(
+                        fixtureId = row["id"].long(0),
                         matchDay = row["match_day"].int(0),
                         kickoff = LocalDateTime.ofInstant(quando, zone),
                         homeName = clubName(casa),

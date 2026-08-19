@@ -1,7 +1,7 @@
 # MFoot — stato del progetto
 
-**Aggiornato:** 2026-08-18
-**Test:** tutti verdi
+**Aggiornato:** 2026-08-19
+**Test:** 601 verdi, 0 falliti
 **Verificato:** su emulatore Android e su Supabase, non solo nei test
 
 ---
@@ -66,6 +66,10 @@ gradlew :android:assembleDebug
 | 22 | **Calendario** | Griglia mensile con una cella per giorno e i colori degli eventi |
 | 23 | **AI complete** | Propongono scambi, chiedono amichevoli, tengono in ordine la rosa, gestiscono il proprio spogliatoio |
 | 24 | **Mercato che non si ferma** | `AiTurn` in `core` decide l'ordine delle mosse, si vendono i propri all'asta, e `MarketRhythmTest` conta quante aste sono aperte a ogni giro |
+| 25 | **Notifiche** | Il tick consegna su Telegram: le immediate da sole, il resto in un riepilogo al giorno |
+| 26 | **Scouting** | La forbice si stringe coi minuti visti e con gli osservatori. Il conto lo fa il server, il potenziale vero non esce mai |
+| 27 | **Primavera** | Si sposta un giovane dalla scheda, e chi sta li' si allena una volta per giornata |
+| 28 | **La partita** | La timeline salvata si rivede minuto per minuto, con le pagelle dalle presenze |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -115,13 +119,28 @@ il suo overall dipende da quattro attributi invece che da sei.
 
 ## Da fare
 
+### La cosa che manca davvero
+
+**Nessuno ci ha ancora giocato.** Una persona, una lega di prova, un emulatore. Zero
+stagioni complete. Divisioni, promozioni e spareggi sono implementati e testati in `core`,
+e non hanno mai girato fino in fondo su un database vero.
+
+Tutto quello che questo documento dice sul bilanciamento è misurato **in simulazione**.
+Nessuno ha ancora scoperto che alla dodicesima giornata succede una cosa stupida che
+nessuno aveva previsto — e succederà.
+
+Non è un riempitivo. Ogni difetto grosso corretto finora — il mercato bloccato, le promesse
+che si mantenevano da sole, gli orari sbagliati di due ore in tre file diversi — è stato
+trovato perché **qualcuno ha guardato**, non perché una prova ha fallito.
+
 ### Il prossimo blocco, in ordine di valore
 
-1. **Il replay della partita.** La timeline viene salvata intera a database; manca la
-   schermata che la riproduce con l'orologio del telefono.
-2. **Il riepilogo giornaliero.** Il tick accumula le notifiche in `notifications` e
-   nessuno le consegna. È l'unica cosa che il tick *pianifica* e non fa, e da oggi è anche
-   l'unica riga che il registro dichiara "da implementare".
+1. **Giocare una stagione vera, con gli amici.** Prima di costruire altro.
+2. **La finestra dell'intervallo.** `MatchEngine` la simula e la configurazione la prevede,
+   ma la partita si guarda già finita: cambiare formazione al 45' non è ancora possibile.
+3. **Il mercato dello staff.** `start_auction` accetta `target_type = 'staff'` e nessuna
+   schermata lo usa: allenatori, preparatori e osservatori si assegnano solo alla
+   generazione del mondo.
 
 ### Cosa fa e cosa non fa il tick, oggi
 
@@ -142,7 +161,10 @@ il suo overall dipende da quattro attributi invece che da sei.
 | Apertura dei colloqui dai fatti | ✅ |
 | Risposta a scambi, prestiti e amichevoli | ✅ |
 | AI che propongono, rinnovano e svincolano | ✅ |
-| Riepilogo giornaliero | ❌ pianificato, non applicato |
+| Riepilogo giornaliero, su Telegram | ✅ |
+| Notifiche immediate, su Telegram | ✅ |
+| Stime di scouting, dai minuti visti | ✅ |
+| Allenamento della Primavera, una volta per giornata | ✅ |
 
 ### Migrazioni SQL da eseguire
 
@@ -165,6 +187,8 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0013_colloqui.sql` | `conversations` e le funzioni per aprirla e chiuderla |
 | `supabase/migrations/0014_trattative.sql` | Prestiti e amichevoli, `competitions.kind` |
 | `supabase/migrations/0015_vendite.sql` | Vendere i propri giocatori all'asta |
+| `supabase/migrations/0016_scouting.sql` | Le stime che si stringono |
+| `supabase/migrations/0017_primavera.sql` | Spostare un giovane, e la traccia dell'allenamento |
 
 **`0014` va applicata prima di installare l'APK.** Aggiunge una colonna a `competitions`,
 e una colonna nuova dentro una SELECT condivisa non è un'aggiunta: PostgREST rifiuta
