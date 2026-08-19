@@ -79,6 +79,8 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val divisioni by viewModel.divisioni.collectAsStateWithLifecycle()
     val spogliatoio by viewModel.spogliatoio.collectAsStateWithLifecycle()
     val tabella by viewModel.tabella.collectAsStateWithLifecycle()
+    val staff by viewModel.staff.collectAsStateWithLifecycle()
+    val carriera by viewModel.carriera.collectAsStateWithLifecycle()
 
     Box(
         Modifier
@@ -174,6 +176,11 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onFoundClub = viewModel::fondaClub,
                         onSwitchTeam = viewModel::guardaLaPrimavera,
                         onCreateYouth = viewModel::fondaLaPrimavera,
+                        staff = staff,
+                        onLoadStaff = viewModel::caricaStaff,
+                        onMoveStaff = viewModel::spostaStaff,
+                        onAuctionStaff = viewModel::mettiStaffAllAsta,
+                        onSendScout = viewModel::mandaOsservatore,
                         onDismissNotice = viewModel::chiudiAvviso,
                         settings = settings,
                         onConfigChange = viewModel::modificaRegolamento,
@@ -257,6 +264,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     current.browse.selected?.let { row ->
                         PlayerDetailScreen(
                             row = row,
+                            carriera = carriera,
                             // Uno svincolato lo puo' battere chiunque; un tesserato solo
                             // il suo club. La rosa altrui non si tocca — quella si tratta
                             // — ma vendere i propri e' cio' che tiene vivo il mercato dopo

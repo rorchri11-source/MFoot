@@ -24,6 +24,7 @@ import dev.mfoot.android.data.SavedLineup
 import dev.mfoot.android.data.Scouted
 import dev.mfoot.android.data.ScoutingRepository
 import dev.mfoot.android.data.Session
+import dev.mfoot.android.data.StaffRepository
 import dev.mfoot.android.data.SquadRepository
 import dev.mfoot.android.data.Supabase
 import dev.mfoot.android.data.TableRepository
@@ -1229,6 +1230,92 @@ class AppViewModel : ViewModel() {
 
     private fun segno(delta: Int) = if (delta >= 0) "+$delta" else "$delta"
 
+    // -------------------------------------------------------------- staff e osservatori
+
+    private val _staff = MutableStateFlow(StaffState())
+    val staff: StateFlow<StaffState> = _staff
+
+    fun caricaStaff() {
+        val dentro = statoCorrente() ?: return
+        val miei = listOfNotNull(dentro.lega.myClub?.id, dentro.lega.myYouthClub?.id)
+
+        viewModelScope.launch {
+            _staff.value = _staff.value.copy(
+                tutti = StaffRepository.all(dentro.lega.league.id),
+                missioni = StaffRepository.missions(miei),
+                letto = true,
+            )
+        }
+    }
+
+    /** Sposta un membro dello staff fra le proprie due squadre. */
+    fun spostaStaff(staffId: Long, clubId: Long) {
+        viewModelScope.launch {
+            when (val esito = StaffRepository.assign(staffId, clubId)) {
+                is ApiResult.Error -> _staff.value = _staff.value.copy(errore = esito.message)
+                is ApiResult.Ok -> {
+                    _staff.value = _staff.value.copy(errore = null, avviso = "Spostato.")
+                    caricaStaff()
+                }
+            }
+        }
+    }
+
+    /**
+     * Apre l'asta per un membro dello staff libero.
+     *
+     * Passa dalla stessa funzione dei giocatori, che accetta `target_type = 'staff'` dal
+     * primo giorno e non l'aveva mai chiamata nessuno.
+     */
+    fun mettiStaffAllAsta(staffId: Long) {
+        val dentro = statoCorrente() ?: return
+        val membro = _staff.value.tutti.firstOrNull { it.id == staffId } ?: return
+
+        viewModelScope.launch {
+            // Base bassa come per i giocatori: il prezzo lo deve fare l'asta, non chi la
+            // apre. Le stelle contano molto piu' che linearmente, quindi anche la base.
+            val base = 1.coerceAtLeast(membro.stars * membro.stars * 200)
+            val esito = AuctionRepository.startAuction(
+                leagueId = dentro.lega.league.id,
+                targetId = staffId,
+                startingPrice = base,
+                targetType = "staff",
+            )
+
+            when (esito) {
+                is ApiResult.Error -> _staff.value = _staff.value.copy(errore = esito.message)
+                is ApiResult.Ok -> {
+                    _staff.value = _staff.value.copy(
+                        errore = null,
+                        avviso = "${membro.shortName} e' all'asta, base $base.",
+                    )
+                    aggiornaAste()
+                }
+            }
+        }
+    }
+
+    /** Manda un osservatore a cercare in un paese, per un ruolo. */
+    fun mandaOsservatore(staffId: Long, paese: String, ruolo: String) {
+        viewModelScope.launch {
+            _staff.value = _staff.value.copy(busy = "Parte…", errore = null)
+
+            when (val esito = StaffRepository.send(staffId, paese, ruolo)) {
+                is ApiResult.Error ->
+                    _staff.value = _staff.value.copy(busy = null, errore = esito.message)
+
+                is ApiResult.Ok -> {
+                    _staff.value = _staff.value.copy(
+                        busy = null,
+                        errore = null,
+                        avviso = "E' partito per il $paese. Torna quando torna.",
+                    )
+                    caricaStaff()
+                }
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------- primavera
 
     /** Sposta l'interruttore fra prima squadra e Primavera. */
@@ -1798,7 +1885,33 @@ class AppViewModel : ViewModel() {
 
     fun onScope(scope: ListScope) = aggiornaBrowse { it.copy(scope = scope) }
 
-    fun select(row: PlayerRow?) = aggiornaBrowse { it.copy(selected = row) }
+    /** La carriera del giocatore aperto: presenze, gol, media voto. */
+    private val _carriera = MutableStateFlow(dev.mfoot.android.data.Carriera.NESSUNA)
+    val carriera: StateFlow<dev.mfoot.android.data.Carriera> = _carriera
+
+    /**
+     * Apre la scheda di un giocatore, e va a prendergli la storia.
+     *
+     * La carriera si legge **all'apertura** e non insieme alla lega: sono milletrecento
+     * giocatori, e caricare le presenze di tutti per mostrarne una scheda costerebbe piu'
+     * del mondo intero. Si azzera subito, cosi' non si vedono per un istante i numeri del
+     * giocatore precedente.
+     */
+    fun select(row: PlayerRow?) {
+        aggiornaBrowse { it.copy(selected = row) }
+        _carriera.value = dev.mfoot.android.data.Carriera.NESSUNA
+        if (row == null) return
+
+        viewModelScope.launch {
+            val storia = dev.mfoot.android.data.CareerRepository.of(row.player.id.value)
+            // Solo se e' ancora aperto **quel** giocatore: fra la richiesta e la risposta
+            // si puo' averne aperto un altro, e mostrargli i numeri del primo sarebbe
+            // peggio che non mostrarne nessuno.
+            if (statoCorrente()?.browse?.selected?.player?.id == row.player.id) {
+                _carriera.value = storia
+            }
+        }
+    }
 
     fun chiudiAvviso() {
         val dentro = _state.value as? AppState.Dentro ?: return

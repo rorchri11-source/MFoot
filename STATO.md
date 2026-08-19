@@ -1,7 +1,7 @@
 # MFoot — stato del progetto
 
 **Aggiornato:** 2026-08-19
-**Test:** 601 verdi, 0 falliti
+**Test:** 604 verdi, 0 falliti
 **Verificato:** su emulatore Android e su Supabase, non solo nei test
 
 ---
@@ -70,6 +70,9 @@ gradlew :android:assembleDebug
 | 26 | **Scouting** | La forbice si stringe coi minuti visti e con gli osservatori. Il conto lo fa il server, il potenziale vero non esce mai |
 | 27 | **Primavera** | Si sposta un giovane dalla scheda, e chi sta li' si allena una volta per giornata |
 | 28 | **La partita** | La timeline salvata si rivede minuto per minuto, con le pagelle dalle presenze |
+| 29 | **Cinque posti** | Il menu passa da sedici voci piatte a cinque posti con le schede, e un interruttore fra le due squadre |
+| 30 | **Seconda squadra** | `clubs.parent_club_id`: la Primavera e un club vero che gioca un campionato suo |
+| 31 | **Staff e scouting** | Lo staff si vince all asta, gli osservatori vanno in missione, gli under 20 escono dalle aste |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -189,6 +192,8 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0015_vendite.sql` | Vendere i propri giocatori all'asta |
 | `supabase/migrations/0016_scouting.sql` | Le stime che si stringono |
 | `supabase/migrations/0017_primavera.sql` | Spostare un giovane, e la traccia dell'allenamento |
+| `supabase/migrations/0018_seconda_squadra.sql` | La Primavera diventa un club vero |
+| `supabase/migrations/0019_staff_e_scouting.sql` | Staff assegnabile, missioni, under 20 fuori dalle aste |
 
 **`0014` va applicata prima di installare l'APK.** Aggiunge una colonna a `competitions`,
 e una colonna nuova dentro una SELECT condivisa non è un'aggiunta: PostgREST rifiuta

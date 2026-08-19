@@ -57,6 +57,8 @@ import dev.mfoot.android.ui.screens.ScambiScreen
 import dev.mfoot.android.ui.screens.SpogliatoioScreen
 import dev.mfoot.android.ui.screens.RosaScreen
 import dev.mfoot.android.ui.screens.SquadreScreen
+import dev.mfoot.android.ui.screens.StaffScreen
+import dev.mfoot.android.ui.screens.OsservatoriScreen
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -82,6 +84,11 @@ fun Router(
     onFoundClub: () -> Unit,
     onSwitchTeam: (Boolean) -> Unit,
     onCreateYouth: () -> Unit,
+    staff: dev.mfoot.android.app.StaffState,
+    onLoadStaff: () -> Unit,
+    onMoveStaff: (Long, Long) -> Unit,
+    onAuctionStaff: (Long) -> Unit,
+    onSendScout: (Long, String, String) -> Unit,
     onDismissNotice: () -> Unit,
     settings: SettingsEdit,
     onConfigChange: (LeagueConfig) -> Unit,
@@ -139,7 +146,13 @@ fun Router(
                     CampoScreen(state, lineup, onLineupChange, onLineupSave)
                 }
 
-                TabSquadra.STAFF -> DaFare("Staff", "Arriva con le aste dello staff.")
+                TabSquadra.STAFF -> StaffScreen(
+                    state = state,
+                    staff = staff,
+                    onCarica = onLoadStaff,
+                    onSposta = onMoveStaff,
+                    onAsta = onAuctionStaff,
+                )
 
                 TabSquadra.SPOGLIATOIO -> SpogliatoioScreen(
                     state = state,
@@ -180,7 +193,12 @@ fun Router(
                     )
                 }
 
-                TabMercato.OSSERVATORI -> DaFare("Osservatori", "Arriva con le missioni.")
+                TabMercato.OSSERVATORI -> OsservatoriScreen(
+                    state = state,
+                    staff = staff,
+                    onCarica = onLoadStaff,
+                    onManda = onSendScout,
+                )
             }
         }
 

@@ -143,3 +143,75 @@ object MatchRepository {
         }
     }
 }
+
+/** Quanto ha fatto un giocatore, da inizio stagione. */
+data class Carriera(
+    val presenze: Int,
+    val daTitolare: Int,
+    val minuti: Int,
+    val gol: Int,
+    val assist: Int,
+    val gialli: Int,
+    val rossi: Int,
+    val mediaVoto: Double,
+) {
+    val vuota: Boolean get() = presenze == 0
+
+    companion object {
+        val NESSUNA = Carriera(0, 0, 0, 0, 0, 0, 0, 0.0)
+
+        fun da(righe: List<MatchRating>): Carriera {
+            // Solo chi e' sceso in campo: le presenze contengono una riga anche per chi e'
+            // rimasto fuori — serve a sapere da quanto non gioca — e contarla come partita
+            // giocata falserebbe media voto e minuti.
+            val giocate = righe.filter { it.minutes > 0 }
+            if (giocate.isEmpty()) return NESSUNA
+
+            return Carriera(
+                presenze = giocate.size,
+                daTitolare = giocate.count { it.started },
+                minuti = giocate.sumOf { it.minutes },
+                gol = giocate.sumOf { it.goals },
+                assist = giocate.sumOf { it.assists },
+                gialli = giocate.sumOf { it.yellow },
+                rossi = giocate.sumOf { it.red },
+                mediaVoto = giocate.map { it.rating }.average(),
+            )
+        }
+    }
+}
+
+/**
+ * La storia di un giocatore, da `appearances`.
+ *
+ * ## Perche' non c'era
+ *
+ * Perche' fino a ieri non esisteva la tabella: la formazione salvata era una riga per club,
+ * sovrascritta, e di chi avesse giocato la settimana scorsa non restava traccia. Adesso
+ * resta, e la scheda puo' dire "quattordici presenze, media 6,4" invece di soli attributi.
+ */
+object CareerRepository {
+
+    suspend fun of(playerId: Long): Carriera {
+        val path = "/rest/v1/appearances?select=started,minutes,goals,assists,yellow,red," +
+            "rating&player_id=eq.$playerId&limit=200"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            is ApiResult.Error -> Carriera.NESSUNA
+            is ApiResult.Ok -> Carriera.da(
+                JsonNode.parse(esito.value).asList().map { row ->
+                    MatchRating(
+                        playerId = playerId,
+                        started = row["started"].bool(false),
+                        minutes = row["minutes"].int(0),
+                        goals = row["goals"].int(0),
+                        assists = row["assists"].int(0),
+                        yellow = row["yellow"].int(0),
+                        red = row["red"].int(0),
+                        rating = row["rating"].double(0.0),
+                    )
+                },
+            )
+        }
+    }
+}

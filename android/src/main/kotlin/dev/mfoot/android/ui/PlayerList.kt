@@ -248,7 +248,8 @@ private fun PlayerListRow(row: PlayerRow, onClick: () -> Unit) {
             )
             Text(
                 buildString {
-                    append(player.age).append(" anni · ").append(player.nationality)
+                    append(bandiera(player.nationality)).append(" ")
+                        .append(player.age).append(" anni · ").append(player.nationality)
                     row.club?.let { append(" · ").append(it.shortName) }
                 },
                 style = MFootType.chip,

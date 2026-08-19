@@ -61,6 +61,8 @@ import dev.mfoot.core.model.Player
 import dev.mfoot.core.model.PlayerId
 import dev.mfoot.core.model.Position
 import dev.mfoot.core.model.StaffId
+import dev.mfoot.core.rng.DeterministicRandom
+import dev.mfoot.core.rng.MathX
 import dev.mfoot.core.world.PotentialEstimator
 import dev.mfoot.core.model.Trait
 import dev.mfoot.core.tick.TickEffect
@@ -262,6 +264,9 @@ class TickRunner(
         // E chi ha compiuto gli anni sale: e la scadenza che rende la Primavera una
         // scelta invece di un deposito.
         notes += promuoviChiEFuoriEta(league)
+
+        // Gli osservatori tornati dal viaggio.
+        notes += risolviLeMissioni(league, now)
 
         // Lo scouting dopo le partite: i minuti visti sono appena cambiati.
         notes += aggiornaLoScouting(league, dopoUnaPartita = settled != null)
@@ -502,6 +507,262 @@ class TickRunner(
             }
         }
         return out
+    }
+
+    // ------------------------------------------------------------- lo staff dell'AI
+
+    /**
+     * I club del computer si prendono lo staff che avanza, e mandano gli osservatori in giro.
+     *
+     * ## Perche' non passano dalle aste
+     *
+     * Perche' un'AI che si mettesse a competere anche sullo staff raddoppierebbe il rumore
+     * del mercato per una decisione che nessuno vede. Prende quindi solo dal **fondo del
+     * listino** — fino a tre stelle — e i quattro e cinque stelle restano liberi per le
+     * aste, dove la guerra vale la pena di essere fatta.
+     *
+     * ## Perche' devono comunque scoutare
+     *
+     * Perche' gli under 20 si trovano solo cosi'. Senza, gli otto club del computer
+     * starebbero a guardare mentre gli umani si prendono ogni talento del mondo, e in tre
+     * stagioni la lega sarebbe decisa.
+     */
+    private fun staffEMissioniDellAi(league: LeagueRow, clubId: ClubId): Boolean {
+        val mancante = ruoloMancante(clubId)
+        if (mancante != null && assumiDalFondo(league.id, clubId, mancante)) return true
+
+        val osservatore = osservatoreLibero(clubId) ?: return false
+        // Paese e ruolo deterministici sul club e sull osservatore: due AI non partono
+        // mai per lo stesso paese nello stesso momento, e la stessa AI non ci torna due
+        // volte di fila.
+        val rng = DeterministicRandom(
+            league.config.setup.worldSeed * 131L + clubId.value * 17L + osservatore.first,
+        )
+        val paesi = league.config.world.nationalities
+        val paese = paesi[rng.nextInt(paesi.size)]
+        val ruolo = Position.entries[rng.nextInt(Position.entries.size)]
+
+        connection.prepareStatement(
+            """
+            insert into scouting_missions (league_id, club_id, staff_id, country, position, ready_at)
+            values (?, ?, ?, ?, ?, now() + make_interval(hours => ?))
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, clubId.value)
+            st.setLong(3, osservatore.first)
+            st.setString(4, paese)
+            st.setString(5, ruolo.name)
+            st.setInt(6, 8 + (5 - osservatore.second.coerceIn(1, 5)) * 10)
+            st.executeUpdate()
+        }
+        return true
+    }
+
+    /** Un ruolo dello staff che questo club non ha ancora. */
+    private fun ruoloMancante(clubId: ClubId): String? =
+        connection.prepareStatement(
+            """
+            select r.ruolo from (values ('ALLENATORE'),('PREPARATORE'),('OSSERVATORE')) as r(ruolo)
+            where not exists (
+                select 1 from staff s where s.club_id = ? and s.role = r.ruolo
+            )
+            limit 1
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else null }
+        }
+
+    /** Prende il migliore fra i liberi fino a tre stelle, se se lo puo' permettere. */
+    private fun assumiDalFondo(leagueId: Long, clubId: ClubId, ruolo: String): Boolean {
+        val scelto = connection.prepareStatement(
+            """
+            select id, stars from staff
+            where league_id = ? and club_id is null and role = ? and stars <= 3
+            order by stars desc limit 1
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setString(2, ruolo)
+            st.executeQuery().use { rs ->
+                if (rs.next()) rs.getLong("id") to rs.getInt("stars") else null
+            }
+        } ?: return false
+
+        connection.prepareStatement("update staff set club_id = ? where id = ? and club_id is null")
+            .use { st ->
+                st.setLong(1, clubId.value)
+                st.setLong(2, scelto.first)
+                return st.executeUpdate() > 0
+            }
+    }
+
+    /** Un osservatore di questo club che non e' gia' in viaggio. */
+    private fun osservatoreLibero(clubId: ClubId): Pair<Long, Int>? =
+        connection.prepareStatement(
+            """
+            select s.id, s.stars from staff s
+            where s.club_id = ? and s.role = 'OSSERVATORE'
+              and not exists (
+                  select 1 from scouting_missions m
+                  where m.staff_id = s.id and m.status = 'IN_CORSO'
+              )
+            order by s.stars desc limit 1
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, clubId.value)
+            st.executeQuery().use { rs ->
+                if (rs.next()) rs.getLong("id") to rs.getInt("stars") else null
+            }
+        }
+
+    // ------------------------------------------------------------ missioni di scouting
+
+    /**
+     * Gli osservatori tornati dal viaggio.
+     *
+     * ## Perche' il risultato lo decide il tick
+     *
+     * Perche' "trovami un giovane con buon potenziale" e' una domanda sul **potenziale
+     * vero**, che non lascia mai il server. Il database sa soltanto quando la missione
+     * scade; chi la risolve e' questo pezzo, che i valori veri li ha in mano.
+     *
+     * ## Come pescano le stelle
+     *
+     * Non sull'overall: un diciassettenne forte oggi e' un diciassettenne che non
+     * migliorera' molto. Le stelle pescano sul **potenziale**, ed e' per questo che un
+     * cinque stelle riporta uno da 52 che arrivera' a 88 e un una stella uno da 58 che si
+     * ferma a 64. Chi guarda i due elenchi senza sapere le stelle sceglierebbe il secondo.
+     */
+    private fun risolviLeMissioni(league: LeagueRow, now: Instant): List<String> {
+        data class Missione(
+            val id: Long,
+            val clubId: ClubId,
+            val country: String,
+            val position: String,
+            val stars: Int,
+        )
+
+        val scadute = mutableListOf<Missione>()
+        connection.prepareStatement(
+            """
+            select m.id, m.club_id, m.country, m.position, s.stars
+            from scouting_missions m
+            join staff s on s.id = m.staff_id
+            where m.league_id = ? and m.status = 'IN_CORSO' and m.ready_at <= ?
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setTimestamp(2, java.sql.Timestamp.from(now))
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    scadute += Missione(
+                        id = rs.getLong("id"),
+                        clubId = ClubId(rs.getLong("club_id")),
+                        country = rs.getString("country"),
+                        position = rs.getString("position"),
+                        stars = rs.getInt("stars"),
+                    )
+                }
+            }
+        }
+        if (scadute.isEmpty()) return emptyList()
+
+        val note = mutableListOf<String>()
+        for (m in scadute) {
+            val candidati = giovaniLiberi(league.id, m.country, m.position)
+            if (candidati.isEmpty()) {
+                chiudiMissione(m.id, "A_VUOTO", null)
+                notify(
+                    league.id, padreDi(m.clubId),
+                    "L'osservatore torna dal ${m.country} a mani vuote: non c'e' rimasto " +
+                        "nessun ${m.position} sotto i vent'anni.",
+                    kind = "scouting", urgency = "riepilogo",
+                )
+                note += "missione a vuoto in ${m.country}."
+                continue
+            }
+
+            // Quanto in alto pesca, sul potenziale. A cinque stelle il migliore che c'e';
+            // a una, uno a caso fra i peggiori.
+            val ordinati = candidati.sortedByDescending { it.potentialMax }
+            val ampiezza = MathX.lerp(1.0, 0.12, (m.stars - 1) / 4.0)
+            val finestra = StrictMath.round(ordinati.size * ampiezza).toInt().coerceAtLeast(1)
+            val rng = DeterministicRandom(league.config.setup.worldSeed * 61L + m.id)
+            val scelto = ordinati[rng.nextInt(finestra)]
+
+            assignPlayer(league, scelto.id, primaveraDi(m.clubId), price = 0)
+            chiudiMissione(m.id, "CONCLUSA", scelto.id.value)
+
+            notify(
+                league.id, padreDi(m.clubId),
+                "Dal ${m.country}: ${scelto.shortName}, ${scelto.age} anni, " +
+                    "${scelto.primaryPosition.short}. E' in Primavera.",
+                kind = "scouting", urgency = "immediata",
+            )
+            note += "${scelto.shortName} trovato in ${m.country}."
+        }
+        return note
+    }
+
+    /**
+     * Gli under 20 liberi di quel paese e di quel ruolo.
+     *
+     * Sono l'unico modo di prendere un giovane: le aste li rifiutano. Se il paese e' finito
+     * la missione torna a vuoto, ed e' un esito che deve poter succedere — altrimenti "vai
+     * in Brasile" e' una decorazione e la mappa del mondo non conta niente.
+     */
+    private fun giovaniLiberi(leagueId: Long, country: String, position: String): List<Player> {
+        val out = mutableListOf<Player>()
+        connection.prepareStatement(
+            """
+            select p.* from players p
+            left join contracts c on c.player_id = p.id
+            where p.league_id = ? and c.player_id is null and not p.is_custom
+              and p.age < 20 and p.nationality = ? and p.primary_position = ?
+            limit 60
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setString(2, country)
+            st.setString(3, position)
+            st.executeQuery().use { rs -> while (rs.next()) out += readPlayer(rs) }
+        }
+        return out
+    }
+
+    /** Dove finisce chi viene trovato: nella Primavera, fondandola se non c'e'. */
+    private fun primaveraDi(clubId: ClubId): ClubId {
+        val padre = padreDi(clubId)
+        connection.prepareStatement(
+            "select id from clubs where parent_club_id = ?",
+        ).use { st ->
+            st.setLong(1, padre.value)
+            st.executeQuery().use { rs -> if (rs.next()) return ClubId(rs.getLong(1)) }
+        }
+        // Nessuna Primavera: resta in prima squadra. Meglio un giocatore in piu' del
+        // previsto che un giocatore trovato e perso.
+        return padre
+    }
+
+    private fun padreDi(clubId: ClubId): ClubId =
+        connection.prepareStatement("select coalesce(parent_club_id, id) from clubs where id = ?")
+            .use { st ->
+                st.setLong(1, clubId.value)
+                st.executeQuery().use { rs -> if (rs.next()) ClubId(rs.getLong(1)) else clubId }
+            }
+
+    private fun chiudiMissione(id: Long, stato: String, playerId: Long?) {
+        connection.prepareStatement(
+            "update scouting_missions set status = ?, found_player_id = ?, closed_at = now() " +
+                "where id = ?",
+        ).use { st ->
+            st.setString(1, stato)
+            if (playerId == null) st.setNull(2, java.sql.Types.BIGINT) else st.setLong(2, playerId)
+            st.setLong(3, id)
+            st.executeUpdate()
+        }
     }
 
     // ----------------------------------------------------------------------- scouting
@@ -1950,7 +2211,8 @@ class TickRunner(
                 AiMove.METTI_IN_VENDITA -> mettiInVendita(league, state, club, squad)
                 AiMove.GESTISCI_ROSA -> tieniInOrdineLaRosa(league, state, club, squad, today)
                 AiMove.PROPONI_SCAMBIO -> proponiUnoScambio(league, state, club, squad, today)
-                AiMove.CHIEDI_AMICHEVOLE -> chiediUnAmichevole(league, state, club, squad)
+                AiMove.CHIEDI_AMICHEVOLE -> chiediUnAmichevole(league, state, club, squad) ||
+                    staffEMissioniDellAi(league, club.id)
             }
             if (acted) break
         }
@@ -2475,6 +2737,7 @@ class TickRunner(
             select p.* from players p
             left join contracts c on c.player_id = p.id
             where p.league_id = ? and c.player_id is null and not p.is_custom
+              and p.age >= 20
             order by p.overall desc
             limit ?
             """.trimIndent(),

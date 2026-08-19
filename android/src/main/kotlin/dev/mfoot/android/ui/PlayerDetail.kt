@@ -51,6 +51,8 @@ private fun Int.onScale(): Float =
 @Composable
 fun PlayerDetailScreen(
     row: PlayerRow,
+    /** Presenze, gol e media voto. Vuota finche non ha giocato niente. */
+    carriera: dev.mfoot.android.data.Carriera = dev.mfoot.android.data.Carriera.NESSUNA,
     canAuction: Boolean = false,
     /** Vero quando il giocatore e mio: cambia solo la parola sul pulsante, ma cambiarla
      * conta — "metti all asta" e "vendi" sono due gesti diversi. */
@@ -93,6 +95,7 @@ fun PlayerDetailScreen(
                 ) {
                     Header(row)
                     GrowthBand(row)
+                    Carriera(carriera)
                     Attributes(row)
                     Stars(row)
                     Traits(row)
@@ -115,11 +118,10 @@ private fun Header(row: PlayerRow) {
     ) {
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(5.dp)
-                        .background(MFootColors.ink3, RoundedCornerShape(50)),
-                )
+                // La bandiera al posto del pallino grigio. Con lo scouting che manda gli
+                // osservatori in un paese preciso, la nazionalita' smette di essere un
+                // dettaglio anagrafico e diventa il posto da cui uno viene.
+                Text(bandiera(player.nationality), style = MFootType.chip)
                 Spacer(Modifier.width(7.dp))
                 Text(
                     "${player.nationality.uppercase()} · ${player.age} ANNI",
@@ -402,6 +404,52 @@ private fun SectionLabel(text: String) {
                 .height(1.dp)
                 .background(MFootColors.line),
         )
+    }
+}
+
+/**
+ * Presenze, gol, media voto.
+ *
+ * ## Perche non c era
+ *
+ * Perche fino a ieri non esisteva `appearances`: la formazione salvata era una riga per
+ * club, sovrascritta, e di chi avesse giocato la settimana scorsa non restava traccia. Gli
+ * attributi dicono quanto vale; questo dice **cosa ha fatto**, che e la domanda che ci si
+ * fa prima di rinnovargli il contratto.
+ */
+@Composable
+private fun Carriera(carriera: dev.mfoot.android.data.Carriera) {
+    if (carriera.vuota) return
+
+    Column(Modifier.padding(horizontal = MFootSpacing.gutter)) {
+        Spacer(Modifier.height(MFootSpacing.section))
+        SectionLabel("IN CAMPO")
+        Spacer(Modifier.height(MFootSpacing.related))
+
+        Row(Modifier.fillMaxWidth()) {
+            Voce("Presenze", "", Modifier.weight(1f))
+            Voce("Da titolare", "", Modifier.weight(1f))
+            Voce("Minuti", "", Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth()) {
+            Voce("Gol", "", Modifier.weight(1f))
+            Voce("Assist", "", Modifier.weight(1f))
+            Voce("Media voto", voto(carriera.mediaVoto), Modifier.weight(1f))
+        }
+    }
+}
+
+/** Un voto con la virgola, che e come si scrive in italiano. */
+private fun voto(valore: Double): String =
+    (StrictMath.round(valore * 10.0) / 10.0).toString().replace(Char(46), Char(44))
+
+@Composable
+private fun Voce(etichetta: String, valore: String, modifier: Modifier) {
+    Column(modifier) {
+        Text(valore, style = MFootType.value, color = MFootColors.ink)
+        Spacer(Modifier.height(2.dp))
+        Text(etichetta, style = MFootType.label, color = MFootColors.ink3)
     }
 }
 
