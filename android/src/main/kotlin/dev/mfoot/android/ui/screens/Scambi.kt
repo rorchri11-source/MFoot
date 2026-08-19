@@ -363,6 +363,9 @@ private fun Composizione(
     val altro = state.lega.clubs.firstOrNull { it.id == bozza.withClub } ?: return
     val miaRosa = state.lega.squadOf(mio.id)
     val suaRosa = state.lega.squadOf(altro.id)
+    // Il giudizio sull'ora si da' in ora di lega, come quello scritto sotto il selettore:
+    // due orologi diversi produrrebbero un pulsante spento accanto a un «va bene».
+    val vuota = bozza.isEmpty(state.lega.league.config.calendar.timeZone)
 
     Column(Modifier.fillMaxSize().background(MFootColors.bg)) {
         Column(
@@ -448,7 +451,7 @@ private fun Composizione(
 
                 TradeKind.PRESTITO -> Prestito(miaRosa, bozza, onEdit)
 
-                TradeKind.AMICHEVOLE -> Amichevole(bozza, onEdit)
+                TradeKind.AMICHEVOLE -> Amichevole(bozza, state.lega.league.config.calendar.timeZone, onEdit)
             }
 
             // Due righe da scrivere.
@@ -474,10 +477,10 @@ private fun Composizione(
             Row(horizontalArrangement = Arrangement.spacedBy(MFootSpacing.related)) {
                 GhostButton("Annulla", onAnnulla, Modifier.weight(1f))
                 PrimaryButton(
-                    text = scambi.busy ?: if (bozza.isEmpty) "Proposta vuota" else "Manda",
+                    text = scambi.busy ?: if (vuota) "Proposta vuota" else "Manda",
                     onClick = onInvia,
                     modifier = Modifier.weight(1f),
-                    enabled = !bozza.isEmpty && scambi.busy == null,
+                    enabled = !vuota && scambi.busy == null,
                 )
             }
         }
@@ -561,8 +564,15 @@ private fun Prestito(miaRosa: List<Player>, bozza: TradeDraft, onEdit: (TradeDra
  * creazione delle competizioni, cosi' le due schermate non possono dire cose diverse.
  */
 @Composable
-private fun Amichevole(bozza: TradeDraft, onEdit: (TradeDraft) -> Unit) {
-    val adesso = java.time.LocalDateTime.now()
+private fun Amichevole(
+    bozza: TradeDraft,
+    fuso: java.time.ZoneId,
+    onEdit: (TradeDraft) -> Unit,
+) {
+    // «Adesso» in ora di lega, non in ora del telefono: le fasce che si scelgono qui sono
+    // ore di lega, e confrontarle con l'orologio locale vorrebbe dire che la stessa
+    // proposta e' valida da Milano e scaduta da Londra.
+    val adesso = java.time.LocalDateTime.now(fuso)
     val oggi = adesso.toLocalDate()
     var giorniAvanti by remember { mutableStateOf(0L) }
     var oraScritta by remember { mutableStateOf("") }

@@ -334,7 +334,14 @@ private fun Builder(
     // Il caso che si e' visto davvero: una competizione creata alle 18 che partiva "oggi"
     // con la fascia delle 15. La prima giornata nasceva gia' scaduta, il tick la trattava
     // come una partita da recuperare e la giocava subito, con le formazioni di nessuno.
-    val problemi = KickoffRules.problemiDiCalendario(draft.calendar, LocalDateTime.now())
+    //
+    // «Adesso» in **ora di lega**, non in ora del telefono: gli orari scelti qui sono ore
+    // di lega, e confrontarli con l'ora locale di chi guarda vorrebbe dire che lo stesso
+    // calendario e' valido da Milano e scaduto da Londra.
+    val problemi = KickoffRules.problemiDiCalendario(
+        draft.calendar,
+        LocalDateTime.now(draft.calendar.timeZone),
+    )
 
     Spacer(Modifier.height(16.dp))
     problemi.forEach {

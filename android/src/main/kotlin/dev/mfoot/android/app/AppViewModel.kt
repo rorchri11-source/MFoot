@@ -2044,7 +2044,7 @@ class AppViewModel : ViewModel() {
         val dentro = statoCorrente() ?: return
         val mio = dentro.lega.myClub ?: return
         val bozza = _trades.value.bozza ?: return
-        if (bozza.isEmpty) return
+        if (bozza.isEmpty(dentro.lega.league.config.calendar.timeZone)) return
 
         viewModelScope.launch {
             _trades.value = _trades.value.copy(busy = "Mando la proposta…", errore = null)

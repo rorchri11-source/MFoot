@@ -340,24 +340,31 @@ data class TradeDraft(
      */
     val rispondeA: Long? = null,
 ) {
-    val isEmpty: Boolean
-        get() = when (kind) {
-            dev.mfoot.android.data.TradeKind.SCAMBIO ->
-                offered.isEmpty() && wanted.isEmpty() && cash == 0
-            // Un prestito ha senso solo con **un** giocatore: due giocatori con una durata
-            // sola sarebbero due prestiti travestiti da uno, e alla scadenza tornerebbero
-            // insieme anche se nel frattempo uno dei due e' stato girato altrove.
-            dev.mfoot.android.data.TradeKind.PRESTITO -> offered.size != 1
-            // Un'ora gia' passata vale come nessun'ora: il pulsante «invia» resta spento
-            // invece di mandare una proposta che il database rifiuta. Il controllo e' lo
-            // stesso di `propose_friendly`, scritto una volta in `core`.
-            dev.mfoot.android.data.TradeKind.AMICHEVOLE ->
-                friendlyAt == null ||
-                    !dev.mfoot.core.calendar.KickoffRules.isPlayable(
-                        friendlyAt,
-                        java.time.LocalDateTime.now(),
-                    )
-        }
+    /**
+     * Non c'e' niente da mandare.
+     *
+     * [fuso] e' il fuso della lega: le ore delle amichevoli sono **ore di lega**, e
+     * confrontarle con l'orologio del telefono renderebbe la stessa proposta valida da
+     * Milano e scaduta da Londra. Il valore predefinito serve solo a chi non ha la
+     * configurazione sottomano.
+     */
+    fun isEmpty(fuso: java.time.ZoneId = java.time.ZoneId.systemDefault()): Boolean = when (kind) {
+        dev.mfoot.android.data.TradeKind.SCAMBIO ->
+            offered.isEmpty() && wanted.isEmpty() && cash == 0
+        // Un prestito ha senso solo con **un** giocatore: due giocatori con una durata
+        // sola sarebbero due prestiti travestiti da uno, e alla scadenza tornerebbero
+        // insieme anche se nel frattempo uno dei due e' stato girato altrove.
+        dev.mfoot.android.data.TradeKind.PRESTITO -> offered.size != 1
+        // Un'ora gia' passata vale come nessun'ora: il pulsante «manda» resta spento
+        // invece di mandare una proposta che il database rifiuta. Il controllo e' lo
+        // stesso di `propose_friendly`, scritto una volta in `core`.
+        dev.mfoot.android.data.TradeKind.AMICHEVOLE ->
+            friendlyAt == null ||
+                !dev.mfoot.core.calendar.KickoffRules.isPlayable(
+                    friendlyAt,
+                    java.time.LocalDateTime.now(fuso),
+                )
+    }
 }
 
 /**
