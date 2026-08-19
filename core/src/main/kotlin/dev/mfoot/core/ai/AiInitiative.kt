@@ -237,11 +237,26 @@ object AiInitiative {
         ).toInt()
         if (costo > tetto) return false
 
-        // Deve migliorare il ruolo in cui arriva. Un prestito che siede in panchina costa
-        // un affitto e una casella, e non fa vincere niente.
+        // Deve **giocare**, non essere il migliore.
+        //
+        // ## Il difetto che questa riga chiude
+        //
+        // La regola era `player.overall > il migliore che ho in quel ruolo`. Sembrava
+        // sensata e rifiutava quasi tutto: per prestare un centrocampista a un club serviva
+        // che fosse piu' forte del suo titolare, cioe' esattamente il giocatore che nessuno
+        // presta. Chiunque provasse a proporre un prestito si vedeva rispondere di no ogni
+        // volta, e la funzione sembrava rotta invece che severa.
+        //
+        // Un prestito non e' un acquisto: torna indietro, non costa un cartellino, e serve
+        // a **coprire un buco**. La domanda giusta non e' "e' il mio migliore" ma "entra
+        // nei due che schiero in quel ruolo" — titolare o primo cambio.
         val nelRuolo = squad.filter { it.primaryPosition == player.primaryPosition }
-        val daBattere = nelRuolo.maxOfOrNull { it.overall } ?: return true
-        return player.overall > daBattere
+            .map { it.overall }
+            .sortedDescending()
+
+        // Nessuno in quel ruolo: si accetta senza pensarci, e' un buco vero.
+        val secondo = nelRuolo.getOrNull(1) ?: return true
+        return player.overall > secondo
     }
 
     /** Accetta un'amichevole? Le stesse condizioni con cui la chiederebbe. */

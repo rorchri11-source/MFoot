@@ -218,7 +218,7 @@ sealed interface AppState {
          * Dashboard — e con una rotta sola l'unico ritorno possibile sarebbe una scelta
          * fissa, sbagliata meta' delle volte.
          */
-        val stack: List<Route> = listOf(Route.Dashboard),
+        val stack: List<Route> = listOf(Route.Casa),
         val drawerOpen: Boolean = false,
         /** Un messaggio temporaneo in cima, tipo "lega creata". */
         val avviso: String? = null,
@@ -257,9 +257,6 @@ sealed interface AppState {
 
     /** L'admin gestisce le competizioni della lega. */
     data class Competizioni(val competitions: CompetitionsState) : AppState
-
-    /** Classifica e calendario: la schermata che si guarda piu' spesso di tutte. */
-    data class Classifica(val table: TableState) : AppState
 
     /** Il calendario del mese: la griglia, non l'elenco delle partite di una competizione. */
     data class Calendario(val calendario: CalendarState) : AppState

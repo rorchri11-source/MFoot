@@ -283,7 +283,7 @@ class AppViewModel : ViewModel() {
                         // Con la pila di prima se c'era: le rotte con un dato dentro —
                         // la rosa di un club, la scheda di un giocatore — restano valide,
                         // perche' sono gli stessi club e gli stessi giocatori appena riletti.
-                        stack = dovEro ?: listOf(Route.Dashboard),
+                        stack = dovEro ?: listOf(Route.Casa),
                         avviso = avviso,
                     )
                     caricaFormazione(lega)
@@ -457,31 +457,30 @@ class AppViewModel : ViewModel() {
     fun chiudiCompetizioni() = ricarica()
 
     /**
-     * Apre classifica e calendario.
+     * La classifica, dentro il guscio.
      *
-     * La aprono tutti, non solo l'admin: e' la schermata che si guarda piu' spesso, ed e'
-     * quella che fa sembrare la lega un campionato invece di una serie di partite slegate.
-     */
-    /**
-     * Apre classifica e calendario, sulla scheda giusta.
+     * ## Perche non e piu una schermata a se
      *
-     * La scheda arriva da **quale voce e' stata toccata** nella barra in basso. Aprire
-     * sempre la classifica e lasciare che sia l'utente a spostarsi vorrebbe dire che il
-     * tasto "Calendario" mostra la classifica, che e' quello che faceva prima.
+     * Perche apriva a schermo pieno e portava via la barra in basso: dalla classifica non
+     * si poteva andare da nessuna parte se non tornando indietro. E con la classifica come
+     * scheda dentro "Lega", quel comportamento avrebbe reso il posto irraggiungibile — si
+     * toccava Lega e ci si ritrovava fuori dal guscio.
+     *
+     * Adesso e uno stato accanto agli altri, come la scrivania e le trattative, e la
+     * schermata la disegna il Router.
      */
+    private val _tabella = MutableStateFlow(TableState(emptyList(), null))
+    val tabella: StateFlow<TableState> = _tabella
+
     fun apriClassifica(tab: TableTab = TableTab.CLASSIFICA) {
         val dentro = _state.value as? AppState.Dentro ?: return
         val leagueId = dentro.lega.league.id
 
         viewModelScope.launch {
-            _state.value = AppState.Caricamento(
-                if (tab == TableTab.CALENDARIO) "Leggo il calendario…" else "Leggo la classifica…",
-            )
 
             when (val competizioni = CompetitionRepository.list(leagueId)) {
-                is ApiResult.Error -> _state.value = AppState.Classifica(
-                    TableState(emptyList(), null, tab = tab, errore = competizioni.message),
-                )
+                is ApiResult.Error ->
+                    _tabella.value = TableState(emptyList(), null, tab = tab, errore = competizioni.message)
 
                 is ApiResult.Ok -> {
                     // Le amichevoli hanno una competizione loro perche' una partita deve
@@ -500,9 +499,8 @@ class AppViewModel : ViewModel() {
                         tab = tab,
                         zone = dentro.lega.league.config.calendar.timeZone,
                     )
-                    _state.value = AppState.Classifica(
+                    _tabella.value =
                         if (prima == null) base else base.copy(view = caricaTabella(leagueId, prima))
-                    )
                 }
             }
         }
@@ -694,19 +692,17 @@ class AppViewModel : ViewModel() {
     private var competizioniAmichevoli: Set<Long> = emptySet()
 
     fun cambiaSchedaTabella(tab: TableTab) {
-        val schermata = (_state.value as? AppState.Classifica)?.table ?: return
-        _state.value = AppState.Classifica(schermata.copy(tab = tab))
+        _tabella.value = _tabella.value.copy(tab = tab)
     }
 
     fun scegliCompetizione(id: Long) {
-        val schermata = (_state.value as? AppState.Classifica)?.table ?: return
+        val schermata = _tabella.value
         val competizione = schermata.competitions.firstOrNull { it.id == id } ?: return
         val leagueId = Session.leagueId ?: return
 
         viewModelScope.launch {
-            _state.value = AppState.Classifica(
-                schermata.copy(selectedId = id, view = caricaTabella(leagueId, competizione)),
-            )
+            _tabella.value =
+                schermata.copy(selectedId = id, view = caricaTabella(leagueId, competizione))
         }
     }
 
@@ -715,7 +711,6 @@ class AppViewModel : ViewModel() {
         competizione: dev.mfoot.android.data.CompetitionInfo,
     ) = (TableRepository.load(leagueId, competizione) as? ApiResult.Ok)?.value
 
-    fun chiudiClassifica() = ricarica()
 
     /** Comincia una competizione nuova, con tutti i club gia' iscritti. */
     fun nuovaCompetizione() {

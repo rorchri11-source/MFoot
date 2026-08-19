@@ -148,6 +148,56 @@ class AiInitiativeTest {
         assertTrue(AiInitiative.wantsFriendly(stato(aggressivita = 0.9), freschi, config, 5))
     }
 
+    // ------------------------------------------------------------------------ prestiti
+
+    @Test
+    fun `accetta un prestito che entra nei due che schiera`() {
+        // La regola vecchia chiedeva che fosse piu' forte del titolare, cioe' esattamente il
+        // giocatore che nessuno presta: ogni proposta veniva rifiutata e i prestiti
+        // sembravano rotti invece che severi.
+        val squadra = rosa(portieri = 2, difensori = 5, centrocampisti = 5, attaccanti = 4)
+        val nelRuolo = squadra.filter { it.primaryPosition == Position.CC }
+            .map { it.overall }.sortedDescending()
+        val utile = giocatore(900, Position.CC, overall = nelRuolo[1] + 3)
+
+        assertTrue(
+            AiInitiative.answerLoan(
+                stato(), club(crediti = 200_000), squadra, utile,
+                matchDays = 10, feePerMatchDay = 0, config = config,
+            ),
+            "ha rifiutato un giocatore che sarebbe il suo secondo in quel ruolo",
+        )
+    }
+
+    @Test
+    fun `rifiuta chi non giocherebbe comunque`() {
+        val squadra = rosa(portieri = 2, difensori = 5, centrocampisti = 5, attaccanti = 4)
+        val nelRuolo = squadra.filter { it.primaryPosition == Position.CC }
+            .map { it.overall }.sortedDescending()
+        val panchinaro = giocatore(901, Position.CC, overall = nelRuolo.last() - 2)
+
+        assertTrue(
+            !AiInitiative.answerLoan(
+                stato(), club(crediti = 200_000), squadra, panchinaro,
+                matchDays = 10, feePerMatchDay = 0, config = config,
+            ),
+            "un prestito che siede in panchina costa un affitto e una casella",
+        )
+    }
+
+    @Test
+    fun `un ruolo scoperto si accetta senza pensarci`() {
+        val senzaPunte = rosa(portieri = 2, difensori = 6, centrocampisti = 6, attaccanti = 1)
+        val punta = giocatore(902, Position.ATT, overall = 58)
+
+        assertTrue(
+            AiInitiative.answerLoan(
+                stato(), club(crediti = 200_000), senzaPunte, punta,
+                matchDays = 10, feePerMatchDay = 0, config = config,
+            ),
+        )
+    }
+
     // ------------------------------------------------------------------- la propria rosa
 
     @Test

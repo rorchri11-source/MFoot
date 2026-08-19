@@ -51,7 +51,6 @@ fun TableScreen(
     onPickCompetition: (Long) -> Unit,
     onPickTab: (TableTab) -> Unit,
     onOpenMatch: (MatchRow) -> Unit,
-    onClose: () -> Unit,
 ) {
     Column(
         Modifier
@@ -59,14 +58,6 @@ fun TableScreen(
             .background(MFootColors.bg),
     ) {
         Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 12.dp)) {
-            Text(
-                "‹ torna alla lega",
-                style = MFootType.chip,
-                color = MFootColors.ink3,
-                modifier = Modifier.clickable(onClick = onClose).padding(vertical = 4.dp),
-            )
-            Spacer(Modifier.height(12.dp))
-
             if (state.competitions.size > 1) {
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),

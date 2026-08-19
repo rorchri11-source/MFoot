@@ -1,10 +1,15 @@
 package dev.mfoot.android.ui.shell
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
@@ -28,13 +33,19 @@ import dev.mfoot.android.app.ListScope
 import dev.mfoot.android.app.PlayerRow
 import dev.mfoot.android.app.RoleFilter
 import dev.mfoot.android.app.Route
+import dev.mfoot.android.app.TabLega
+import dev.mfoot.android.app.TabMercato
+import dev.mfoot.android.app.TabSquadra
 import dev.mfoot.android.app.SettingsEdit
 import dev.mfoot.android.ui.settings.SettingsIndexScreen
 import dev.mfoot.android.ui.settings.DivisioniAzioni
 import dev.mfoot.android.ui.settings.SettingsScreen
 import dev.mfoot.core.config.LeagueConfig
+import dev.mfoot.android.ui.Chip
+import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.PlayerListScreen
+import dev.mfoot.android.ui.TableScreen
 import dev.mfoot.android.ui.screens.CampoScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
 import dev.mfoot.android.ui.screens.MercatiScreen
@@ -87,6 +98,11 @@ fun Router(
     onAssignDivisions: () -> Unit,
     onCloseSeason: () -> Unit,
     onDismissDivisionNotice: () -> Unit,
+    tabella: dev.mfoot.android.app.TableState,
+    onLoadTable: () -> Unit,
+    onPickCompetition: (Long) -> Unit,
+    onPickTableTab: (dev.mfoot.android.app.TableTab) -> Unit,
+    onOpenMatch: (dev.mfoot.android.data.MatchRow) -> Unit,
     spogliatoio: SpogliatoioState,
     onLoadTalks: () -> Unit,
     onOpenTalk: (Long) -> Unit,
@@ -98,39 +114,86 @@ fun Router(
     onLineupSave: () -> Unit,
 ) {
     when (val route = state.route) {
-        is Route.Dashboard -> DashboardScreen(state, onNavigate, onFoundClub, onDismissNotice)
+        is Route.Casa -> DashboardScreen(state, onNavigate, onFoundClub, onDismissNotice)
 
-        is Route.Squadre -> SquadreScreen(state) { clubId -> onNavigate(Route.Rosa(clubId)) }
+        // I tre posti con le schede. La riga di chip la disegna [Schede], che e' identica
+        // per tutti e tre: e' il chip a cambiare posto, non la schermata a cambiare forma.
+        is Route.Squadra -> Column(Modifier.fillMaxSize()) {
+            Schede(TabSquadra.entries, route.tab) { onNavigate(Route.Squadra(it)) }
+            when (route.tab) {
+                TabSquadra.ROSA -> state.lega.myClub
+                    ?.let { RosaScreen(state, it.id, onSelect) }
+                    ?: SenzaClub()
 
-        // Il mercato e le liste sono la stessa schermata con un ambito diverso: le regole
-        // di ricerca, filtro e riga sono identiche, e duplicarla produrrebbe due liste che
-        // divergono al primo ritocco.
-        is Route.Svincolati -> Lista(state, ListScope.SVINCOLATI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
-        is Route.Listone -> Lista(state, ListScope.TUTTI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
-        is Route.Aste -> Lista(state, ListScope.ASTE, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
+                TabSquadra.CAMPO -> CampoScreen(state, lineup, onLineupChange, onLineupSave)
+
+                TabSquadra.STAFF -> DaFare("Staff", "Arriva con le aste dello staff.")
+
+                TabSquadra.SPOGLIATOIO -> SpogliatoioScreen(
+                    state = state,
+                    spogliatoio = spogliatoio,
+                    onCarica = onLoadTalks,
+                    onApri = onOpenTalk,
+                    onConvoca = onSummon,
+                    onParla = onTalk,
+                    onChiudi = onCloseTalk,
+                )
+
+                TabSquadra.INFERMERIA -> Infermeria(state)
+            }
+        }
+
+        is Route.Mercato -> Column(Modifier.fillMaxSize()) {
+            Schede(TabMercato.entries, route.tab) { onNavigate(Route.Mercato(it)) }
+            when (route.tab) {
+                // Le prime tre sono la stessa schermata con un ambito diverso, ed e'
+                // esattamente cio' che erano gia': tre voci di menu che aprivano lo stesso
+                // composable senza dirlo. Adesso lo dicono.
+                TabMercato.ASTE -> Lista(state, ListScope.ASTE, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
+                TabMercato.SVINCOLATI -> Lista(state, ListScope.SVINCOLATI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
+                TabMercato.LISTONE -> Lista(state, ListScope.TUTTI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
+
+                TabMercato.TRATTATIVE -> {
+                    LaunchedEffect(state.lega.league.id) { onLoadTrades() }
+                    ScambiScreen(
+                        state = state,
+                        scambi = scambi,
+                        onNuovo = onNewTrade,
+                        onEdit = onEditTrade,
+                        onInvia = onSendTrade,
+                        onAnnulla = onCancelTrade,
+                        onRispondi = onRespondTrade,
+                        onRitira = onWithdrawTrade,
+                        onChiudiAvviso = onDismissTradeNotice,
+                    )
+                }
+
+                TabMercato.OSSERVATORI -> DaFare("Osservatori", "Arriva con le missioni.")
+            }
+        }
+
+        is Route.Lega -> Column(Modifier.fillMaxSize()) {
+            Schede(TabLega.entries, route.tab) { onNavigate(Route.Lega(it)) }
+            when (route.tab) {
+                TabLega.CLASSIFICA -> {
+                    LaunchedEffect(state.lega.league.id) { onLoadTable() }
+                    TableScreen(
+                        state = tabella,
+                        onPickCompetition = onPickCompetition,
+                        onPickTab = onPickTableTab,
+                        onOpenMatch = onOpenMatch,
+                    )
+                }
+                TabLega.SQUADRE -> SquadreScreen(state) { clubId -> onNavigate(Route.Rosa(clubId)) }
+            }
+        }
+
+        is Route.Calendario -> DaFare("Calendario", "Si apre da qui a schermo pieno.")
+
         // La rosa **di quel club**, non la propria. Prima la rotta portava con se' il
         // clubId e nessuno lo guardava: toccare una squadra qualsiasi nell'elenco apriva
         // sempre la propria, e sembrava che l'elenco non funzionasse.
         is Route.Rosa -> RosaScreen(state, route.clubId, onSelect)
-
-        is Route.Spogliatoio -> SpogliatoioScreen(
-            state = state,
-            spogliatoio = spogliatoio,
-            onCarica = onLoadTalks,
-            onApri = onOpenTalk,
-            onConvoca = onSummon,
-            onParla = onTalk,
-            onChiudi = onCloseTalk,
-        )
-
-        is Route.Infermeria -> Infermeria(state)
-
-        // Queste tre hanno gia' una schermata propria, aperta a schermo pieno dal
-        // contenitore: qui non devono comparire due volte.
-        is Route.Classifica, is Route.Calendario, is Route.Competizioni ->
-            DaFare(route.label, "Si apre da qui a schermo pieno.")
-
-        is Route.Campo -> CampoScreen(state, lineup, onLineupChange, onLineupSave)
 
         is Route.ProfiloLega -> ProfiloLegaScreen(state)
         is Route.Partecipanti -> {
@@ -170,28 +233,64 @@ fun Router(
             onChange = onConfigChange,
             onSave = onConfigSave,
         )
-        is Route.Scambi -> {
-            LaunchedEffect(state.lega.league.id) { onLoadTrades() }
-            ScambiScreen(
-                state = state,
-                scambi = scambi,
-                onNuovo = onNewTrade,
-                onEdit = onEditTrade,
-                onInvia = onSendTrade,
-                onAnnulla = onCancelTrade,
-                onRispondi = onRespondTrade,
-                onRitira = onWithdrawTrade,
-                onChiudiAvviso = onDismissTradeNotice,
-            )
-        }
-
         is Route.Mercati -> MercatiScreen(state)
+
+        // Rara e da admin: resta a schermo pieno, aperta dal menu.
+        is Route.Competizioni -> DaFare("Competizioni", "Si apre da qui a schermo pieno.")
         is Route.RegistroAdmin -> {
             LaunchedEffect(state.lega.league.id) { onLoadTick() }
             RegistroScreen(desk)
         }
 
         is Route.Giocatore, is Route.Offerta -> Box(Modifier.fillMaxSize())
+    }
+}
+
+/**
+ * La riga di chip in cima a un posto.
+ *
+ * ## Perche' una sola, generica
+ *
+ * Perche' altrimenti diventano tre righe di chip scritte tre volte, e alla quarta schermata
+ * una delle tre ha una spaziatura diversa. Prende un elenco di voci con un'etichetta e
+ * restituisce quella scelta: e' tutto quello che serve, ed e' l'unica cosa che le tre
+ * hanno in comune.
+ *
+ * Scorre in orizzontale perche' cinque chip non ci stanno su un telefono stretto, e
+ * tagliarne uno vorrebbe dire una destinazione che su certi schermi non esiste.
+ */
+@Composable
+private fun <T> Schede(
+    voci: List<T>,
+    scelta: T,
+    etichetta: (T) -> String = { (it as? Enum<*>)?.name.orEmpty() },
+    onScegli: (T) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MFootColors.bg)
+            .horizontalScroll(rememberScrollState())
+            .padding(MFootSpacing.section, 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        voci.forEach { voce ->
+            Chip(etichetta(voce), voce == scelta) { onScegli(voce) }
+        }
+    }
+    Hairline()
+}
+
+@Composable
+private fun SenzaClub() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            "Prima serve un club: fondalo dalla Casa.",
+            style = MFootType.secondary,
+            color = MFootColors.ink3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(40.dp),
+        )
     }
 }
 

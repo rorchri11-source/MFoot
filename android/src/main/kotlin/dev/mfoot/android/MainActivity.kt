@@ -33,6 +33,7 @@ import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AppViewModel
 import dev.mfoot.android.app.DoorMode
 import dev.mfoot.android.app.Route
+import dev.mfoot.android.app.TabLega
 import dev.mfoot.android.app.TableTab
 import dev.mfoot.android.data.Session
 import dev.mfoot.android.ui.shell.Router
@@ -77,6 +78,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val scambi by viewModel.trades.collectAsStateWithLifecycle()
     val divisioni by viewModel.divisioni.collectAsStateWithLifecycle()
     val spogliatoio by viewModel.spogliatoio.collectAsStateWithLifecycle()
+    val tabella by viewModel.tabella.collectAsStateWithLifecycle()
 
     Box(
         Modifier
@@ -114,20 +116,6 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                 onChiudi = viewModel::chiudiCalendario,
             )
 
-            is AppState.Classifica -> TableScreen(
-                state = current.table,
-                onPickCompetition = viewModel::scegliCompetizione,
-                onPickTab = viewModel::cambiaSchedaTabella,
-                onOpenMatch = { m ->
-                    viewModel.apriPartita(
-                        m.id,
-                        current.table.clubName(m.homeClubId),
-                        current.table.clubName(m.awayClubId),
-                    )
-                },
-                onClose = viewModel::chiudiClassifica,
-            )
-
             is AppState.Competizioni -> CompetitionsScreen(
                 state = current.competitions,
                 onNew = viewModel::nuovaCompetizione,
@@ -159,13 +147,16 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     drawerOpen = current.drawerOpen,
                     onToggleDrawer = viewModel::apriChiudiMenu,
                     onNavigate = { route ->
-                        // Classifica, calendario e competizioni hanno gia' una schermata
-                        // intera loro, con caricamenti propri: si aprono da fuori dal
-                        // guscio invece di essere infilate dentro il contenuto.
-                        when (route) {
-                            is Route.Classifica -> viewModel.apriClassifica(TableTab.CLASSIFICA)
-                            is Route.Calendario -> viewModel.apriCalendario()
-                            is Route.Competizioni -> viewModel.apriCompetizioni()
+                        // Classifica, calendario e competizioni hanno una schermata intera
+                        // loro, con caricamenti propri: si aprono da fuori dal guscio
+                        // invece di essere infilate dentro il contenuto.
+                        //
+                        // Le prime due sono schede dentro "Lega", quindi l'intercettazione
+                        // guarda anche quale scheda: toccare il chip Classifica apre la
+                        // schermata piena, toccare Squadre resta dentro il guscio.
+                        when {
+                            route is Route.Calendario -> viewModel.apriCalendario()
+                            route is Route.Competizioni -> viewModel.apriCompetizioni()
                             else -> viewModel.vai(route)
                         }
                     },
@@ -201,6 +192,17 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onAssignDivisions = viewModel::assegnaDivisioni,
                         onCloseSeason = viewModel::chiudiStagione,
                         onDismissDivisionNotice = viewModel::chiudiAvvisoDivisioni,
+                        tabella = tabella,
+                        onLoadTable = { viewModel.apriClassifica() },
+                        onPickCompetition = viewModel::scegliCompetizione,
+                        onPickTableTab = viewModel::cambiaSchedaTabella,
+                        onOpenMatch = { m ->
+                            viewModel.apriPartita(
+                                m.id,
+                                tabella.clubName(m.homeClubId),
+                                tabella.clubName(m.awayClubId),
+                            )
+                        },
                         spogliatoio = spogliatoio,
                         onLoadTalks = viewModel::caricaSpogliatoio,
                         onOpenTalk = viewModel::apriColloquio,

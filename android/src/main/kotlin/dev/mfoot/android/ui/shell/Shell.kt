@@ -172,7 +172,10 @@ private fun TabBar(route: Route, onNavigate: (Route) -> Unit) {
     Hairline()
     Row(Modifier.fillMaxWidth().background(MFootColors.core)) {
         TABS.forEach { tab ->
-            val selected = tab.route == route
+            // Acceso sul **posto**, non sulla scheda: passando da Rosa a Campo si resta
+            // dentro "Squadra", e la barra deve dirlo. Con un confronto secco la voce si
+            // spegnerebbe al primo chip toccato, e sembrerebbe di essere usciti.
+            val selected = tab.route.samePlace(route)
             Column(
                 Modifier
                     .weight(1f)
@@ -199,11 +202,11 @@ private fun TabBar(route: Route, onNavigate: (Route) -> Unit) {
 private data class Tab(val route: Route, val label: String, val glyph: String)
 
 private val TABS = listOf(
-    Tab(Route.Dashboard, "Casa", "⌂"),
-    Tab(Route.Squadre, "Squadre", "⛨"),
+    Tab(Route.Casa, "Casa", "⌂"),
+    Tab(Route.Squadra(), "Squadra", "⛨"),
+    Tab(Route.Mercato(), "Mercato", "⇄"),
     Tab(Route.Calendario, "Calendario", "▦"),
-    Tab(Route.Classifica, "Classifica", "≡"),
-    Tab(Route.Campo, "Campo", "⬢"),
+    Tab(Route.Lega(), "Lega", "≡"),
 )
 
 @Composable
@@ -260,13 +263,7 @@ private fun Drawer(
             Item("Mercati", Route.Mercati, route, onNavigate)
         }
 
-        Section("Gioca")
-        Item("Aste", Route.Aste, route, onNavigate)
-        Item("Scambi", Route.Scambi, route, onNavigate)
-        Item("Svincolati", Route.Svincolati, route, onNavigate)
-        Item("Listone", Route.Listone, route, onNavigate)
-        Item("Spogliatoio", Route.Spogliatoio, route, onNavigate)
-        Item("Infermeria", Route.Infermeria, route, onNavigate)
+        Section("Lega")
         Item("Registro attivita'", Route.RegistroAdmin, route, onNavigate)
 
         Spacer(Modifier.height(24.dp))

@@ -23,6 +23,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.Route
+import dev.mfoot.android.app.TabLega
+import dev.mfoot.android.app.TabMercato
+import dev.mfoot.android.app.TabSquadra
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Notice
 import dev.mfoot.android.ui.PrimaryButton
@@ -139,16 +142,16 @@ fun DashboardScreen(
                 MFootColors.gamble,
             )
             Spacer(Modifier.height(MFootSpacing.related))
-            PrimaryButton(text = "Vai al mercato", onClick = { onNavigate(Route.Svincolati) })
+            PrimaryButton(text = "Vai al mercato", onClick = { onNavigate(Route.Mercato(TabMercato.SVINCOLATI)) })
         }
 
         Spacer(Modifier.height(28.dp))
         Label("Scorciatoie")
         Spacer(Modifier.height(10.dp))
-        Scorciatoia("Schiera la squadra", "Campo, modulo, panchina") { onNavigate(Route.Campo) }
-        Scorciatoia("Aste aperte", "${state.auctions.size} in corso nella lega") { onNavigate(Route.Aste) }
-        Scorciatoia("Classifica", "Punti e calendario") { onNavigate(Route.Classifica) }
-        Scorciatoia("Le altre squadre", "${state.lega.clubs.size} club") { onNavigate(Route.Squadre) }
+        Scorciatoia("Schiera la squadra", "Campo, modulo, panchina") { onNavigate(Route.Squadra(TabSquadra.CAMPO)) }
+        Scorciatoia("Aste aperte", "${state.auctions.size} in corso nella lega") { onNavigate(Route.Mercato(TabMercato.ASTE)) }
+        Scorciatoia("Classifica", "Punti e calendario") { onNavigate(Route.Lega(TabLega.CLASSIFICA)) }
+        Scorciatoia("Le altre squadre", "${state.lega.clubs.size} club") { onNavigate(Route.Lega(TabLega.SQUADRE)) }
 
         Spacer(Modifier.height(30.dp))
     }

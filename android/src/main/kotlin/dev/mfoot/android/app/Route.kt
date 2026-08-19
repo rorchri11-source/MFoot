@@ -18,6 +18,30 @@ enum class SettingsSection(val label: String) {
     CUSTOM("Il tuo giocatore"),
 }
 
+/** Cosa si guarda della propria squadra. */
+enum class TabSquadra(val label: String) {
+    ROSA("Rosa"),
+    CAMPO("Campo"),
+    STAFF("Staff"),
+    SPOGLIATOIO("Spogliatoio"),
+    INFERMERIA("Infermeria"),
+}
+
+/** Cosa si guarda del mercato. */
+enum class TabMercato(val label: String) {
+    ASTE("Aste"),
+    SVINCOLATI("Svincolati"),
+    LISTONE("Listone"),
+    TRATTATIVE("Trattative"),
+    OSSERVATORI("Osservatori"),
+}
+
+/** Cosa si guarda della lega. */
+enum class TabLega(val label: String) {
+    CLASSIFICA("Classifica"),
+    SQUADRE("Squadre"),
+}
+
 /**
  * Dove si e' dentro la lega.
  *
@@ -28,6 +52,19 @@ enum class SettingsSection(val label: String) {
  * piu' che i due siano coerenti — si arriverebbe alla scheda di un giocatore con dentro
  * ancora il giocatore di prima. Qui il dato e' dentro la destinazione: non possono
  * separarsi.
+ *
+ * ## Perche' cinque posti invece di sedici voci
+ *
+ * La versione precedente era un elenco piatto: cinque schede in basso piu' undici voci nel
+ * menu. Quattro di quelle undici — `Aste`, `Svincolati`, `Listone`, `Scambi` — portavano
+ * **allo stesso composable** con un filtro diverso, e nessuna delle quattro lo diceva.
+ *
+ * Adesso sono cinque **posti**, e ognuno risponde a una domanda sola: cosa e' successo,
+ * come sta la mia squadra, cosa c'e' sul mercato, quando gioco, a che punto siamo. Dentro
+ * ogni posto ci sono le stesse schermate di prima, raggiunte con dei chip invece che con
+ * una voce di menu ciascuna.
+ *
+ * Nel menu restano le cose che si fanno due volte a stagione.
  */
 sealed interface Route {
 
@@ -40,24 +77,18 @@ sealed interface Route {
      */
     val label: String
         get() = when (this) {
-            Dashboard -> "Dashboard"
-            Squadre -> "Squadre"
+            Casa -> "Casa"
+            is Squadra -> tab.label
+            is Mercato -> tab.label
             Calendario -> "Calendario"
-            Classifica -> "Classifica"
-            Campo -> "Campo"
+            is Lega -> tab.label
             ProfiloLega -> "Profilo lega"
             Partecipanti -> "Partecipanti"
             Opzioni -> "Regolamento e opzioni"
             is Regolamento -> sezione.label
+            Mercati -> "Finestre di mercato"
             Competizioni -> "Competizioni"
-            Mercati -> "Mercati"
-            Scambi -> "Trattative"
-            Aste -> "Aste"
-            Svincolati -> "Svincolati"
-            Listone -> "Listone"
-            Infermeria -> "Infermeria"
-            Spogliatoio -> "Spogliatoio"
-            RegistroAdmin -> "Registro admin"
+            RegistroAdmin -> "Registro attivita'"
             is Rosa -> "Rosa"
             is Giocatore -> row.player.fullName
             is Offerta -> auction.label
@@ -73,57 +104,69 @@ sealed interface Route {
      */
     val isSetup: Boolean
         get() = this is ProfiloLega || this is Partecipanti || this is Opzioni ||
-            this is Regolamento || this is Competizioni || this is Mercati
+            this is Regolamento || this is Mercati || this is Competizioni
 
     /**
-     * E' una delle cinque voci della barra in basso?
+     * E' uno dei cinque posti della barra in basso?
      *
-     * Le voci della barra sono **destinazioni**, non passi di un percorso: toccarle azzera
-     * la pila invece di impilarsi. Senza questa distinzione, dopo venti tocchi sulla barra
-     * il tasto indietro dovrebbe ripercorrere venti schermate per uscire dall'app.
+     * I posti sono **destinazioni**, non passi di un percorso: toccarli azzera la pila
+     * invece di impilarsi. Senza questa distinzione, dopo venti tocchi sulla barra il tasto
+     * indietro dovrebbe ripercorrere venti schermate per uscire dall'app.
      */
     val isTab: Boolean
-        get() = this is Dashboard || this is Squadre || this is Calendario ||
-            this is Classifica || this is Campo
+        get() = this is Casa || this is Squadra || this is Mercato ||
+            this is Calendario || this is Lega
 
-    // ------------------------------------------------------------------------- tab bar
+    /**
+     * Due rotte sono lo **stesso posto** anche con una scheda diversa.
+     *
+     * Serve alla barra in basso, che deve restare accesa su "Squadra" mentre si passa da
+     * Rosa a Campo. Senza, cambiare chip spegnerebbe la voce della barra e sembrerebbe di
+     * essere usciti da dove si e'.
+     */
+    fun samePlace(other: Route): Boolean = when {
+        this is Squadra && other is Squadra -> true
+        this is Mercato && other is Mercato -> true
+        this is Lega && other is Lega -> true
+        else -> this == other
+    }
 
-    data object Dashboard : Route
-    data object Squadre : Route
+    // ------------------------------------------------------------------- i cinque posti
+
+    data object Casa : Route
+
+    /**
+     * La propria squadra.
+     *
+     * L'interruttore fra prima squadra e Primavera **non e' qui**: e' uno stato, non una
+     * destinazione. Deve restare dov'e' passando da Rosa a Campo, e una rotta che lo
+     * portasse con se' lo farebbe tornare alla prima squadra a ogni chip toccato.
+     */
+    data class Squadra(val tab: TabSquadra = TabSquadra.ROSA) : Route
+
+    data class Mercato(val tab: TabMercato = TabMercato.ASTE) : Route
+
     data object Calendario : Route
-    data object Classifica : Route
-    data object Campo : Route
 
-    // ---------------------------------------------------------------------------- setup
+    data class Lega(val tab: TabLega = TabLega.CLASSIFICA) : Route
+
+    // ------------------------------------------------------------- il menu, per le rare
 
     data object ProfiloLega : Route
     data object Partecipanti : Route
 
     /**
-     * L'elenco delle sei sezioni del regolamento.
+     * L'elenco delle sezioni del regolamento.
      *
-     * Distinto da [Regolamento] di proposito: la voce del drawer apre un elenco, e ogni
-     * riga dell'elenco apre una sezione. Con una sola rotta bisognerebbe scegliere
-     * arbitrariamente una sezione di partenza, e il tasto indietro dall'ultima sezione
-     * riporterebbe fuori dal regolamento invece che all'elenco.
+     * Distinto da [Regolamento] di proposito: la voce del menu apre un elenco, e ogni riga
+     * dell'elenco apre una sezione. Con una sola rotta bisognerebbe scegliere
+     * arbitrariamente una sezione di partenza, e il tasto indietro dall'ultima riporterebbe
+     * fuori dal regolamento invece che all'elenco.
      */
     data object Opzioni : Route
     data class Regolamento(val sezione: SettingsSection) : Route
-    data object Competizioni : Route
     data object Mercati : Route
-
-    // ---------------------------------------------------------------------------- gioca
-
-    data object Aste : Route
-
-    /** Le proposte di scambio: le propone chiunque abbia un club, non solo l.admin. */
-    data object Scambi : Route
-    data object Svincolati : Route
-    data object Listone : Route
-    data object Infermeria : Route
-
-    /** Chi ha qualcosa da dirti, e cosa rispondergli. */
-    data object Spogliatoio : Route
+    data object Competizioni : Route
     data object RegistroAdmin : Route
 
     // ------------------------------------------------------- destinazioni con un dato
