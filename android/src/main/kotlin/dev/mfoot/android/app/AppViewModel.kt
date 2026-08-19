@@ -29,6 +29,7 @@ import dev.mfoot.android.data.Supabase
 import dev.mfoot.android.data.TableRepository
 import dev.mfoot.android.data.SupabaseApi
 import dev.mfoot.android.data.WorldUpload
+import dev.mfoot.android.data.YouthRepository
 import dev.mfoot.core.calendar.ClubFate
 import dev.mfoot.core.calendar.LeagueCalendar
 import dev.mfoot.core.calendar.Division
@@ -241,6 +242,7 @@ class AppViewModel : ViewModel() {
             _state.value = AppState.Caricamento("Leggo la lega…")
 
             val livelli = DivisionRepository.levels(leagueId)
+            val padri = YouthRepository.parents(leagueId)
 
             when (val snapshot = LeagueRepository.snapshot(leagueId)) {
                 is ApiResult.Error -> {
@@ -258,7 +260,10 @@ class AppViewModel : ViewModel() {
                     // dove i club esistono gia.
                     val lega = snapshot.value.copy(
                         clubs = snapshot.value.clubs.map {
-                            it.copy(divisionLevel = livelli[it.id] ?: 1)
+                            it.copy(
+                                divisionLevel = livelli[it.id] ?: 1,
+                                parentClubId = padri[it.id],
+                            )
                         },
                     )
                     ultimaLega = lega
@@ -328,7 +333,9 @@ class AppViewModel : ViewModel() {
                 value = Valuation.estimatedValue(player, estimate, config),
                 club = snapshot.clubOfPlayer[player.id.value]?.let(clubById::get),
                 knowledge = scouted?.knowledge ?: 0,
-                isYouth = player.id.value in snapshot.youth,
+                isYouth = snapshot.clubOfPlayer[player.id.value]
+                    ?.let { id -> snapshot.clubs.firstOrNull { it.id == id }?.parentClubId != null }
+                    ?: false,
             )
         }
     }
@@ -1224,6 +1231,35 @@ class AppViewModel : ViewModel() {
 
     // ---------------------------------------------------------------------- primavera
 
+    /** Sposta l'interruttore fra prima squadra e Primavera. */
+    fun guardaLaPrimavera(si: Boolean) {
+        val dentro = statoCorrente() ?: return
+        _state.value = dentro.copy(guardoLaPrimavera = si)
+    }
+
+    /**
+     * Fonda la seconda squadra.
+     *
+     * Si fonda su richiesta e non alla creazione della lega: chi entra oggi non ha ancora
+     * nemmeno la prima squadra, e generargli una seconda vuota vorrebbe dire una riga in
+     * piu' in ogni classifica per un club che non esiste ancora.
+     */
+    fun fondaLaPrimavera() {
+        val dentro = statoCorrente() ?: return
+        val club = dentro.lega.myClub ?: return
+
+        viewModelScope.launch {
+            when (val esito = YouthRepository.create(club.id)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> Session.leagueId?.let {
+                    carica(it, avviso = "${club.name} Primavera e' iscritta all'ultima divisione.")
+                }
+            }
+        }
+    }
+
     /**
      * Manda un giovane in Primavera, o lo promuove in prima squadra.
      *
@@ -1233,15 +1269,18 @@ class AppViewModel : ViewModel() {
      */
     fun spostaSquadra(row: PlayerRow) {
         val dentro = statoCorrente() ?: return
-        val destinazione = if (row.isYouth) "prima" else "primavera"
+        // Sta in Primavera se il suo club ha un padre. Non serve piu' una colonna `squad`:
+        // la verita' e' il contratto, e il contratto punta a un club vero.
+        val inPrimavera = row.club?.parentClubId != null
+        val promuovi = inPrimavera
 
         viewModelScope.launch {
-            when (val esito = SquadRepository.move(row.player.id.value, destinazione)) {
+            when (val esito = YouthRepository.move(row.player.id.value, promuovi)) {
                 is ApiResult.Error ->
                     _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
 
                 is ApiResult.Ok -> {
-                    val dove = if (destinazione == "primavera") "in Primavera" else "in prima squadra"
+                    val dove = if (promuovi) "in prima squadra" else "in Primavera"
                     Session.leagueId?.let { carica(it, avviso = "${row.player.shortName} $dove.") }
                 }
             }

@@ -219,6 +219,14 @@ sealed interface AppState {
          * fissa, sbagliata meta' delle volte.
          */
         val stack: List<Route> = listOf(Route.Casa),
+        /**
+         * Quale delle due squadre si sta gestendo.
+         *
+         * Uno **stato** e non una rotta: deve restare dov'e' passando da Rosa a Campo. Se
+         * viaggiasse dentro la destinazione, ogni chip toccato riporterebbe alla prima
+         * squadra, e gestire la Primavera sarebbe un continuo tornare indietro.
+         */
+        val guardoLaPrimavera: Boolean = false,
         val drawerOpen: Boolean = false,
         /** Un messaggio temporaneo in cima, tipo "lega creata". */
         val avviso: String? = null,
@@ -226,6 +234,18 @@ sealed interface AppState {
     ) : AppState {
 
         val route: Route get() = stack.last()
+
+        /**
+         * Il club che l'interruttore sta mostrando.
+         *
+         * Ricade sulla prima squadra quando la Primavera non e' stata fondata: chi non ce
+         * l'ha non deve vedere schermate vuote, deve vedere il pulsante per fondarla.
+         */
+        val clubMostrato: ClubInfo?
+            get() = if (guardoLaPrimavera) lega.myYouthClub ?: lega.myClub else lega.myClub
+
+        /** C'e' una seconda squadra fra cui passare? */
+        val haLaPrimavera: Boolean get() = lega.myYouthClub != null
 
         /** C'e' una schermata sotto a cui tornare, o il tasto indietro chiude l'app? */
         val canGoBack: Boolean get() = stack.size > 1 || drawerOpen || bidding != null

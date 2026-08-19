@@ -85,3 +85,68 @@ object DivisionRepository {
         else -> this
     }
 }
+
+/**
+ * Chi e' la Primavera di chi.
+ *
+ * ## Perche' una lettura a parte, come le divisioni
+ *
+ * Per la stessa ragione, imparata nello stesso modo: `parent_club_id` e' una **colonna
+ * nuova**, e una colonna nuova dentro la SELECT principale dei club rende l'app
+ * inservibile su ogni database che non ha ancora la migrazione — PostgREST rifiuta
+ * l'intera query, quindi non si legge piu' la lega, non una schermata.
+ *
+ * Chiesta da sola, al peggio fallisce lei: la lega non ha seconde squadre, che e'
+ * esattamente cio' che era vero prima.
+ */
+object YouthRepository {
+
+    /** Club figlio → club padre. Chi non compare e' una prima squadra. */
+    suspend fun parents(leagueId: Long): Map<Long, Long> {
+        val path = "/rest/v1/clubs?select=id,parent_club_id" +
+            "&league_id=eq.$leagueId&parent_club_id=not.is.null"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            is ApiResult.Error -> emptyMap()
+            is ApiResult.Ok -> JsonNode.parse(esito.value).asList()
+                .associate { it["id"].long(0) to it["parent_club_id"].long(0) }
+        }
+    }
+
+    /** Fonda la seconda squadra. Parte dall'ultima divisione. */
+    suspend fun create(parentClubId: Long): ApiResult<Unit> {
+        val w = JsonWriter(96)
+        w.beginObject()
+        w.field("p_parent", parentClubId)
+        w.endObject()
+
+        return SupabaseApi.rpc("create_youth_club", w.toString()).then(::esito).mapMissing()
+    }
+
+    /** Promuove in prima squadra, o manda giu' in Primavera. */
+    suspend fun move(playerId: Long, promote: Boolean): ApiResult<Unit> {
+        val w = JsonWriter(128)
+        w.beginObject()
+        w.field("p_player_id", playerId)
+        w.field("p_promote", promote)
+        w.endObject()
+
+        return SupabaseApi.rpc("move_between_squads", w.toString()).then(::esito).mapMissing()
+    }
+
+    private fun esito(body: String): ApiResult<Unit> {
+        val node = JsonNode.parse(body).let { if (it.asList().isNotEmpty()) it[0] else it }
+        return if (node["ok"].bool(false)) ApiResult.Ok(Unit)
+        else ApiResult.Error(node["reason"].str("Non si puo' fare."))
+    }
+
+    private fun ApiResult<Unit>.mapMissing(): ApiResult<Unit> = when {
+        this is ApiResult.Error &&
+            listOf("create_youth_club", "move_between_squads").any { message.contains(it) } ->
+            ApiResult.Error(
+                "La seconda squadra ha bisogno della migrazione 0018_seconda_squadra.sql, " +
+                    "che non e' ancora stata applicata a questo database.",
+            )
+        else -> this
+    }
+}

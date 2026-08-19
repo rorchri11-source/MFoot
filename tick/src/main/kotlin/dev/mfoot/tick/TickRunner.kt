@@ -256,8 +256,12 @@ class TickRunner(
         notes += rispondiAiColloqui(league)
 
         // La Primavera si allena una volta per giornata: la colonna `trained_on` sul
-        // contratto e' cio' che impedisce dodici allenamenti l'ora.
+        // contratto e cio che impedisce dodici allenamenti l ora.
         notes += allenaLaPrimavera(league, MatchDay(league.currentMatchDay))
+
+        // E chi ha compiuto gli anni sale: e la scadenza che rende la Primavera una
+        // scelta invece di un deposito.
+        notes += promuoviChiEFuoriEta(league)
 
         // Lo scouting dopo le partite: i minuti visti sono appena cambiati.
         notes += aggiornaLoScouting(league, dopoUnaPartita = settled != null)
@@ -464,7 +468,7 @@ class TickRunner(
 
         connection.prepareStatement(
             "update contracts set trained_on = ? where club_id in " +
-                "(select id from clubs where league_id = ?) and squad = 'primavera'",
+                "(select id from clubs where league_id = ? and parent_club_id is not null)",
         ).use { st ->
             st.setInt(1, oggi.value)
             st.setLong(2, league.id)
@@ -483,10 +487,11 @@ class TickRunner(
         val out = mutableListOf<Pair<Player, ClubId>>()
         connection.prepareStatement(
             """
-            select p.*, c.club_id as squadra
+            select p.*, c.club_id as squadra, cl.parent_club_id as padre
             from players p
             join contracts c on c.player_id = p.id
-            where p.league_id = ? and c.squad = 'primavera'
+            join clubs cl on cl.id = c.club_id
+            where p.league_id = ? and cl.parent_club_id is not null
               and coalesce(c.trained_on, -1) < ?
             """.trimIndent(),
         ).use { st ->
@@ -958,7 +963,7 @@ class TickRunner(
             select p.*, c.club_id as contract_club, c.signed_on, c.expires_on
             from players p
             join contracts c on c.player_id = p.id
-            where p.league_id = ? and c.squad = 'prima'
+            where p.league_id = ?
             """.trimIndent(),
         ).use { st ->
             st.setLong(1, leagueId)
@@ -1531,20 +1536,103 @@ class TickRunner(
 
     private fun squadSize(leagueId: Long, clubId: ClubId): Int =
         connection.prepareStatement(
-            "select count(*) from contracts where league_id = ? and club_id = ? and squad = 'prima'",
+            "select count(*) from contracts where league_id = ? and club_id = ?",
         ).use { st ->
             st.setLong(1, leagueId)
             st.setLong(2, clubId.value)
             st.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
         }
 
+    /**
+     * I club che **trattano**: le prime squadre.
+     *
+     * Le Primavere non propongono scambi ne' chiedono amichevoli. Non hanno un portafoglio
+     * con cui pagare un conguaglio, e una seconda squadra che tratta per conto suo sarebbe
+     * un secondo interlocutore con lo stesso proprietario — cioe' il modo piu' semplice di
+     * spostarsi un giocatore da una tasca all'altra fingendo che sia un mercato.
+     */
     private fun loadClubIds(leagueId: Long): List<ClubId> {
         val out = mutableListOf<ClubId>()
-        connection.prepareStatement("select id from clubs where league_id = ? order by id").use { st ->
+        connection.prepareStatement(
+            "select id from clubs where league_id = ? and parent_club_id is null order by id",
+        ).use { st ->
             st.setLong(1, leagueId)
             st.executeQuery().use { rs -> while (rs.next()) out += ClubId(rs.getLong("id")) }
         }
         return out
+    }
+
+    /**
+     * Chi ha compiuto gli anni sale in prima squadra.
+     *
+     * ## Perche' e' la regola che rende la Primavera una scelta
+     *
+     * Senza, la seconda squadra e' un deposito: ci si mette un ragazzo e ci resta per
+     * sempre, e non c'e' nessun momento in cui bisogna decidere qualcosa. Con la scadenza,
+     * prima o poi ognuno torna indietro e bisogna avergli fatto posto.
+     *
+     * Se la prima squadra e' piena non si promuove d'ufficio — si sfonderebbe un limite che
+     * il resto del gioco fa rispettare — ma si avvisa. La decisione di chi far uscire resta
+     * di chi gioca.
+     */
+    private fun promuoviChiEFuoriEta(league: LeagueRow): List<String> {
+        val limite = league.config.rules.youthMaxAge
+        val note = mutableListOf<String>()
+
+        data class Cresciuto(val playerId: Long, val nome: String, val figlio: Long, val padre: Long)
+
+        val cresciuti = mutableListOf<Cresciuto>()
+        connection.prepareStatement(
+            """
+            select p.id, p.first_name, p.last_name, c.club_id, cl.parent_club_id
+            from contracts c
+            join clubs cl on cl.id = c.club_id
+            join players p on p.id = c.player_id
+            where cl.league_id = ? and cl.parent_club_id is not null and p.age > ?
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setInt(2, limite)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    cresciuti += Cresciuto(
+                        playerId = rs.getLong("id"),
+                        nome = "${rs.getString("first_name").first()}. ${rs.getString("last_name")}",
+                        figlio = rs.getLong("club_id"),
+                        padre = rs.getLong("parent_club_id"),
+                    )
+                }
+            }
+        }
+        if (cresciuti.isEmpty()) return emptyList()
+
+        for (c in cresciuti) {
+            val inPrima = squadSize(league.id, ClubId(c.padre))
+            if (inPrima >= league.config.setup.maxSquadSize) {
+                notify(
+                    league.id, ClubId(c.padre),
+                    "${c.nome} ha superato l'eta' della Primavera, ma la prima squadra e' " +
+                        "piena: liberane una casella.",
+                    kind = "primavera", urgency = "immediata",
+                )
+                continue
+            }
+
+            connection.prepareStatement(
+                "update contracts set club_id = ? where player_id = ?",
+            ).use { st ->
+                st.setLong(1, c.padre)
+                st.setLong(2, c.playerId)
+                st.executeUpdate()
+            }
+            notify(
+                league.id, ClubId(c.padre),
+                "${c.nome} e' cresciuto: e' in prima squadra.",
+                kind = "primavera", urgency = "riepilogo",
+            )
+            note += "${c.nome} promosso dalla Primavera."
+        }
+        return note
     }
 
     // ------------------------------------------------------------------- la partita
@@ -2601,15 +2689,23 @@ class TickRunner(
         val floor = if (economy.negativeBalanceAllowed) "" else "greatest(0, "
         val close = if (economy.negativeBalanceAllowed) "" else ")"
 
+        // Gli stipendi della Primavera li paga il club padre.
+        //
+        // La seconda squadra non ha portafoglio: nasce a zero e non incassa mai. Senza
+        // questo `coalesce(parent_club_id, id)` i suoi giocatori non costerebbero niente a
+        // nessuno, e riempirla di ragazzi sarebbe gratis — che e' il modo piu' rapido di
+        // svuotare di senso un settore giovanile.
         connection.prepareStatement(
             """
             update clubs c
             set credits = ${floor}c.credits - coalesce((
                 select sum(greatest(1, round(p.overall * p.overall * ?)))
-                from contracts ct join players p on p.id = ct.player_id
-                where ct.club_id = c.id
+                from contracts ct
+                join players p on p.id = ct.player_id
+                join clubs pagante on pagante.id = ct.club_id
+                where coalesce(pagante.parent_club_id, pagante.id) = c.id
             ), 0)$close
-            where c.league_id = ?
+            where c.league_id = ? and c.parent_club_id is null
             """.trimIndent(),
         ).use { st ->
             st.setDouble(1, economy.wageFactor)
@@ -3001,7 +3097,7 @@ class TickRunner(
             """
             select p.* from players p
             join contracts c on c.player_id = p.id
-            where c.club_id = ? and p.league_id = ? and c.squad = 'prima'
+            where c.club_id = ? and p.league_id = ?
             """.trimIndent(),
         ).use { st ->
             st.setLong(1, clubId.value)

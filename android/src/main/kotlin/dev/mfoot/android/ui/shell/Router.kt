@@ -1,6 +1,7 @@
 package dev.mfoot.android.ui.shell
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +58,7 @@ import dev.mfoot.android.ui.screens.SpogliatoioScreen
 import dev.mfoot.android.ui.screens.RosaScreen
 import dev.mfoot.android.ui.screens.SquadreScreen
 import dev.mfoot.android.ui.theme.MFootColors
+import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 
@@ -78,6 +80,8 @@ fun Router(
     onOpenBid: (AuctionRow) -> Unit,
     onRefreshAuctions: () -> Unit,
     onFoundClub: () -> Unit,
+    onSwitchTeam: (Boolean) -> Unit,
+    onCreateYouth: () -> Unit,
     onDismissNotice: () -> Unit,
     settings: SettingsEdit,
     onConfigChange: (LeagueConfig) -> Unit,
@@ -119,13 +123,21 @@ fun Router(
         // I tre posti con le schede. La riga di chip la disegna [Schede], che e' identica
         // per tutti e tre: e' il chip a cambiare posto, non la schermata a cambiare forma.
         is Route.Squadra -> Column(Modifier.fillMaxSize()) {
+            Interruttore(state, onSwitchTeam, onCreateYouth)
             Schede(TabSquadra.entries, route.tab) { onNavigate(Route.Squadra(it)) }
             when (route.tab) {
-                TabSquadra.ROSA -> state.lega.myClub
+                TabSquadra.ROSA -> state.clubMostrato
                     ?.let { RosaScreen(state, it.id, onSelect) }
                     ?: SenzaClub()
 
-                TabSquadra.CAMPO -> CampoScreen(state, lineup, onLineupChange, onLineupSave)
+                // Il campo resta quello della prima squadra finche' la Primavera non ha
+                // una formazione sua: schierare undici ragazzi con l'editor della prima
+                // squadra scriverebbe sulla riga sbagliata di `lineups`.
+                TabSquadra.CAMPO -> if (state.guardoLaPrimavera) {
+                    DaFare("Campo della Primavera", "La schiera il computer, per adesso.")
+                } else {
+                    CampoScreen(state, lineup, onLineupChange, onLineupSave)
+                }
 
                 TabSquadra.STAFF -> DaFare("Staff", "Arriva con le aste dello staff.")
 
@@ -277,6 +289,63 @@ private fun <T> Schede(
         voci.forEach { voce ->
             Chip(etichetta(voce), voce == scelta) { onScegli(voce) }
         }
+    }
+    Hairline()
+}
+
+/**
+ * L'interruttore fra prima squadra e Primavera.
+ *
+ * ## Perche' un interruttore e non due voci di menu
+ *
+ * Perche' con due voci per ogni schermata — rosa prima, rosa Primavera, campo prima, campo
+ * Primavera — la navigazione raddoppia, e ogni schermata nuova aggiungerebbe due righe
+ * invece di una. Cosi' invece si gestiscono due squadre con le stesse cinque schermate.
+ *
+ * Sta **sopra** i chip e non fra di essi perche' non e' una destinazione: e' il contesto in
+ * cui si leggono tutte le destinazioni sotto. Mescolarlo ai chip lo farebbe sembrare una
+ * sesta scheda.
+ *
+ * Chi non ha ancora la Primavera vede al suo posto il pulsante per fondarla, che e' la cosa
+ * che vuole in quel momento — non una linguetta spenta che non spiega niente.
+ */
+@Composable
+private fun Interruttore(
+    state: AppState.Dentro,
+    onSwitchTeam: (Boolean) -> Unit,
+    onCreateYouth: () -> Unit,
+) {
+    if (state.lega.myClub == null) return
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MFootColors.core)
+            .padding(MFootSpacing.section, 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (!state.haLaPrimavera) {
+            Text(
+                "Prima squadra",
+                style = MFootType.rowTitle,
+                color = MFootColors.ink,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Fonda la Primavera",
+                style = MFootType.chip,
+                color = MFootColors.bg,
+                modifier = Modifier
+                    .background(MFootColors.elite, MFootShapes.pill)
+                    .clickable(onClick = onCreateYouth)
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            )
+            return@Row
+        }
+
+        Chip("Prima squadra", !state.guardoLaPrimavera) { onSwitchTeam(false) }
+        Chip("Primavera", state.guardoLaPrimavera) { onSwitchTeam(true) }
     }
     Hairline()
 }

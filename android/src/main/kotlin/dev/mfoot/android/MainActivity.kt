@@ -172,6 +172,8 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onOpenBid = viewModel::apriOfferta,
                         onRefreshAuctions = { viewModel.aggiornaAste() },
                         onFoundClub = viewModel::fondaClub,
+                        onSwitchTeam = viewModel::guardaLaPrimavera,
+                        onCreateYouth = viewModel::fondaLaPrimavera,
                         onDismissNotice = viewModel::chiudiAvviso,
                         settings = settings,
                         onConfigChange = viewModel::modificaRegolamento,
@@ -266,8 +268,11 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                             // Il pulsante compare solo dove ha senso: sui propri, e solo
                             // se l'eta' lo consente. Mostrarlo su chiunque vorrebbe dire
                             // farlo premere per scoprire da un errore che non si poteva.
+                            // Il pulsante compare solo dove ha senso: sui propri, e solo
+                            // se c e una Primavera dove mandarlo e l eta lo consente.
                             youthAction = when {
                                 row.club?.isMine != true -> null
+                                !current.haLaPrimavera -> null
                                 row.isYouth -> "In prima squadra"
                                 row.player.age <= current.lega.league.config.rules.youthMaxAge ->
                                     "In Primavera"

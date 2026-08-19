@@ -64,6 +64,13 @@ data class ClubInfo(
     val crest: Crest = Crest.DEFAULT,
     /** In quale divisione gioca. 1 e' la massima; con una sola divisione vale sempre 1. */
     val divisionLevel: Int = 1,
+    /**
+     * Il club di cui questa e la Primavera, se lo e.
+     *
+     * Null significa prima squadra. E la colonna che rende la seconda squadra un club vero
+     * invece di un magazzino dentro una rosa sola.
+     */
+    val parentClubId: Long? = null,
 ) {
     /** Quello che si puo' davvero spendere: i crediti impegnati nelle aste sono gia' via. */
     val available: Int get() = credits - committedCredits
@@ -79,7 +86,18 @@ data class LeagueSnapshot(
     /** Chi sta in Primavera: si allena, non gioca, e non conta per la prima squadra. */
     val youth: Set<Long> = emptySet(),
 ) {
-    val myClub: ClubInfo? get() = clubs.firstOrNull { it.isMine }
+    /**
+     * La propria prima squadra.
+     *
+     * Con la Primavera i club propri sono due, e "il primo che risulta mio" darebbe una
+     * risposta diversa a ogni caricamento a seconda di come il database ha ordinato le
+     * righe. La prima squadra e quella senza padre.
+     */
+    val myClub: ClubInfo? get() = clubs.firstOrNull { it.isMine && it.parentClubId == null }
+
+    /** La propria Primavera, se e stata fondata. */
+    val myYouthClub: ClubInfo?
+        get() = myClub?.let { prima -> clubs.firstOrNull { it.parentClubId == prima.id } }
 
     fun freeAgents(): List<Player> = players.filter { it.id.value !in clubOfPlayer }
 
