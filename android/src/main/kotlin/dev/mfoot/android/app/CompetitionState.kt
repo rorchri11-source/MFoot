@@ -295,7 +295,15 @@ data class TradeDraft(
             // sola sarebbero due prestiti travestiti da uno, e alla scadenza tornerebbero
             // insieme anche se nel frattempo uno dei due e' stato girato altrove.
             dev.mfoot.android.data.TradeKind.PRESTITO -> offered.size != 1
-            dev.mfoot.android.data.TradeKind.AMICHEVOLE -> friendlyAt == null
+            // Un'ora gia' passata vale come nessun'ora: il pulsante «invia» resta spento
+            // invece di mandare una proposta che il database rifiuta. Il controllo e' lo
+            // stesso di `propose_friendly`, scritto una volta in `core`.
+            dev.mfoot.android.data.TradeKind.AMICHEVOLE ->
+                friendlyAt == null ||
+                    !dev.mfoot.core.calendar.KickoffRules.isPlayable(
+                        friendlyAt,
+                        java.time.LocalDateTime.now(),
+                    )
         }
 }
 

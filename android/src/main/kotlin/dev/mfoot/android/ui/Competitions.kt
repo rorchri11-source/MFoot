@@ -18,8 +18,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.CompetitionDraft
@@ -29,7 +34,9 @@ import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.core.calendar.CompetitionType
+import dev.mfoot.core.calendar.KickoffRules
 import java.time.DayOfWeek
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -317,38 +324,140 @@ private fun Builder(
     }
 
     Spacer(Modifier.height(18.dp))
-    Label("Orari di inizio")
-    Spacer(Modifier.height(8.dp))
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        ORARI.forEach { ora ->
-            val attivo = ora in draft.kickoffSlots
-            Chip(ora.toString(), attivo) {
-                onEdit {
-                    val nuovi = if (attivo) it.kickoffSlots - ora else (it.kickoffSlots + ora).sorted()
-                    // Almeno un orario, o non esiste nessuna fascia in cui giocare e il
-                    // risolutore restituirebbe un calendario vuoto senza spiegare perche'.
-                    it.copy(kickoffSlots = nuovi.ifEmpty { listOf(ora) })
-                }
-            }
-        }
-    }
+    Orari(draft, onEdit)
 
     Spacer(Modifier.height(28.dp))
     Preview(draft)
 
-    Spacer(Modifier.height(20.dp))
+    // Cosa non torna nelle date, prima di scrivere il calendario e non dopo.
+    //
+    // Il caso che si e' visto davvero: una competizione creata alle 18 che partiva "oggi"
+    // con la fascia delle 15. La prima giornata nasceva gia' scaduta, il tick la trattava
+    // come una partita da recuperare e la giocava subito, con le formazioni di nessuno.
+    val problemi = KickoffRules.problemiDiCalendario(draft.calendar, LocalDateTime.now())
+
+    Spacer(Modifier.height(16.dp))
+    problemi.forEach {
+        Notice(it, MFootColors.gamble)
+        Spacer(Modifier.height(8.dp))
+    }
+
     draft.busy?.let { Notice(it, MFootColors.ink2); Spacer(Modifier.height(10.dp)) }
     draft.errore?.let { Notice(it, MFootColors.gamble); Spacer(Modifier.height(10.dp)) }
 
     PrimaryButton(
         text = "Crea e scrivi il calendario",
         onClick = onCreate,
-        enabled = draft.ready && draft.busy == null,
+        enabled = draft.ready && draft.busy == null && problemi.isEmpty(),
     )
     Spacer(Modifier.height(30.dp))
+}
+
+/**
+ * Gli orari di inizio: i soliti da toccare, e qualunque altro da scrivere.
+ *
+ * ## Perche' non bastavano sei orari fissi
+ *
+ * Perche' erano sei orari *di qualcun altro*. 12:30, 15:00, 18:30, 20:45, 21:00, 22:30
+ * sono le fasce della Serie A, e una lega di amici gioca quando i suoi amici sono liberi:
+ * alle 14 in pausa pranzo, alle 23 quando i figli dormono, alle 10 di domenica. Un elenco
+ * chiuso non e' una semplificazione, e' una regola inventata che nessuno ha chiesto.
+ *
+ * I sei restano come scorciatoia — sono comodi e coprono il caso normale — ma accanto c'e'
+ * un campo in cui si scrive l'ora che si vuole.
+ */
+@Composable
+private fun Orari(draft: CompetitionDraft, onEdit: ((CompetitionDraft) -> CompetitionDraft) -> Unit) {
+    var scritto by remember { mutableStateOf("") }
+
+    Label("Orari di inizio")
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Ora della lega. Una giornata puo' avere piu' fasce: il calendario le usa in ordine.",
+        style = MFootType.chip,
+        color = MFootColors.ink3,
+    )
+    Spacer(Modifier.height(8.dp))
+
+    // Prima quelli scelti, che sono la risposta alla domanda "a che ora si gioca".
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        draft.kickoffSlots.forEach { ora ->
+            Chip("${testo(ora)} ✕", true) {
+                onEdit {
+                    // Almeno un orario, o non esiste nessuna fascia in cui giocare e il
+                    // risolutore restituirebbe un calendario vuoto senza spiegare perche'.
+                    val nuovi = it.kickoffSlots - ora
+                    it.copy(kickoffSlots = nuovi.ifEmpty { it.kickoffSlots })
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(10.dp))
+    Text("Da aggiungere con un tocco", style = MFootType.chip, color = MFootColors.ink3)
+    Spacer(Modifier.height(6.dp))
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ORARI.filterNot { it in draft.kickoffSlots }.forEach { ora ->
+            Chip(testo(ora), false) {
+                onEdit { it.copy(kickoffSlots = (it.kickoffSlots + ora).sorted()) }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) {
+            MFootField(
+                value = scritto,
+                onValueChange = { testo ->
+                    scritto = testo.filter { it.isDigit() || it == ':' }.take(5)
+                },
+                placeholder = "es. 14:30",
+                label = "Un altro orario",
+                imeAction = ImeAction.Done,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        val letto = leggiOra(scritto)
+        Chip(if (letto != null) "aggiungi" else "hh:mm", letto != null) {
+            if (letto != null) {
+                onEdit { it.copy(kickoffSlots = (it.kickoffSlots + letto).distinct().sorted()) }
+                scritto = ""
+            }
+        }
+    }
+}
+
+/** `18:30`, sempre a due cifre: `18:5` accanto a `21:00` si legge come un refuso. */
+private fun testo(ora: LocalTime): String = "%02d:%02d".format(ora.hour, ora.minute)
+
+/**
+ * Da quello che si scrive a un orario, o null.
+ *
+ * Accetta `21`, `21:0`, `21:00`, `2100`: chi digita in fretta scrive in tutti e quattro i
+ * modi, e rifiutarne tre vuol dire un orario che non viene aggiunto e un campo che sembra
+ * rotto.
+ */
+private fun leggiOra(testo: String): LocalTime? {
+    val pulito = testo.trim().removeSuffix(":")
+    if (pulito.isEmpty()) return null
+
+    val (h, m) = when {
+        ':' in pulito -> pulito.substringBefore(':') to pulito.substringAfter(':').ifEmpty { "0" }
+        pulito.length <= 2 -> pulito to "0"
+        else -> pulito.dropLast(2) to pulito.takeLast(2)
+    }
+
+    val ore = h.toIntOrNull() ?: return null
+    val minuti = m.toIntOrNull() ?: return null
+    if (ore !in 0..23 || minuti !in 0..59) return null
+    return LocalTime.of(ore, minuti)
 }
 
 /**

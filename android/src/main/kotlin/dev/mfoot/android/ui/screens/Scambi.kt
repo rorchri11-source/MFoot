@@ -19,8 +19,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +47,7 @@ import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
+import dev.mfoot.core.calendar.KickoffRules
 import dev.mfoot.core.model.Money
 import dev.mfoot.core.model.Player
 import java.time.format.DateTimeFormatter
@@ -536,17 +542,30 @@ private fun Prestito(miaRosa: List<Player>, bozza: TradeDraft, onEdit: (TradeDra
 }
 
 /**
- * Il modulo dell'amichevole.
+ * Il modulo dell'amichevole: quando, davvero quando.
  *
- * ## Perche' si sceglie fra pochi orari e non con un calendario
+ * ## Cosa c'era prima, e perche' non bastava
  *
- * Perche' un selettore di data e ora completo, su questa schermata, servirebbe a fissare
- * partite fra tre mesi che nessuno giochera'. Un'amichevole si combina per stasera o per
- * domani: sono sei tocchi contro venti.
+ * Nove pulsanti: oggi/domani/dopodomani per le 15, le 18 e le 21. L'argomento era che un
+ * selettore completo serve a fissare partite fra tre mesi che nessuno giochera'.
+ * L'argomento vale per la **data**, non per l'ora: le tre ore erano scelte a caso, e chi
+ * voleva giocare alle 22:30 non aveva modo di chiederlo.
+ *
+ * Peggio: «oggi alle 15» restava toccabile anche alle 18. La proposta partiva, il database
+ * la rifiutava — perche' `propose_friendly` controlla `p_kickoff <= now()` — e l'unico
+ * segnale era un messaggio d'errore dopo il fatto. Un pulsante che si puo' premere e che da'
+ * sempre errore insegna a non fidarsi di nessun pulsante.
+ *
+ * Adesso: la data si sceglie fino a due settimane avanti, l'ora si scrive, e cio' che e'
+ * gia' passato **si vede spento**. Il controllo e' [KickoffRules], lo stesso che usa la
+ * creazione delle competizioni, cosi' le due schermate non possono dire cose diverse.
  */
 @Composable
 private fun Amichevole(bozza: TradeDraft, onEdit: (TradeDraft) -> Unit) {
-    val oggi = java.time.LocalDate.now()
+    val adesso = java.time.LocalDateTime.now()
+    val oggi = adesso.toLocalDate()
+    var giorniAvanti by remember { mutableStateOf(0L) }
+    var oraScritta by remember { mutableStateOf("") }
 
     Spacer(Modifier.height(MFootSpacing.section))
     Label("Quando")
@@ -559,22 +578,121 @@ private fun Amichevole(bozza: TradeDraft, onEdit: (TradeDraft) -> Unit) {
     )
     Spacer(Modifier.height(9.dp))
 
-    listOf(0L to "Oggi", 1L to "Domani", 2L to "Dopodomani").forEach { (giorni, etichetta) ->
-        Row(Modifier.padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                etichetta,
-                style = MFootType.label,
-                color = MFootColors.ink3,
-                modifier = Modifier.width(84.dp).padding(top = 8.dp),
-            )
-            listOf(15, 18, 21).forEach { ora ->
-                val quando = oggi.plusDays(giorni).atTime(ora, 0)
-                Chip("$ora:00", bozza.friendlyAt == quando) {
-                    onEdit(bozza.copy(friendlyAt = quando))
-                }
+    // Il giorno.
+    val giornoScelto = bozza.friendlyAt?.toLocalDate() ?: oggi.plusDays(giorniAvanti)
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        (0L..13L).forEach { giorni ->
+            val giorno = oggi.plusDays(giorni)
+            val etichetta = when (giorni) {
+                0L -> "Oggi"
+                1L -> "Domani"
+                else -> "%02d/%02d".format(giorno.dayOfMonth, giorno.monthValue)
+            }
+            Chip(etichetta, giorno == giornoScelto) {
+                giorniAvanti = giorni
+                // Cambiando giorno l'ora resta: chi sposta l'appuntamento da stasera a
+                // domani sera vuole ancora "sera", non ricominciare da capo.
+                val ora = bozza.friendlyAt?.toLocalTime()
+                onEdit(bozza.copy(friendlyAt = ora?.let { giorno.atTime(it) }))
             }
         }
     }
+
+    Spacer(Modifier.height(12.dp))
+
+    // Le tre solite, spente quando sono passate.
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(15, 18, 21).forEach { ora ->
+            val quando = giornoScelto.atTime(ora, 0)
+            val giocabile = KickoffRules.isPlayable(quando, adesso)
+            Text(
+                "$ora:00",
+                style = MFootType.chip,
+                color = when {
+                    !giocabile -> MFootColors.ink3.copy(alpha = 0.45f)
+                    bozza.friendlyAt == quando -> MFootColors.bg
+                    else -> MFootColors.ink2
+                },
+                modifier = Modifier
+                    .background(
+                        if (bozza.friendlyAt == quando) MFootColors.ink else MFootColors.line,
+                        MFootShapes.pill,
+                    )
+                    .clickable(enabled = giocabile) { onEdit(bozza.copy(friendlyAt = quando)) }
+                    .padding(horizontal = 11.dp, vertical = 6.dp),
+            )
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) {
+            MFootField(
+                value = oraScritta,
+                onValueChange = { t -> oraScritta = t.filter { it.isDigit() || it == ':' }.take(5) },
+                placeholder = "es. 22:30",
+                label = "Un'altra ora",
+                imeAction = ImeAction.Done,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        val letta = oraDaTesto(oraScritta)
+        val quando = letta?.let { giornoScelto.atTime(it) }
+        val ok = quando != null && KickoffRules.isPlayable(quando, adesso)
+        Chip(if (ok) "usa quest'ora" else "hh:mm", ok) {
+            if (ok) {
+                onEdit(bozza.copy(friendlyAt = quando))
+                oraScritta = ""
+            }
+        }
+    }
+
+    // Il verdetto sull'ora scelta, scritto per esteso: e' quello che prima arrivava dal
+    // server sotto forma di errore, e arrivava dopo.
+    val problema = bozza.friendlyAt?.let { KickoffRules.problema(it, adesso) }
+    Spacer(Modifier.height(10.dp))
+    when {
+        bozza.friendlyAt == null ->
+            Text("Scegli un'ora.", style = MFootType.chip, color = MFootColors.ink3)
+        problema != null -> Notice(problema, MFootColors.gamble)
+        else -> Text(
+            "Appuntamento: ${quandoLeggibile(bozza.friendlyAt, oggi)}.",
+            style = MFootType.chip,
+            color = MFootColors.elite,
+        )
+    }
+}
+
+/** Come [leggiOra] nelle competizioni: `21`, `21:0`, `21:00`, `2130` valgono tutti. */
+private fun oraDaTesto(testo: String): java.time.LocalTime? {
+    val pulito = testo.trim().removeSuffix(":")
+    if (pulito.isEmpty()) return null
+
+    val (h, m) = when {
+        ':' in pulito -> pulito.substringBefore(':') to pulito.substringAfter(':').ifEmpty { "0" }
+        pulito.length <= 2 -> pulito to "0"
+        else -> pulito.dropLast(2) to pulito.takeLast(2)
+    }
+
+    val ore = h.toIntOrNull() ?: return null
+    val minuti = m.toIntOrNull() ?: return null
+    if (ore !in 0..23 || minuti !in 0..59) return null
+    return java.time.LocalTime.of(ore, minuti)
+}
+
+private fun quandoLeggibile(
+    quando: java.time.LocalDateTime,
+    oggi: java.time.LocalDate,
+): String {
+    val giorno = when (quando.toLocalDate()) {
+        oggi -> "oggi"
+        oggi.plusDays(1) -> "domani"
+        else -> "%02d/%02d".format(quando.dayOfMonth, quando.monthValue)
+    }
+    return "$giorno alle %02d:%02d".format(quando.hour, quando.minute)
 }
 
 @Composable

@@ -194,11 +194,35 @@ object WorldTick {
         return if (last.isBefore(cap)) cap else last
     }
 
-    /** Le partite il cui orario di inizio e' caduto dentro la finestra. */
+    /**
+     * Le partite il cui orario di inizio e' caduto **dentro** la finestra.
+     *
+     * ## Perche' qui non vale il "in ritardo conta lo stesso" delle aste
+     *
+     * [scaduto] esiste perche' un'asta scaduta fuori finestra deve chiudersi comunque:
+     * quello che conta e' che chiuda, non quando ci si accorge. Applicato alle partite,
+     * pero', quel «comunque» diventa **rigioca tutto il passato**, e cancella le due
+     * protezioni che il tick ha di proposito:
+     *
+     * - al primissimo avvio si guarda solo l'ultima ora, per non recuperare dall'inizio
+     *   dei tempi. Con `scaduto`, la prima esecuzione di una lega appena creata simulava
+     *   ogni partita gia' in calendario, tutte insieme;
+     * - il recupero e' limitato a una settimana per non andare in timeout. Con `scaduto`,
+     *   il tetto lo si scriveva nelle note e poi si simulava lo stesso un mese di partite.
+     *
+     * E soprattutto: una partita gia' pianificata al giro precedente veniva ripianificata a
+     * ogni giro successivo, perche' il suo calcio d'inizio resta per sempre prima della
+     * finestra. Restava fuori dai guai solo finche' il chiamante toglieva la partita
+     * dall'elenco delle pendenti nella stessa transazione — cioe' l'idempotenza dipendeva
+     * da chi chiama invece che dalla regola. Tre test lo dicevano gia', e fallivano.
+     *
+     * Il difetto e' arrivato con la correzione delle aste che non si chiudevano: giusta li',
+     * copiata di qui.
+     */
     private fun matchesDue(input: TickInput, from: Instant, to: Instant): List<TickEffect> =
         input.pendingFixtures
             .filter { it.kickoff != null }
-            .filter { scaduto(it.kickoff!!.toInstant(ZoneOffset.UTC), from, to) }
+            .filter { inWindow(it.kickoff!!.toInstant(ZoneOffset.UTC), from, to) }
             .map { TickEffect.SimulaPartita(it, it.kickoff!!.toInstant(ZoneOffset.UTC)) }
 
     private fun auctionsDue(input: TickInput, from: Instant, to: Instant): List<TickEffect> =

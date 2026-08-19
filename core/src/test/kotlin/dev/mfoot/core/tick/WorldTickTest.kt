@@ -177,6 +177,40 @@ class WorldTickTest {
         assertEquals(1, output.count<TickEffect.ChiudiAsta>())
     }
 
+    /**
+     * La distinzione che era stata appiattita, e che qui resta scritta.
+     *
+     * Un'asta scaduta **fuori** dalla finestra va chiusa comunque: se non lo si fa,
+     * `last_processed_at` avanza lo stesso e quell'asta non si chiude mai piu'. Una partita
+     * il cui calcio d'inizio e' fuori dalla finestra, invece, non va rigiocata: e' o gia'
+     * giocata, o cosi' vecchia che il tetto di recupero dice esplicitamente di lasciarla
+     * stare. Trattarle allo stesso modo — che e' quello che era successo — significa o aste
+     * eterne o partite ripetute.
+     */
+    @Test
+    fun `l'asta in ritardo si chiude, la partita in ritardo no`() {
+        val vecchia = now.minusSeconds(3L * 24 * 3600)
+        val asta = AuctionRules.open(
+            1L, AuctionTarget.ForPlayer(PlayerId(1)), ClubId(1),
+            vecchia, config.market,
+        )
+
+        val output = WorldTick.run(
+            input(lastProcessedAt = fiveMinutesAgo) {
+                copy(
+                    openAuctions = listOf(asta),
+                    pendingFixtures = listOf(fixture(utc(vecchia))),
+                )
+            },
+        )
+
+        assertEquals(1, output.count<TickEffect.ChiudiAsta>(), "l'asta vecchia doveva chiudersi")
+        assertEquals(
+            0, output.count<TickEffect.SimulaPartita>(),
+            "la partita vecchia non doveva essere rigiocata",
+        )
+    }
+
     @Test
     fun `un'asta ancora in corso resta aperta`() {
         val asta = AuctionRules.open(
