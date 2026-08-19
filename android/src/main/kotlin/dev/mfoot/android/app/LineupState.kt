@@ -32,6 +32,15 @@ data class LineupEdit(
     val captainId: Long? = null,
     val penaltyTakerId: Long? = null,
     /** La casella su cui si sta scegliendo chi mettere. Null = non si sta scegliendo. */
+    /**
+     * Di quale delle due squadre e la formazione.
+     *
+     * Senza, salvare mentre l interruttore e sulla Primavera scriverebbe sulla riga della
+     * prima squadra: `lineups` ha una riga per club, e sbagliare club vuol dire schierare
+     * undici ragazzi al posto della prima squadra.
+     */
+    val clubId: Long? = null,
+    /** La casella su cui si sta scegliendo chi mettere. Null = non si sta scegliendo. */
     val picking: Int? = null,
     /**
      * Come stava quando e' stata caricata o salvata l'ultima volta.

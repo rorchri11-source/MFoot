@@ -1,7 +1,7 @@
 # MFoot — stato del progetto
 
 **Aggiornato:** 2026-08-19
-**Test:** 604 verdi, 0 falliti
+**Test:** 608 verdi, 0 falliti
 **Verificato:** su emulatore Android e su Supabase, non solo nei test
 
 ---
@@ -73,6 +73,7 @@ gradlew :android:assembleDebug
 | 29 | **Cinque posti** | Il menu passa da sedici voci piatte a cinque posti con le schede, e un interruttore fra le due squadre |
 | 30 | **Seconda squadra** | `clubs.parent_club_id`: la Primavera e un club vero che gioca un campionato suo |
 | 31 | **Staff e scouting** | Lo staff si vince all asta, gli osservatori vanno in missione, gli under 20 escono dalle aste |
+| 32 | **Aste che si chiudono** | Quelle scadute fuori finestra restavano aperte per sempre. Tetto di lega, e a fine asta si vede chi ha offerto quanto |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -194,6 +195,7 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0017_primavera.sql` | Spostare un giovane, e la traccia dell'allenamento |
 | `supabase/migrations/0018_seconda_squadra.sql` | La Primavera diventa un club vero |
 | `supabase/migrations/0019_staff_e_scouting.sql` | Staff assegnabile, missioni, under 20 fuori dalle aste |
+| `supabase/migrations/0020_aste_trasparenti.sql` | A fine asta si vede chi ha offerto quanto |
 
 **`0014` va applicata prima di installare l'APK.** Aggiunge una colonna a `competitions`,
 e una colonna nuova dentro una SELECT condivisa non è un'aggiunta: PostgREST rifiuta

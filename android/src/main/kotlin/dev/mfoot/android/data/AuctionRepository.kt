@@ -158,3 +158,67 @@ object AuctionRepository {
     // ci appiccicava una `Z`, spostando la chiusura di ogni asta di due ore: il conto alla
     // rovescia diceva "due ore e dieci" quando ne mancavano dieci minuti.
 }
+
+/** Un'offerta a fine asta: chi, e fino a quanto si era spinto. */
+data class BidRow(val clubId: Long, val maxAmount: Int)
+
+/** Un'asta conclusa, con dentro tutte le offerte. */
+data class ClosedAuction(
+    val id: Long,
+    val targetId: Long,
+    val targetType: String,
+    val status: String,
+    val winnerClubId: Long?,
+    val finalPrice: Int?,
+    val bids: List<BidRow>,
+) {
+    val esito: String
+        get() = when (status) {
+            "AGGIUDICATA" -> "Aggiudicata"
+            "DESERTA" -> "Deserta"
+            else -> "Annullata"
+        }
+}
+
+/**
+ * Le aste finite, con chi ha offerto quanto.
+ *
+ * ## Perche' solo a fine asta
+ *
+ * Le offerte sono massimi segreti: si dichiara fin dove si e' disposti a spingersi e il
+ * sistema difende la posizione da solo. Vederli mentre l'asta e' aperta cancellerebbe la
+ * meccanica — sapendo che il capofila si ferma a diciotto, si offre diciotto e cento e si
+ * vince sempre. Non sarebbe un'asta, sarebbe una coda.
+ *
+ * A fine asta non c'e' piu' niente da proteggere, e scoprire chi si era spinto fino a dove
+ * e' la parte piu' divertente: finora spariva senza che nessuno la vedesse.
+ */
+object ClosedAuctionRepository {
+
+    suspend fun recent(leagueId: Long, limit: Int = 30): List<ClosedAuction> {
+        val path = "/rest/v1/auctions?select=id,target_id,target_type,status,winner_club_id," +
+            "final_price,bids(club_id,max_amount)" +
+            "&league_id=eq.$leagueId&status=neq.APERTA&order=id.desc&limit=$limit"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            // Migrazione non applicata: le offerte altrui restano invisibili e la
+            // schermata mostra un elenco vuoto invece di rompersi.
+            is ApiResult.Error -> emptyList()
+            is ApiResult.Ok -> JsonNode.parse(esito.value).asList().map { row ->
+                ClosedAuction(
+                    id = row["id"].long(0),
+                    targetId = row["target_id"].long(0),
+                    targetType = row["target_type"].str("player"),
+                    status = row["status"].str("DESERTA"),
+                    winnerClubId = row["winner_club_id"].long(0).takeIf { it > 0 },
+                    finalPrice = row["final_price"].int(0).takeIf { it > 0 },
+                    // In ordine decrescente: chi si e' spinto piu' in alto sta in cima, ed
+                    // e' l'unica sequenza in cui la classifica di un'asta si legge.
+                    bids = row["bids"].asList()
+                        .map { BidRow(it["club_id"].long(0), it["max_amount"].int(0)) }
+                        .sortedByDescending { it.maxAmount },
+                )
+            }
+        }
+    }
+}

@@ -47,6 +47,7 @@ import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.PlayerListScreen
 import dev.mfoot.android.ui.TableScreen
+import dev.mfoot.android.ui.screens.AsteConcluseScreen
 import dev.mfoot.android.ui.screens.CampoScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
 import dev.mfoot.android.ui.screens.MercatiScreen
@@ -84,6 +85,9 @@ fun Router(
     onFoundClub: () -> Unit,
     onSwitchTeam: (Boolean) -> Unit,
     onCreateYouth: () -> Unit,
+    concluse: List<dev.mfoot.android.data.ClosedAuction>,
+    concluseLette: Boolean,
+    onLoadClosed: () -> Unit,
     staff: dev.mfoot.android.app.StaffState,
     onLoadStaff: () -> Unit,
     onMoveStaff: (Long, Long) -> Unit,
@@ -137,14 +141,7 @@ fun Router(
                     ?.let { RosaScreen(state, it.id, onSelect) }
                     ?: SenzaClub()
 
-                // Il campo resta quello della prima squadra finche' la Primavera non ha
-                // una formazione sua: schierare undici ragazzi con l'editor della prima
-                // squadra scriverebbe sulla riga sbagliata di `lineups`.
-                TabSquadra.CAMPO -> if (state.guardoLaPrimavera) {
-                    DaFare("Campo della Primavera", "La schiera il computer, per adesso.")
-                } else {
-                    CampoScreen(state, lineup, onLineupChange, onLineupSave)
-                }
+                TabSquadra.CAMPO -> CampoScreen(state, lineup, onLineupChange, onLineupSave)
 
                 TabSquadra.STAFF -> StaffScreen(
                     state = state,
@@ -177,6 +174,13 @@ fun Router(
                 TabMercato.ASTE -> Lista(state, ListScope.ASTE, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
                 TabMercato.SVINCOLATI -> Lista(state, ListScope.SVINCOLATI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
                 TabMercato.LISTONE -> Lista(state, ListScope.TUTTI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onDismissNotice)
+
+                TabMercato.CONCLUSE -> AsteConcluseScreen(
+                    state = state,
+                    aste = concluse,
+                    letto = concluseLette,
+                    onCarica = onLoadClosed,
+                )
 
                 TabMercato.TRATTATIVE -> {
                     LaunchedEffect(state.lega.league.id) { onLoadTrades() }

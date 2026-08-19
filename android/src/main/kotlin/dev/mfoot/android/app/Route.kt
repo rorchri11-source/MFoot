@@ -32,6 +32,7 @@ enum class TabMercato(val label: String) {
     ASTE("Aste"),
     SVINCOLATI("Svincolati"),
     LISTONE("Listone"),
+    CONCLUSE("Concluse"),
     TRATTATIVE("Trattative"),
     OSSERVATORI("Osservatori"),
 }

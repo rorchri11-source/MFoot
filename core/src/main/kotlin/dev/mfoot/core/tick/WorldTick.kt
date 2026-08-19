@@ -198,17 +198,17 @@ object WorldTick {
     private fun matchesDue(input: TickInput, from: Instant, to: Instant): List<TickEffect> =
         input.pendingFixtures
             .filter { it.kickoff != null }
-            .filter { inWindow(it.kickoff!!.toInstant(ZoneOffset.UTC), from, to) }
+            .filter { scaduto(it.kickoff!!.toInstant(ZoneOffset.UTC), from, to) }
             .map { TickEffect.SimulaPartita(it, it.kickoff!!.toInstant(ZoneOffset.UTC)) }
 
     private fun auctionsDue(input: TickInput, from: Instant, to: Instant): List<TickEffect> =
         input.openAuctions
-            .filter { it.isOpen && inWindow(it.endsAt, from, to) }
+            .filter { it.isOpen && scaduto(it.endsAt, from, to) }
             .map { TickEffect.ChiudiAsta(it.id, it.endsAt) }
 
     private fun negotiationsDue(input: TickInput, from: Instant, to: Instant): List<TickEffect> =
         input.openNegotiations
-            .filter { it.isOpen && inWindow(it.expiresAt, from, to) }
+            .filter { it.isOpen && scaduto(it.expiresAt, from, to) }
             .map { TickEffect.ScadiTrattativa(it.id, it.expiresAt) }
 
     /**
@@ -327,4 +327,32 @@ object WorldTick {
     /** Finestra aperta a sinistra e chiusa a destra: nessun momento viene contato due volte. */
     private fun inWindow(moment: Instant, from: Instant, to: Instant): Boolean =
         moment.isAfter(from) && !moment.isAfter(to)
+
+    /**
+     * E' ora, **o era ora e non e' successo**.
+     *
+     * ## Il difetto che questa riga chiude
+     *
+     * [inWindow] chiede che il momento cada dentro `(ultimo giro, adesso]`. Per un'asta
+     * scaduta **prima** dell'ultimo giro la risposta e' no, e siccome `last_processed_at`
+     * avanza comunque a fine giro, quella no e' definitiva: **l'asta resta aperta per
+     * sempre**.
+     *
+     * Basta una volta perche' succeda — un giro che fallisce dopo aver pianificato, una
+     * riga inserita con una scadenza gia' passata, un orologio del database leggermente
+     * avanti rispetto a quello del server — e da li' in poi quell'asta non si chiude piu'.
+     * Si accumulano: sessantasette aperte insieme, e ognuna sembra durare un giorno.
+     *
+     * Il risveglio delle AI aveva gia' questa protezione, scritta come
+     * `|| it.nextWakeAt.isBefore(from)`. Qualcuno aveva incontrato lo stesso problema li' e
+     * lo aveva corretto solo li'.
+     *
+     * ## Perche' non basta guardare "prima di adesso"
+     *
+     * Perche' il tick non chiede "cosa succede adesso" ma "cosa sarebbe dovuto succedere":
+     * `to` puo' essere nel passato quando si recupera un intervallo perso, e chiudere
+     * un'asta che scade dopo quel momento vorrebbe dire aggiudicarla prima del tempo.
+     */
+    private fun scaduto(moment: Instant, from: Instant, to: Instant): Boolean =
+        inWindow(moment, from, to) || moment.isBefore(from)
 }

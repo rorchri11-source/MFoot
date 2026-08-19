@@ -82,7 +82,7 @@ fun CampoScreen(
     onChange: (LineupEdit) -> Unit,
     onSave: () -> Unit,
 ) {
-    val club = state.lega.myClub
+    val club = state.clubMostrato
     if (club == null) {
         Vuoto("Prima serve un club. Torna alla Casa e fondalo.")
         return

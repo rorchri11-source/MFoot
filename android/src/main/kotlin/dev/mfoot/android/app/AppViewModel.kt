@@ -1230,6 +1230,31 @@ class AppViewModel : ViewModel() {
 
     private fun segno(delta: Int) = if (delta >= 0) "+$delta" else "$delta"
 
+    // --------------------------------------------------------------------- aste finite
+
+    private val _asteConcluse =
+        MutableStateFlow<List<dev.mfoot.android.data.ClosedAuction>>(emptyList())
+    val asteConcluse: StateFlow<List<dev.mfoot.android.data.ClosedAuction>> = _asteConcluse
+
+    private val _asteConclusePronte = MutableStateFlow(false)
+    val asteConclusePronte: StateFlow<Boolean> = _asteConclusePronte
+
+    /**
+     * Le aste finite, con dentro chi ha offerto quanto.
+     *
+     * Si legge all'apertura della scheda: e' un elenco che cresce di qualche riga al
+     * giorno, e tenerlo aggiornato in tempo reale sarebbe una richiesta al minuto per una
+     * cosa che si guarda dopo, con calma, per vedere quanto ci si e' andati vicini.
+     */
+    fun caricaAsteConcluse() {
+        val dentro = statoCorrente() ?: return
+        viewModelScope.launch {
+            _asteConcluse.value =
+                dev.mfoot.android.data.ClosedAuctionRepository.recent(dentro.lega.league.id)
+            _asteConclusePronte.value = true
+        }
+    }
+
     // -------------------------------------------------------------- staff e osservatori
 
     private val _staff = MutableStateFlow(StaffState())
@@ -1322,6 +1347,11 @@ class AppViewModel : ViewModel() {
     fun guardaLaPrimavera(si: Boolean) {
         val dentro = statoCorrente() ?: return
         _state.value = dentro.copy(guardoLaPrimavera = si)
+
+        // La formazione segue l interruttore: sono due righe diverse di `lineups`, e
+        // lasciare a schermo quella di prima farebbe modificare la squadra sbagliata.
+        val club = if (si) dentro.lega.myYouthClub?.id else dentro.lega.myClub?.id
+        caricaFormazione(dentro.lega, club)
     }
 
     /**
@@ -1757,11 +1787,20 @@ class AppViewModel : ViewModel() {
      * e la sua casella torna vuota. E' la stessa cosa che fa il server quando gioca la
      * partita, quindi lo schermo dice il vero.
      */
-    private fun caricaFormazione(snapshot: LeagueSnapshot) {
-        val club = snapshot.myClub ?: run {
-            _lineup.value = LineupEdit()
-            return
-        }
+    /**
+     * La formazione di una delle due squadre.
+     *
+     * Il club arriva da fuori e non e piu fisso su `myClub`: `lineups` ha una riga per
+     * club, e con due squadre la formazione che si sta componendo deve sapere di chi e —
+     * altrimenti salvare mentre l interruttore e sulla Primavera schiererebbe undici
+     * ragazzi al posto della prima squadra.
+     */
+    private fun caricaFormazione(snapshot: LeagueSnapshot, clubId: Long? = null) {
+        val club = (clubId?.let { id -> snapshot.clubs.firstOrNull { it.id == id } } ?: snapshot.myClub)
+            ?: run {
+                _lineup.value = LineupEdit()
+                return
+            }
         val squad = snapshot.squadOf(club.id)
         val today = MatchDay(snapshot.league.currentMatchDay)
 
@@ -1799,14 +1838,17 @@ class AppViewModel : ViewModel() {
             // salvataggio resta spento fino a una modifica vera. Se fosse quella salvata sul
             // server, aprire la schermata la mostrerebbe subito come da salvare ogni volta
             // che un titolare non c'e' piu'.
-            _lineup.value = base.copy(salvata = base.snapshot)
+            _lineup.value = base.copy(clubId = club.id, salvata = base.snapshot)
         }
     }
 
     fun salvaFormazione() {
         val dentro = statoCorrente() ?: return
-        val club = dentro.lega.myClub ?: return
         val edit = _lineup.value
+        // Il club e quello per cui la formazione e stata **caricata**, non quello che
+        // l interruttore mostra adesso: fra il caricamento e il salvataggio si puo averlo
+        // spostato, e scrivere sulla riga sbagliata schiererebbe la squadra sbagliata.
+        val clubId = edit.clubId ?: dentro.lega.myClub?.id ?: return
         if (!edit.dirty || edit.busy != null) return
 
         viewModelScope.launch {
@@ -1814,7 +1856,7 @@ class AppViewModel : ViewModel() {
 
             val esito = LineupRepository.save(
                 leagueId = dentro.lega.league.id,
-                clubId = club.id,
+                clubId = clubId,
                 lineup = SavedLineup(
                     formation = edit.formation,
                     eleven = edit.eleven.map { it?.id?.value },

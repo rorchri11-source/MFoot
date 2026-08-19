@@ -137,6 +137,7 @@ object ConfigJson {
         w.field("antiSnipeSeconds", c.antiSnipeSeconds)
         w.field("proxyBiddingEnabled", c.proxyBiddingEnabled)
         w.field("maxParallelAuctionsPerClub", c.maxParallelAuctionsPerClub)
+        w.field("maxOpenAuctionsPerLeague", c.maxOpenAuctionsPerLeague)
         w.field("windowMode", c.windowMode.name)
         w.arrayField("windowSlots")
         c.windowSlots.forEach {
@@ -369,6 +370,7 @@ object ConfigJson {
         antiSnipeSeconds = n["antiSnipeSeconds"].int(d.antiSnipeSeconds),
         proxyBiddingEnabled = n["proxyBiddingEnabled"].bool(d.proxyBiddingEnabled),
         maxParallelAuctionsPerClub = n["maxParallelAuctionsPerClub"].int(d.maxParallelAuctionsPerClub),
+        maxOpenAuctionsPerLeague = n["maxOpenAuctionsPerLeague"].int(d.maxOpenAuctionsPerLeague),
         windowMode = n["windowMode"].enum(d.windowMode),
         windowSlots = n["windowSlots"].listOr(d.windowSlots) { slot ->
             val from = slot["from"].strOrNull()?.let(LocalTime::parse)

@@ -527,9 +527,18 @@ class TickRunner(
      * starebbero a guardare mentre gli umani si prendono ogni talento del mondo, e in tre
      * stagioni la lega sarebbe decisa.
      */
-    private fun staffEMissioniDellAi(league: LeagueRow, clubId: ClubId): Boolean {
+    private fun staffEMissioniDellAi(league: LeagueRow, club: Club): Boolean {
+        val clubId = club.id
         val mancante = ruoloMancante(clubId)
-        if (mancante != null && assumiDalFondo(league.id, clubId, mancante)) return true
+
+        // Se manca un ruolo, prima si prova all'asta sul meglio disponibile: e' la
+        // stessa strada che percorre un umano, e un allenatore da cinque stelle deve
+        // costare a tutti. Solo se non c'e' niente da battere si ripiega sul fondo del
+        // listino, che nessuno si contende.
+        if (mancante != null) {
+            if (apriAstaStaff(league, club, mancante)) return true
+            if (assumiDalFondo(league.id, clubId, mancante)) return true
+        }
 
         val osservatore = osservatoreLibero(clubId) ?: return false
         // Paese e ruolo deterministici sul club e sull osservatore: due AI non partono
@@ -558,6 +567,89 @@ class TickRunner(
         }
         return true
     }
+
+    /**
+     * Apre un'asta su un membro dello staff che serve davvero.
+     *
+     * ## Perche' anche le AI devono farlo
+     *
+     * Perche' se solo gli umani battessero lo staff all'asta, i cinque stelle andrebbero
+     * sempre al primo che apre l'app, senza che nessuno gliene contenda uno. Un allenatore
+     * che moltiplica per 1,8 la crescita di tutta una rosa vale una guerra, e la guerra la
+     * si fa in due.
+     *
+     * Il tetto di aste della lega vale anche qui: lo staff non deve poter riempire il
+     * listino al posto dei giocatori.
+     */
+    private fun apriAstaStaff(league: LeagueRow, club: Club, ruolo: String): Boolean {
+        val market = league.config.market
+        if (countOpenAuctions(league.id) >= market.maxOpenAuctionsPerLeague) return false
+        if (countOpenAuctionsBy(club.id) >= market.maxParallelAuctionsPerClub) return false
+
+        val giaInAsta = connection.prepareStatement(
+            "select target_id from auctions where league_id = ? and status = 'APERTA' " +
+                "and target_type = 'staff'",
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.executeQuery().use { rs ->
+                val out = mutableSetOf<Long>()
+                while (rs.next()) out += rs.getLong(1)
+                out
+            }
+        }
+
+        // Solo da quattro stelle in su: sotto non vale la pena occupare uno slot d'asta,
+        // e ci pensa `assumiDalFondo` a riempire l'organigramma senza far rumore.
+        val candidato = connection.prepareStatement(
+            """
+            select id, stars from staff
+            where league_id = ? and club_id is null and role = ? and stars >= 4
+            order by stars desc limit 5
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setString(2, ruolo)
+            st.executeQuery().use { rs ->
+                var scelto: Pair<Long, Int>? = null
+                while (rs.next() && scelto == null) {
+                    val id = rs.getLong("id")
+                    if (id !in giaInAsta) scelto = id to rs.getInt("stars")
+                }
+                scelto
+            }
+        } ?: return false
+
+        val base = 1.coerceAtLeast(candidato.second * candidato.second * 200)
+        if (base > club.availableCredits) return false
+
+        connection.prepareStatement(
+            """
+            insert into auctions (league_id, target_type, target_id, started_by, ends_at,
+                                  starting_price, current_price, status)
+            values (?, 'staff', ?, ?, now() + make_interval(mins => ?), ?, ?, 'APERTA')
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, candidato.first)
+            st.setLong(3, club.id.value)
+            st.setInt(4, market.auctionDurationMinutes)
+            st.setInt(5, base)
+            st.setInt(6, base)
+            st.executeUpdate()
+        }
+
+        log("Lega ${league.id}: ${club.name} apre un'asta per un $ruolo da ${candidato.second} stelle.")
+        return true
+    }
+
+    /** Ruolo e stelle di un membro dello staff, per valutarne l asta. */
+    private fun staffInAsta(staffId: StaffId): Pair<String, Int>? =
+        connection.prepareStatement("select role, stars from staff where id = ?").use { st ->
+            st.setLong(1, staffId.value)
+            st.executeQuery().use { rs ->
+                if (rs.next()) rs.getString("role") to rs.getInt("stars") else null
+            }
+        }
 
     /** Un ruolo dello staff che questo club non ha ancora. */
     private fun ruoloMancante(clubId: ClubId): String? =
@@ -2212,7 +2304,7 @@ class TickRunner(
                 AiMove.GESTISCI_ROSA -> tieniInOrdineLaRosa(league, state, club, squad, today)
                 AiMove.PROPONI_SCAMBIO -> proponiUnoScambio(league, state, club, squad, today)
                 AiMove.CHIEDI_AMICHEVOLE -> chiediUnAmichevole(league, state, club, squad) ||
-                    staffEMissioniDellAi(league, club.id)
+                    staffEMissioniDellAi(league, club)
             }
             if (acted) break
         }
@@ -2474,6 +2566,41 @@ class TickRunner(
         val auctions = loadOpenAuctions(league.id).filter { it.id !in state.abandonedTargets }
         if (auctions.isEmpty()) return false
 
+        // Le aste dello staff si valutano a parte: non c'e' un giocatore da stimare, c'e'
+        // un ruolo che manca o non manca. Senza questo ramo un'AI apriva l'asta per un
+        // allenatore e poi non ci offriva sopra nemmeno lei, e andava deserta.
+        val staffScelta = auctions
+            .mapNotNull { asta ->
+                val target = (asta.target as? AuctionTarget.ForStaff) ?: return@mapNotNull null
+                val (ruolo, stelle) = staffInAsta(target.staffId) ?: return@mapNotNull null
+                if (ruoloMancante(club.id) != ruolo) return@mapNotNull null
+
+                // Quanto vale un ruolo che manca: una frazione del disponibile che cresce
+                // con le stelle. Chi ha disciplina si ferma prima.
+                val tetto = StrictMath.round(
+                    club.availableCredits * MathX.lerp(0.14, 0.05, state.personality.budgetDiscipline) *
+                        stelle,
+                ).toInt()
+                if (tetto < asta.currentPrice(league.config.market) + league.config.market.minimumRaise) {
+                    return@mapNotNull null
+                }
+                asta to tetto
+            }
+            .maxByOrNull { it.second }
+
+        if (staffScelta != null) {
+            val (asta, tetto) = staffScelta
+            val ok = connection.prepareStatement("select place_bid(?, ?, ?)").use { st ->
+                st.setLong(1, asta.id)
+                st.setLong(2, club.id.value)
+                st.setInt(3, tetto)
+                st.executeQuery().use { rs ->
+                    rs.next() && JsonNode.parse(rs.getString(1))["ok"].bool(false)
+                }
+            }
+            if (ok) return true
+        }
+
         val candidates = auctions.mapNotNull { auction ->
             val target = (auction.target as? AuctionTarget.ForPlayer) ?: return@mapNotNull null
             val player = loadPlayerRow(target.playerId)?.player ?: return@mapNotNull null
@@ -2559,7 +2686,16 @@ class TickRunner(
         val market = league.config.market
         val aperte = countOpenAuctionsBy(club.id)
 
-        var quante = AiTurn.auctionsToOpen(squad.size, aperte, league.config)
+        // Il tetto della lega, non solo quello del club.
+        //
+        // Otto club per sei aste fanno quarantotto, e a quel punto il listino e' una parete
+        // in cui non si trova niente: e' successo davvero, sessantasette aperte insieme.
+        // Questo e' il numero che decide quante cose si riescono a seguire.
+        val inLega = countOpenAuctions(league.id)
+        val spazioInLega = (market.maxOpenAuctionsPerLeague - inLega).coerceAtLeast(0)
+        if (spazioInLega <= 0) return false
+
+        var quante = minOf(AiTurn.auctionsToOpen(squad.size, aperte, league.config), spazioInLega)
         if (quante <= 0) return false
 
         val durataMinuti = if (allestimento) {
@@ -2643,6 +2779,7 @@ class TickRunner(
     ): Boolean {
         val aperte = countOpenAuctionsBy(club.id)
         if (aperte >= league.config.market.maxParallelAuctionsPerClub) return false
+        if (countOpenAuctions(league.id) >= league.config.market.maxOpenAuctionsPerLeague) return false
 
         val (giocatore, base) = AiInitiative.playerToSell(state, squad, league.config)
             ?: return false
@@ -2713,6 +2850,15 @@ class TickRunner(
         ).use { st ->
             st.setLong(1, playerId.value)
             st.executeQuery().use { it.next() }
+        }
+
+    /** Quante aste sono aperte in tutta la lega. */
+    private fun countOpenAuctions(leagueId: Long): Int =
+        connection.prepareStatement(
+            "select count(*) from auctions where league_id = ? and status = 'APERTA'",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
         }
 
     private fun countOpenAuctionsBy(clubId: ClubId): Int =

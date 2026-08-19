@@ -208,6 +208,18 @@ data class MarketConfig(
      */
     val initialParallelAuctionsPerClub: Int = 6,
     val initialAuctionDurationMinutes: Int = 15,
+
+    /**
+     * Quante aste possono essere aperte **in tutta la lega** nello stesso momento.
+     *
+     * Il tetto per club non basta: otto club per sei aste fanno quarantotto, e a quel
+     * punto il listino e una parete in cui non si trova niente. Questo e il numero che
+     * decide quante cose si possono seguire davvero.
+     *
+     * Non rallenta il mercato quanto sembra: le aste dell allestimento durano un quarto
+     * d ora, quindi venti aperte insieme sono ottanta aggiudicazioni all ora.
+     */
+    val maxOpenAuctionsPerLeague: Int = 20,
     val windowMode: MarketWindowMode = MarketWindowMode.SOLO_CALENDARIO_VUOTO,
     val windowSlots: List<ClosedRange<LocalTime>> = emptyList(),
     val loansEnabled: Boolean = true,
