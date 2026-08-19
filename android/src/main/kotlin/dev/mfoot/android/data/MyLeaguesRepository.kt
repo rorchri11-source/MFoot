@@ -34,6 +34,39 @@ data class LeagueCard(
 }
 
 /**
+ * Che lega e' un codice, vista da chi non ci e' ancora dentro.
+ *
+ * Il minimo per riconoscere la lega dell'amico da quella sbagliata: il nome, quante
+ * persone ci sono, a che punto e' la stagione. Non l'id, non i nomi degli iscritti, non
+ * la configurazione — quelli si vedono da dentro.
+ */
+data class LeaguePreview(
+    val name: String,
+    val members: Int,
+    val clubs: Int,
+    val status: String,
+    val matchDay: Int,
+    val createdOn: String?,
+) {
+    /** La riga sotto al nome: chi c'e' e a che punto siamo. */
+    val riassunto: String
+        get() = buildString {
+            append(members).append(if (members == 1) " iscritto" else " iscritti")
+            append(" · ").append(clubs).append(if (clubs == 1) " club" else " club")
+            append(" · ")
+            append(
+                when (status) {
+                    "setup" -> "in preparazione"
+                    "mercato" -> "mercato aperto"
+                    "in_corso" -> "campionato in corso, giornata $matchDay"
+                    "conclusa" -> "conclusa"
+                    else -> status
+                },
+            )
+        }
+}
+
+/**
  * Le leghe di cui si fa parte.
  *
  * ## Perche' questa schermata e' una correzione e non una comodita'
@@ -54,6 +87,59 @@ data class LeagueCard(
  * — ne' di cambiarla senza reinserire un codice che magari nemmeno si ricordava.
  */
 object MyLeaguesRepository {
+
+    /**
+     * Che lega apre questo codice, **prima** di entrarci.
+     *
+     * ## Perche' esiste
+     *
+     * Perche' due amici hanno giocato in due leghe diverse convinti di essere nella
+     * stessa, e nessuno dei due poteva accorgersene: si digita un codice e si e' dentro,
+     * senza che niente dica dove. Con l'anteprima il pulsante smette di dire «Entra» e
+     * comincia a dire «Entra in Lega dei Bar» — e un codice sbagliato si vede nel momento
+     * in cui lo si scrive, non tre giorni dopo.
+     *
+     * Restituisce null quando il codice non apre niente. Un errore di rete lo restituisce
+     * come [ApiResult.Error], perche' sono due cose diverse: «questo codice non esiste» e
+     * «non ho potuto chiedere».
+     */
+    suspend fun peek(code: String): ApiResult<LeaguePreview?> {
+        val payload = JsonWriter(128)
+            .beginObject()
+            .field("p_access_code", code.trim())
+            .endObject()
+            .toString()
+
+        return SupabaseApi.rpc("peek_league", payload).then { body ->
+            val node = JsonNode.parse(body).let { if (it.asList().isNotEmpty()) it[0] else it }
+            if (!node["found"].bool(false)) {
+                ApiResult.Ok(null)
+            } else {
+                ApiResult.Ok(
+                    LeaguePreview(
+                        name = node["name"].str("Lega"),
+                        members = node["members"].int(0),
+                        clubs = node["clubs"].int(0),
+                        status = node["status"].str("setup"),
+                        matchDay = node["match_day"].int(0),
+                        // Solo la data, senza l'ora: serve a distinguere due leghe che si
+                        // chiamano uguale, non a fare le pulci ai minuti.
+                        createdOn = node["created_at"].strOrNull()?.take(10),
+                    ),
+                )
+            }
+        }.mancaLaFunzione()
+    }
+
+    /** Il database senza la migrazione: si dice quale, invece dell'errore di PostgREST. */
+    private fun <T> ApiResult<T>.mancaLaFunzione(): ApiResult<T> = when {
+        this is ApiResult.Error && message.contains("peek_league") ->
+            ApiResult.Error(
+                "L'anteprima ha bisogno della migrazione 0025_entrare_sapendo_dove.sql, " +
+                    "che non e' ancora stata applicata a questo database.",
+            )
+        else -> this
+    }
 
     suspend fun mine(currentLeagueId: Long?): ApiResult<List<LeagueCard>> {
         val me = Session.userId

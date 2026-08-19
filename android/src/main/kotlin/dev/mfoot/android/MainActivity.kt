@@ -79,6 +79,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val formazioneAltrui by viewModel.formazioneAltrui.collectAsStateWithLifecycle()
     val competizioni by viewModel.competizioni.collectAsStateWithLifecycle()
     val obiettivi by viewModel.obiettivi.collectAsStateWithLifecycle()
+    val quanteLeghe by viewModel.quanteLeghe.collectAsStateWithLifecycle()
     val scambi by viewModel.trades.collectAsStateWithLifecycle()
     val divisioni by viewModel.divisioni.collectAsStateWithLifecycle()
     val spogliatoio by viewModel.spogliatoio.collectAsStateWithLifecycle()
@@ -104,6 +105,8 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                 onMode = viewModel::apriPorta,
                 onCreate = viewModel::creaLega,
                 onJoin = viewModel::entraInLega,
+                onPeek = viewModel::sbircia,
+                onCodeChanged = viewModel::scordaAnteprima,
             )
 
             is AppState.Guasto -> Guasto(current.motivo, viewModel::avvia)
@@ -168,6 +171,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                             else -> viewModel.vai(route)
                         }
                     },
+                    quanteLeghe = quanteLeghe,
                     onLeaveLeague = viewModel::lasciaLega,
                 ) {
                     Router(
@@ -221,6 +225,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onWithdrawTrade = viewModel::ritiraScambio,
                         onDismissTradeNotice = viewModel::chiudiAvvisoScambi,
                         divisioni = divisioni,
+                        avvisiDivisioni = viewModel.anteprimaDivisioni(),
                         onAssignDivisions = viewModel::assegnaDivisioni,
                         onCloseSeason = viewModel::chiudiStagione,
                         onDismissDivisionNotice = viewModel::chiudiAvvisoDivisioni,

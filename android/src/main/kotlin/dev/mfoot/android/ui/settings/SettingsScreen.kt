@@ -230,6 +230,7 @@ private fun Divisioni(config: LeagueConfig, edit: Boolean, onChange: (LeagueConf
     }
 
     NomiDivisioni(d, edit) { set { copy(names = it) } }
+    DimensioniDivisioni(d, edit) { set { copy(sizes = it) } }
 
     GroupTitle("Chi sale")
 
@@ -284,6 +285,8 @@ fun DivisioniAzioni(
     abilitate: Boolean,
     giaAssegnate: Boolean,
     stato: DivisionsAdmin,
+    /** Cosa non torrebbe premendo adesso: si legge prima, non dopo. */
+    avvisi: List<String>,
     onAssegna: () -> Unit,
     onChiudiStagione: () -> Unit,
     onChiudiAvviso: () -> Unit,
@@ -305,14 +308,31 @@ fun DivisioniAzioni(
                 "Le squadre sono gia' divise. Riassegnare rimescola tutto da capo e " +
                     "cancella promozioni e retrocessioni gia' avvenute."
             } else {
-                "Nessuna squadra e' ancora assegnata: sono tutte nella prima divisione. " +
-                    "L'assegnazione distribuisce le piu' forti fra le divisioni, cosi' " +
-                    "nessuna nasce gia' decisa."
+                "Nessuna squadra e' ancora assegnata: sono tutte nella prima divisione."
             },
             style = MFootType.chip,
             color = MFootColors.ink3,
         )
         Spacer(Modifier.height(MFootSpacing.related))
+
+        // La regola, scritta dove si preme il pulsante che la applica.
+        //
+        // Non e' una nota di cortesia: e' il contrario di quello che faceva prima
+        // (distribuire tutti per forza, umani compresi), e chi ha giocato una stagione con
+        // il comportamento vecchio deve poter capire perche' adesso e' diverso.
+        Text(
+            "I club dei giocatori veri restano tutti in prima divisione. Le seconde " +
+                "squadre partono dall'ultima. Le squadre del computer riempiono i posti " +
+                "che restano, dalla piu' forte alla piu' debole.",
+            style = MFootType.chip,
+            color = MFootColors.ink2,
+        )
+        Spacer(Modifier.height(MFootSpacing.related))
+
+        avvisi.forEach {
+            Notice(it, MFootColors.gamble)
+            Spacer(Modifier.height(MFootSpacing.related))
+        }
 
         GhostButton(
             text = stato.busy ?: if (giaAssegnate) "Riassegna le divisioni" else "Assegna le divisioni",
@@ -346,6 +366,63 @@ fun DivisioniAzioni(
  * salendo da zero si passa per l'uno e l'app cadrebbe. Si salta.
  */
 private fun playoffValido(valore: Int): Int = if (valore == 1) 2 else valore
+
+/**
+ * Quante squadre per divisione.
+ *
+ * ## Perche' non basta dividere il numero di club
+ *
+ * Perche' la regola di questa lega e' che **i giocatori veri partono tutti in prima
+ * divisione**. Con dodici amici e una prima divisione da dieci le due cose non stanno
+ * insieme, e la contraddizione la deve sciogliere l'admin: sa lui se preferisce una prima
+ * divisione da dodici o due amici in seconda. Il programma non lo sa e non deve indovinare.
+ *
+ * Zero significa «decidi tu»: le divisioni lasciate a zero si dividono in parti uguali i
+ * club che restano, come faceva prima.
+ */
+@Composable
+private fun DimensioniDivisioni(
+    d: DivisionsConfig,
+    edit: Boolean,
+    onChange: (List<Int>) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 11.dp)) {
+        Text("Quante squadre per divisione", style = MFootType.rowTitle, color = MFootColors.ink)
+        Spacer(Modifier.height(5.dp))
+        Text(
+            "Zero vuol dire «dividile tu in parti uguali». I club dei giocatori veri " +
+                "entrano comunque tutti in prima divisione: se sono piu' dei posti, la " +
+                "prima divisione si allarga e l'app te lo dice prima di assegnare.",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+        Spacer(Modifier.height(10.dp))
+
+        (1..d.count).forEach { livello ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    d.nameOf(livello),
+                    style = MFootType.chip,
+                    color = MFootColors.ink2,
+                    modifier = Modifier.weight(1f),
+                )
+                IntStepper(d.sizes.getOrNull(livello - 1) ?: 0, 0..40, edit) { nuovo ->
+                    val misure = MutableList(maxOf(d.sizes.size, livello)) { i ->
+                        d.sizes.getOrNull(i) ?: 0
+                    }
+                    misure[livello - 1] = nuovo
+                    // Gli zeri in coda si tolgono: una lista di soli zeri e' la lista
+                    // vuota, cioe' «dividi in parti uguali», e tenerla lunga farebbe
+                    // sembrare configurato qualcosa che non lo e'.
+                    onChange(misure.dropLastWhile { it == 0 })
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun NomiDivisioni(

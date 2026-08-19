@@ -57,6 +57,8 @@ fun DoorScreen(
     onMode: (DoorMode) -> Unit,
     onCreate: (nome: String, codice: String, nickname: String, preset: String, scelte: SetupChoices) -> Unit,
     onJoin: (codice: String, nickname: String) -> Unit,
+    onPeek: (codice: String) -> Unit,
+    onCodeChanged: () -> Unit,
 ) {
     Column(
         Modifier
@@ -80,7 +82,9 @@ fun DoorScreen(
             when (state.mode) {
                 DoorMode.SCELTA -> Choice(onMode)
                 DoorMode.CREA -> CreateForm(state, onCreate) { onMode(DoorMode.SCELTA) }
-                DoorMode.ENTRA -> JoinForm(state, onJoin) { onMode(DoorMode.SCELTA) }
+                DoorMode.ENTRA -> JoinForm(state, onJoin, onPeek, onCodeChanged) {
+                    onMode(DoorMode.SCELTA)
+                }
             }
         }
 
@@ -183,19 +187,47 @@ private fun CreateForm(
 private fun JoinForm(
     state: AppState.Porta,
     onJoin: (String, String) -> Unit,
+    onPeek: (String) -> Unit,
+    onCodeChanged: () -> Unit,
     onBack: () -> Unit,
 ) {
     var codice by rememberSaveable { mutableStateOf("") }
     var nickname by rememberSaveable { mutableStateOf("") }
+    val anteprima = state.anteprima
     val pronto = codice.isNotBlank() && nickname.isNotBlank()
 
     Column {
         SectionTitle("Entra in una lega", onBack)
 
         MFootField(
-            codice, { codice = it }, "IL CODICE CHE TI HANNO DATO",
-            label = "Codice d'accesso", uppercase = true,
+            codice,
+            {
+                codice = it
+                // L'anteprima vale per il codice con cui e' stata chiesta. Cambiata una
+                // lettera, quel nome non risponde piu' a quello che c'e' scritto sopra, e
+                // lasciarlo li' sarebbe la stessa bugia di prima con una faccia rassicurante.
+                onCodeChanged()
+            },
+            "IL CODICE CHE TI HANNO DATO",
+            label = "Codice d'accesso",
+            uppercase = true,
         )
+
+        Spacer(Modifier.height(MFootSpacing.related))
+
+        when {
+            anteprima != null -> Anteprima(anteprima)
+            state.anteprimaVuota -> Notice(
+                "Nessuna lega con questo codice. Controlla con chi te l'ha dato: " +
+                    "e' facile che sia il codice di un'altra sua lega.",
+                MFootColors.gamble,
+            )
+            else -> GhostButton(
+                text = "Che lega e' questo codice?",
+                onClick = { onPeek(codice) },
+            )
+        }
+
         Spacer(Modifier.height(MFootSpacing.section))
         MFootField(
             nickname, { nickname = it }, "Come ti chiamano",
@@ -204,10 +236,49 @@ private fun JoinForm(
 
         Spacer(Modifier.height(24.dp))
         PrimaryButton(
-            text = "Entra",
+            // Il nome sul pulsante e' il punto di tutta la schermata: si preme sapendo
+            // dove si sta entrando, invece di scoprirlo dopo -- o di non scoprirlo mai.
+            text = anteprima?.let { "Entra in ${it.name}" } ?: "Entra",
             onClick = { onJoin(codice, nickname) },
-            enabled = pronto && state.busy == null,
+            enabled = pronto && state.busy == null && !state.anteprimaVuota,
         )
+
+        if (anteprima == null && !state.anteprimaVuota) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Puoi entrare anche senza guardare, ma guardare costa un tocco e ti " +
+                    "risparmia di ritrovarti in una lega che non e' quella dei tuoi amici.",
+                style = MFootType.chip,
+                color = MFootColors.ink3,
+            )
+        }
+    }
+}
+
+/**
+ * La lega che quel codice apre.
+ *
+ * ## Perche' c'e' anche la data di creazione
+ *
+ * Perche' chi prova il gioco crea tre leghe e le chiama tutte «Lega». Il nome da solo non
+ * distingue niente; il nome piu' «creata il 14 agosto» sì.
+ */
+@Composable
+private fun Anteprima(lega: dev.mfoot.android.data.LeaguePreview) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MFootColors.elite.copy(alpha = 0.08f), MFootShapes.field)
+            .border(1.dp, MFootColors.elite.copy(alpha = 0.4f), MFootShapes.field)
+            .padding(14.dp),
+    ) {
+        Text(lega.name, style = MFootType.rowTitle, color = MFootColors.elite)
+        Spacer(Modifier.height(4.dp))
+        Text(lega.riassunto, style = MFootType.chip, color = MFootColors.ink2)
+        lega.createdOn?.let {
+            Spacer(Modifier.height(2.dp))
+            Text("creata il $it", style = MFootType.chip, color = MFootColors.ink3)
+        }
     }
 }
 

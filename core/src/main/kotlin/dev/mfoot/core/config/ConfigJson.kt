@@ -114,6 +114,9 @@ object ConfigJson {
         w.arrayField("names")
         c.names.forEach { w.value(it) }
         w.endArray()
+        w.arrayField("sizes")
+        c.sizes.forEach { w.value(it) }
+        w.endArray()
         w.field("directPromotions", c.directPromotions)
         w.field("playoffSlots", c.playoffSlots)
         w.field("directRelegations", c.directRelegations)
@@ -362,6 +365,7 @@ object ConfigJson {
     private fun readDivisions(n: JsonNode, d: DivisionsConfig) = DivisionsConfig(
         count = n["count"].int(d.count),
         names = n["names"].listOr(d.names) { it.str("") }.filter { it.isNotBlank() },
+        sizes = n["sizes"].listOr(d.sizes) { it.int(0) }.filter { it > 0 },
         directPromotions = n["directPromotions"].int(d.directPromotions),
         playoffSlots = n["playoffSlots"].int(d.playoffSlots),
         directRelegations = n["directRelegations"].int(d.directRelegations),

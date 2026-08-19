@@ -63,6 +63,8 @@ fun Shell(
     isAdmin: Boolean,
     route: Route,
     drawerOpen: Boolean,
+    /** In quante leghe risulta iscritto chi guarda. Uno e' il caso normale. */
+    quanteLeghe: Int,
     onToggleDrawer: () -> Unit,
     onNavigate: (Route) -> Unit,
     onLeaveLeague: () -> Unit,
@@ -71,6 +73,34 @@ fun Shell(
     Box(Modifier.fillMaxSize().background(MFootColors.bg)) {
         Column(Modifier.fillMaxSize()) {
             TopBar(title, subtitle, onToggleDrawer)
+
+            // La riga che avverte di stare guardando una lega fra tante.
+            //
+            // Compare solo se ce n'e' piu' d'una, e non e' una decorazione: due amici
+            // hanno giocato in leghe diverse convinti di essere nella stessa, e non
+            // esisteva un solo posto nell'app che dicesse quale delle proprie si stava
+            // guardando. Con una lega sola non c'e' niente da dire e non compare.
+            if (quanteLeghe > 1) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(MFootColors.elite.copy(alpha = 0.10f))
+                        .clickable { onNavigate(Route.MieLeghe) }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Sei in $quanteLeghe leghe. Stai guardando $title.",
+                        style = MFootType.chip,
+                        color = MFootColors.elite,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text("cambia", style = MFootType.chip, color = MFootColors.elite)
+                }
+                Hairline()
+            }
 
             Box(Modifier.weight(1f)) { content() }
 
@@ -253,6 +283,22 @@ private fun Drawer(
         Item("Profilo lega", Route.ProfiloLega, route, onNavigate)
         Item("Partecipanti", Route.Partecipanti, route, onNavigate)
 
+        // «Cambia lega», non «Esci».
+        //
+        // Il gesto e' sempre stato questo — la lega resta dov'e', il club pure, e ci si
+        // rientra col codice — ma scritto in rosso in fondo al menu sembrava una
+        // cancellazione, quindi non lo toccava nessuno. Ed era l'unico modo che aveva chi
+        // si era ritrovato nella lega sbagliata di uscirne.
+        Text(
+            "Cambia lega",
+            style = MFootType.rowTitle,
+            color = MFootColors.ink,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onLeaveLeague)
+                .padding(MFootSpacing.section, 12.dp),
+        )
+
         if (isAdmin) {
             Section("Setup")
             Item("Regolamento e opzioni", Route.Opzioni, route, onNavigate)
@@ -277,15 +323,6 @@ private fun Drawer(
 
         Spacer(Modifier.height(24.dp))
         Hairline()
-        Text(
-            "Esci dalla lega",
-            style = MFootType.rowTitle,
-            color = MFootColors.gamble,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onLeaveLeague)
-                .padding(MFootSpacing.section, 15.dp),
-        )
 
         // La versione, scritta dove si vede senza cercarla.
         //

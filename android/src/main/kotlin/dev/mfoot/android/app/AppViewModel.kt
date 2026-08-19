@@ -37,6 +37,8 @@ import dev.mfoot.android.data.YouthRepository
 import dev.mfoot.core.calendar.ClubFate
 import dev.mfoot.core.calendar.LeagueCalendar
 import dev.mfoot.core.calendar.Division
+import dev.mfoot.core.calendar.DivisionAssignment
+import dev.mfoot.core.calendar.ClubToPlace
 import dev.mfoot.core.calendar.DivisionRules
 import dev.mfoot.core.calendar.SeasonEnd
 import dev.mfoot.core.calendar.CompetitionType
@@ -147,7 +149,50 @@ class AppViewModel : ViewModel() {
 
     fun apriPorta(mode: DoorMode) {
         val corrente = _state.value as? AppState.Porta ?: AppState.Porta()
-        _state.value = corrente.copy(mode = mode, errore = null)
+        _state.value = corrente.copy(
+            mode = mode,
+            errore = null,
+            // L'anteprima appartiene al codice che si stava scrivendo: cambiando schermata
+            // resterebbe appesa e la volta dopo si vedrebbe il nome di una lega che non
+            // c'entra piu' niente con quello che si sta digitando.
+            anteprima = null,
+            anteprimaVuota = false,
+        )
+    }
+
+    /**
+     * Guarda che lega apre un codice, **senza entrarci**.
+     *
+     * ## Perche' un passo in piu' prima di entrare
+     *
+     * Perche' e' il difetto che ha fatto giocare due amici in due leghe diverse convinti
+     * di essere nella stessa. Digitavi un codice e ti ritrovavi dentro: l'app non diceva
+     * mai in quale lega ti aveva portato. Un codice vecchio, o quello di un'altra prova, e
+     * finivi in un mondo che sembrava il suo — con dentro perfino la sua squadra di
+     * quando ci aveva provato lui — ma dove non succedeva niente.
+     *
+     * Il nome letto **prima** di premere toglie l'ambiguita' nell'unico momento in cui si
+     * puo' ancora tornare indietro senza conseguenze.
+     */
+    fun sbircia(codice: String) {
+        if (codice.isBlank()) return
+
+        viewModelScope.launch {
+            aggiornaPorta(busy = "Cerco la lega…")
+
+            when (val esito = MyLeaguesRepository.peek(codice)) {
+                is ApiResult.Error -> aggiornaPorta(errore = esito.message)
+                is ApiResult.Ok -> {
+                    val corrente = _state.value as? AppState.Porta ?: AppState.Porta()
+                    _state.value = corrente.copy(
+                        busy = null,
+                        errore = null,
+                        anteprima = esito.value,
+                        anteprimaVuota = esito.value == null,
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -309,6 +354,7 @@ class AppViewModel : ViewModel() {
                     _competizioni.value = CompetizioniMie()
                     _altrui.value = FormazioneAltrui()
                     _obiettivi.value = ObiettiviState()
+                    contaLeghe()
                 }
             }
         }
@@ -1374,6 +1420,30 @@ class AppViewModel : ViewModel() {
 
     // ------------------------------------------------------------------- le mie leghe
 
+    /**
+     * Quante leghe risultano mie.
+     *
+     * ## Perche' si conta a ogni caricamento
+     *
+     * Perche' e' l'unica cosa che avverte del guaio prima che diventi un guaio. Chi e' in
+     * una lega sola non vede niente e non paga quasi niente — una colonna di id, qualche
+     * millisecondo. Chi e' in tre se lo vede scritto in cima insieme a quale sta
+     * guardando, che e' esattamente l'informazione che mancava a due amici finiti in
+     * mondi diversi senza accorgersene.
+     */
+    private val _quanteLeghe = MutableStateFlow(1)
+    val quanteLeghe: StateFlow<Int> = _quanteLeghe
+
+    private suspend fun contaLeghe() {
+        // Le Row Level Security fanno il filtro: «tutte» vuol dire gia' «le mie».
+        when (val esito = SupabaseApi.get("/rest/v1/leagues?select=id")) {
+            is ApiResult.Error -> Unit
+            is ApiResult.Ok ->
+                _quanteLeghe.value =
+                    dev.mfoot.core.json.JsonNode.parse(esito.value).asList().size.coerceAtLeast(1)
+        }
+    }
+
     private val _mieLeghe = MutableStateFlow(MyLeaguesState())
     val mieLeghe: StateFlow<MyLeaguesState> = _mieLeghe
 
@@ -1802,15 +1872,56 @@ class AppViewModel : ViewModel() {
         viewModelScope.launch {
             _divisioni.value = _divisioni.value.copy(busy = "Assegno le divisioni…", errore = null)
 
-            val perForza = dentro.lega.clubs
-                .sortedByDescending { club ->
-                    dentro.lega.squadOf(club.id).sumOf { it.overall.toLong() }
-                }
-                .map { ClubId(it.id) }
+            val esito = DivisionAssignment.initial(
+                clubs = dentro.lega.clubs.map { club ->
+                    ClubToPlace(
+                        id = ClubId(club.id),
+                        // Il proprietario e' una persona: il club ha un `owner_user_id`. Le
+                        // AI no, e ci si puo' fidare perche' e' la stessa colonna che decide
+                        // chi puo' schierare la formazione.
+                        isHuman = !club.isAi && club.ownerUserId != null,
+                        isSecondTeam = club.parentClubId != null,
+                        strength = dentro.lega.squadOf(club.id).sumOf { it.overall.toLong() },
+                    )
+                },
+                divisions = config.count,
+                sizes = config.sizes,
+            )
 
-            val livelli = SeasonEnd.split(perForza, config.count)
-            applicaLivelli(dentro.lega.league.id, livelli, "Divisioni assegnate.")
+            val avvisi = esito.warnings.joinToString(" ") { it.message }
+            applicaLivelli(
+                dentro.lega.league.id,
+                esito.levels,
+                ("Divisioni assegnate: i giocatori veri in ${config.nameOf(1)}. " + avvisi).trim(),
+            )
         }
+    }
+
+    /**
+     * Cosa succederebbe premendo «assegna», detto prima di premere.
+     *
+     * La schermata la chiama a ogni disegno: e' un conto sui club gia' in memoria, non una
+     * richiesta. Serve perche' l'avviso che conta — «hai dodici amici e la Serie A ne
+     * prevede dieci» — deve arrivare quando si puo' ancora cambiare idea sulle dimensioni,
+     * non dopo aver riscritto la scala di tutta la lega.
+     */
+    fun anteprimaDivisioni(): List<String> {
+        val dentro = statoCorrente() ?: return emptyList()
+        val config = dentro.lega.league.config.divisions
+        if (!config.enabled) return emptyList()
+
+        return DivisionAssignment.initial(
+            clubs = dentro.lega.clubs.map { club ->
+                ClubToPlace(
+                    id = ClubId(club.id),
+                    isHuman = !club.isAi && club.ownerUserId != null,
+                    isSecondTeam = club.parentClubId != null,
+                    strength = dentro.lega.squadOf(club.id).sumOf { it.overall.toLong() },
+                )
+            },
+            divisions = config.count,
+            sizes = config.sizes,
+        ).warnings.map { it.message }
     }
 
     /**
@@ -2449,6 +2560,13 @@ class AppViewModel : ViewModel() {
     private fun aggiornaPorta(busy: String? = null, errore: String? = null) {
         val corrente = _state.value as? AppState.Porta ?: AppState.Porta()
         _state.value = corrente.copy(busy = busy, errore = errore)
+    }
+
+    /** Il codice e' cambiato sotto le dita: l'anteprima di prima non vale piu'. */
+    fun scordaAnteprima() {
+        val corrente = _state.value as? AppState.Porta ?: return
+        if (corrente.anteprima == null && !corrente.anteprimaVuota) return
+        _state.value = corrente.copy(anteprima = null, anteprimaVuota = false, errore = null)
     }
 
     /**

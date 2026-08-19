@@ -238,6 +238,16 @@ sealed interface AppState {
         val mode: DoorMode = DoorMode.SCELTA,
         val busy: String? = null,
         val errore: String? = null,
+        /**
+         * Che lega apre il codice appena scritto.
+         *
+         * Tre stati e non due: null vuol dire «non l'ho ancora chiesto», [anteprimaVuota]
+         * vuol dire «chiesto, e quel codice non apre niente». Confonderli farebbe sembrare
+         * un codice sbagliato uguale a un codice non ancora cercato, che e' esattamente
+         * l'ambiguita' per cui questa schermata esiste.
+         */
+        val anteprima: dev.mfoot.android.data.LeaguePreview? = null,
+        val anteprimaVuota: Boolean = false,
     ) : AppState
 
     data class Caricamento(val fase: String) : AppState

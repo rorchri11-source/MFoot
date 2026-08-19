@@ -125,6 +125,20 @@ data class DivisionsConfig(
      * I nomi, dalla massima in giu'. Se sono meno di [count], le altre prendono un numero.
      */
     val names: List<String> = listOf("Serie A", "Serie B", "Serie C", "Serie D"),
+    /**
+     * Quante squadre per divisione, dalla massima in giu'.
+     *
+     * ## Perche' serve, dato che il numero di club si sa gia'
+     *
+     * Perche' la regola di questa lega e' che **i giocatori veri partono tutti in prima
+     * divisione**, e quindi la dimensione della prima non e' piu' una divisione aritmetica:
+     * dipende da quanti amici si sono iscritti. Dodici amici e una Serie A da dieci sono
+     * una contraddizione che qualcuno deve sciogliere, e quel qualcuno e' l'admin — che sa
+     * se preferisce una Serie A da dodici o due amici in Serie B.
+     *
+     * Vuota significa «dividi in parti uguali», che e' il comportamento di sempre.
+     */
+    val sizes: List<Int> = emptyList(),
     /** Quante salgono direttamente dalla divisione di sotto. */
     val directPromotions: Int = 1,
     /** Quante si giocano ai playoff l'ultimo posto disponibile. Zero li disattiva. */
