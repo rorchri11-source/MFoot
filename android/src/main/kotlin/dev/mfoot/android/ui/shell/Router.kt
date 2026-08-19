@@ -49,6 +49,7 @@ import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.PlayerListScreen
 import dev.mfoot.android.ui.TableScreen
 import dev.mfoot.android.ui.screens.AsteConcluseScreen
+import dev.mfoot.android.ui.screens.CampoAltruiScreen
 import dev.mfoot.android.ui.screens.CampoScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
 import dev.mfoot.android.ui.screens.MercatiScreen
@@ -102,6 +103,10 @@ fun Router(
     onConfigChange: (LeagueConfig) -> Unit,
     onConfigSave: () -> Unit,
     desk: DeskState,
+    competizioni: dev.mfoot.android.app.CompetizioniMie,
+    onLoadCompetitions: () -> Unit,
+    formazioneAltrui: dev.mfoot.android.app.FormazioneAltrui,
+    onLoadOtherLineup: (Long) -> Unit,
     mieLeghe: dev.mfoot.android.app.MyLeaguesState,
     onLoadLeagues: () -> Unit,
     onSwitchLeague: (Long) -> Unit,
@@ -138,7 +143,14 @@ fun Router(
     onLineupSave: () -> Unit,
 ) {
     when (val route = state.route) {
-        is Route.Casa -> DashboardScreen(state, onNavigate, onFoundClub, onDismissNotice)
+        is Route.Casa -> DashboardScreen(
+            state = state,
+            competizioni = competizioni,
+            onCaricaCompetizioni = onLoadCompetitions,
+            onNavigate = onNavigate,
+            onFoundClub = onFoundClub,
+            onDismissNotice = onDismissNotice,
+        )
 
         // I tre posti con le schede. La riga di chip la disegna [Schede], che e' identica
         // per tutti e tre: e' il chip a cambiare posto, non la schermata a cambiare forma.
@@ -147,6 +159,8 @@ fun Router(
             Schede(TabSquadra.entries, route.tab) { onNavigate(Route.Squadra(it)) }
             when (route.tab) {
                 TabSquadra.ROSA -> state.clubMostrato
+                    // Sulla propria rosa il pulsante «vedi la formazione» non serve: c'e'
+                    // la scheda Campo qui accanto, che oltre a mostrarla la fa cambiare.
                     ?.let { RosaScreen(state, it.id, onSelect) }
                     ?: SenzaClub()
 
@@ -238,7 +252,19 @@ fun Router(
         // La rosa **di quel club**, non la propria. Prima la rotta portava con se' il
         // clubId e nessuno lo guardava: toccare una squadra qualsiasi nell'elenco apriva
         // sempre la propria, e sembrava che l'elenco non funzionasse.
-        is Route.Rosa -> RosaScreen(state, route.clubId, onSelect)
+        is Route.Rosa -> RosaScreen(
+            state = state,
+            clubId = route.clubId,
+            onSelect = onSelect,
+            onFormazione = { onNavigate(Route.Formazione(route.clubId)) },
+        )
+
+        is Route.Formazione -> CampoAltruiScreen(
+            state = state,
+            clubId = route.clubId,
+            formazione = formazioneAltrui,
+            onCarica = onLoadOtherLineup,
+        )
 
         is Route.ProfiloLega -> ProfiloLegaScreen(state)
         is Route.Partecipanti -> {

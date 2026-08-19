@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.PlayerRow
+import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.kit.CrestBadge
@@ -58,6 +59,8 @@ fun RosaScreen(
     state: AppState.Dentro,
     clubId: Long,
     onSelect: (PlayerRow) -> Unit,
+    /** Null sulla propria rosa: li' la formazione ha gia' la sua scheda, e si modifica. */
+    onFormazione: (() -> Unit)? = null,
 ) {
     val club = state.lega.clubs.firstOrNull { it.id == clubId }
     if (club == null) {
@@ -92,7 +95,7 @@ fun RosaScreen(
     }
 
     LazyColumn(Modifier.fillMaxSize().background(MFootColors.bg)) {
-        item { Intestazione(state, club, rosa.size) }
+        item { Intestazione(state, club, rosa.size, onFormazione) }
 
         perReparto.forEach { (reparto, giocatori) ->
             if (giocatori.isEmpty()) return@forEach
@@ -165,8 +168,10 @@ private fun Intestazione(
     state: AppState.Dentro,
     club: dev.mfoot.android.data.ClubInfo,
     inRosa: Int,
+    onFormazione: (() -> Unit)?,
 ) {
     val minimo = state.lega.league.config.setup.minSquadSize
+    val divisioni = state.lega.league.config.divisions
 
     Column(
         Modifier
@@ -186,10 +191,20 @@ private fun Intestazione(
             buildString {
                 append(club.ownerName ?: if (club.isAi) "gestita dal computer" else "senza proprietario")
                 if (club.isMine) append(" · la tua")
+                // Dove gioca. Era il dato che non compariva in nessuna schermata: la
+                // colonna esiste, decide promozioni e retrocessioni, e l'unico modo di
+                // scoprire in che serie si e' finiti era guardare il calendario.
+                if (divisioni.enabled) append(" · ").append(divisioni.nameOf(club.divisionLevel))
+                if (club.parentClubId != null) append(" · Primavera")
             },
             style = MFootType.chip,
             color = MFootColors.ink3,
         )
+
+        onFormazione?.let {
+            Spacer(Modifier.height(14.dp))
+            GhostButton("Vedi come schiera", onClick = it)
+        }
 
         Spacer(Modifier.height(16.dp))
         Row(
@@ -272,6 +287,44 @@ private fun Giocatore(riga: PlayerRow, onSelect: (PlayerRow) -> Unit) {
             Spacer(Modifier.height(2.dp))
             Text("${p.age} anni · ${Money(riga.value).formatShort()}", style = MFootType.chip, color = MFootColors.ink3)
         }
+
+        // La stamina accanto all'overall, non solo dentro la scheda.
+        //
+        // La domanda che si fa scorrendo una rosa e' "chi schiero domenica", e ha due
+        // risposte: quanto vale e se e' in piedi. Con la sola seconda cifra si schierava
+        // sempre il migliore, si scopriva il perche' del rendimento dopo la partita, e
+        // l'intero motivo per cui esistono una rosa profonda e una Primavera restava
+        // invisibile.
+        Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(38.dp)) {
+            Text(
+                "${p.stamina}",
+                style = MFootType.chip,
+                color = when {
+                    p.stamina >= 70 -> MFootColors.ink3
+                    p.stamina >= 40 -> MFootColors.gamble
+                    else -> MFootColors.gamble
+                },
+            )
+            Spacer(Modifier.height(2.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .background(MFootColors.line, MFootShapes.pill),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth((p.stamina / 100f).coerceIn(0f, 1f))
+                        .height(3.dp)
+                        .background(
+                            if (p.stamina >= 70) MFootColors.elite else MFootColors.gamble,
+                            MFootShapes.pill,
+                        ),
+                )
+            }
+        }
+
+        Spacer(Modifier.width(12.dp))
 
         Text(
             "${p.overall}",

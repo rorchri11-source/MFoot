@@ -53,6 +53,8 @@ fun PlayerDetailScreen(
     row: PlayerRow,
     /** Presenze, gol e media voto. Vuota finche non ha giocato niente. */
     carriera: dev.mfoot.android.data.Carriera = dev.mfoot.android.data.Carriera.NESSUNA,
+    /** La giornata di lega corrente: serve a dire *quando torna* un infortunato. */
+    giornata: Int = 0,
     canAuction: Boolean = false,
     /** Vero quando il giocatore e mio: cambia solo la parola sul pulsante, ma cambiarla
      * conta — "metti all asta" e "vendi" sono due gesti diversi. */
@@ -95,6 +97,7 @@ fun PlayerDetailScreen(
                 ) {
                     Header(row)
                     GrowthBand(row)
+                    Condizione(row, giornata)
                     Carriera(carriera)
                     Attributes(row)
                     Stars(row)
@@ -408,6 +411,111 @@ private fun SectionLabel(text: String) {
 }
 
 /**
+ * Come sta **adesso**: stamina, morale, forma, infortuni.
+ *
+ * ## Perche' e' la sezione che mancava di piu'
+ *
+ * La stamina e' il vincolo centrale del gioco — e' il motivo per cui serve una rosa
+ * profonda, il motivo per cui esiste la Primavera, il motivo per cui non si schierano
+ * sempre gli undici migliori. Il numero c'era nel database dal primo giorno, arrivava sul
+ * telefono dentro `players_public`, ed **era scritto in nessun posto**: ne' nella rosa, ne'
+ * nella scheda, ne' nel campo.
+ *
+ * Il risultato e' un gioco che chiede di ruotare la rosa senza dire mai quando. Un
+ * regolamento che non si puo' leggere non e' un regolamento: e' una sorpresa.
+ *
+ * ## Le quattro cose sono diverse fra loro, e vanno lette insieme
+ *
+ * La **stamina** si consuma giocando e torna col riposo: dice se puo' scendere in campo
+ * oggi. Il **morale** viene dallo spogliatoio e dalle promesse mantenute: dice quanto ci
+ * mette. La **forma** e' il momento, va da -5 a +5 e cambia da sola. L'**infortunio** e'
+ * l'unico che non e' una sfumatura: o c'e' o non c'e'.
+ */
+@Composable
+private fun Condizione(row: PlayerRow, giornata: Int) {
+    val p = row.player
+    val fuoriFino = p.injuredUntil?.value
+    val infortunato = fuoriFino != null && fuoriFino >= giornata
+
+    Column(Modifier.padding(horizontal = MFootSpacing.gutter)) {
+        Spacer(Modifier.height(MFootSpacing.section))
+        SectionLabel("COME STA")
+        Spacer(Modifier.height(MFootSpacing.related))
+
+        Barra("Stamina", p.stamina, 100, coloreStamina(p.stamina))
+        Spacer(Modifier.height(9.dp))
+        Barra("Morale", p.morale, 100, coloreMorale(p.morale))
+        Spacer(Modifier.height(9.dp))
+        // La forma va da -5 a +5: si mostra spostata, altrimenti una barra vuota
+        // sembrerebbe un giocatore senza forma invece che uno in forma pessima.
+        Barra(
+            etichetta = "Forma",
+            valore = p.form + 5,
+            massimo = 10,
+            colore = if (p.form >= 0) MFootColors.elite else MFootColors.gamble,
+            testo = if (p.form > 0) "+${p.form}" else "${p.form}",
+        )
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            when {
+                infortunato -> "Infortunato: torna alla giornata $fuoriFino."
+                p.stamina < 40 -> "Stanco: schierarlo cosi' vuol dire un rendimento sotto il suo valore."
+                p.stamina < 70 -> "Non fresco. Con una giornata di riposo torna al massimo."
+                else -> "Pronto a giocare."
+            },
+            style = MFootType.chip,
+            color = if (infortunato || p.stamina < 40) MFootColors.gamble else MFootColors.ink3,
+        )
+    }
+}
+
+/** Una barra con l'etichetta a sinistra e il numero a destra. */
+@Composable
+private fun Barra(
+    etichetta: String,
+    valore: Int,
+    massimo: Int,
+    colore: Color,
+    testo: String = "$valore",
+) {
+    Column {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                etichetta,
+                style = MFootType.chip,
+                color = MFootColors.ink3,
+                modifier = Modifier.weight(1f),
+            )
+            Text(testo, style = MFootType.value, color = colore)
+        }
+        Spacer(Modifier.height(5.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .background(MFootColors.line, MFootShapes.pill),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth((valore.toFloat() / massimo).coerceIn(0f, 1f))
+                    .height(6.dp)
+                    .background(colore, MFootShapes.pill),
+            )
+        }
+    }
+}
+
+private fun coloreStamina(valore: Int): Color = when {
+    valore >= 70 -> MFootColors.elite
+    valore >= 40 -> MFootColors.gamble
+    else -> MFootColors.gamble
+}
+
+private fun coloreMorale(valore: Int): Color =
+    if (valore >= 50) MFootColors.elite else MFootColors.gamble
+
+/**
  * Presenze, gol, media voto.
  *
  * ## Perche non c era
@@ -426,16 +534,29 @@ private fun Carriera(carriera: dev.mfoot.android.data.Carriera) {
         SectionLabel("IN CAMPO")
         Spacer(Modifier.height(MFootSpacing.related))
 
+        // I numeri, non le sole etichette. Cinque delle sei caselle passavano una stringa
+        // vuota: la sezione esisteva, aveva i titoli giusti, ed era vuota. Chi la guardava
+        // vedeva "Presenze" con sotto il nulla e concludeva che le presenze non si
+        // contassero -- mentre `appearances` le contava da sempre.
         Row(Modifier.fillMaxWidth()) {
-            Voce("Presenze", "", Modifier.weight(1f))
-            Voce("Da titolare", "", Modifier.weight(1f))
-            Voce("Minuti", "", Modifier.weight(1f))
+            Voce("Presenze", "${carriera.presenze}", Modifier.weight(1f))
+            Voce("Da titolare", "${carriera.daTitolare}", Modifier.weight(1f))
+            Voce("Minuti", "${carriera.minuti}", Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth()) {
-            Voce("Gol", "", Modifier.weight(1f))
-            Voce("Assist", "", Modifier.weight(1f))
+            Voce("Gol", "${carriera.gol}", Modifier.weight(1f))
+            Voce("Assist", "${carriera.assist}", Modifier.weight(1f))
             Voce("Media voto", voto(carriera.mediaVoto), Modifier.weight(1f))
+        }
+
+        if (carriera.gialli > 0 || carriera.rossi > 0) {
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth()) {
+                Voce("Gialli", "${carriera.gialli}", Modifier.weight(1f))
+                Voce("Rossi", "${carriera.rossi}", Modifier.weight(1f))
+                Voce("", "", Modifier.weight(1f))
+            }
         }
     }
 }

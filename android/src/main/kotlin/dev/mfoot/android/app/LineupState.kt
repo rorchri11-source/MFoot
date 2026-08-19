@@ -23,6 +23,41 @@ import dev.mfoot.core.model.Player
  * salvare a ogni tocco vorrebbe dire mandare al database venti formazioni intermedie che
  * nessuno ha mai voluto schierare.
  */
+/**
+ * La formazione di **un'altra** squadra, in sola lettura.
+ *
+ * ## Perche' e' una cosa a parte da [LineupEdit]
+ *
+ * Perche' non e' un editor con i pulsanti spenti. `LineupEdit` porta con se' mezza dozzina
+ * di concetti che qui non esistono — cosa si sta scegliendo, cosa c'e' da salvare, com'era
+ * prima — e riusarlo vorrebbe dire tenerli tutti a null e sperare che nessuna schermata li
+ * guardi. Sono due domande diverse: «come schiero» e «come schiera lui».
+ *
+ * ## Perche' si vede, che non e' ovvio
+ *
+ * Perche' e' una lega fra amici e il modulo dell'avversario non e' un segreto: e' scritto
+ * nel database, lo leggono gia' il tick e la classifica, e chi gioca lo scoprirebbe
+ * comunque a partita finita guardando le presenze. Nasconderlo non proteggeva niente e
+ * toglieva l'unica cosa che rende interessante preparare una partita — vedere che gioca
+ * con tre attaccanti e decidere di conseguenza.
+ *
+ * [suPrevisione] distingue le due situazioni che vanno tenute separate: una formazione
+ * **scelta** dal proprietario, e quella che il server schiererebbe da solo per uno che non
+ * ha scelto niente. La seconda e' un'ipotesi, e va detto.
+ */
+data class FormazioneAltrui(
+    val clubId: Long? = null,
+    val formation: Formation = Formation.F_4_3_3,
+    /** Un elemento per casella, nell'ordine del modulo. */
+    val eleven: List<Player?> = emptyList(),
+    val bench: List<Player> = emptyList(),
+    val tactics: Tactics? = null,
+    /** Nessuno ha schierato: quello che si vede e' cio' che scenderebbe in campo da solo. */
+    val suPrevisione: Boolean = false,
+    val letto: Boolean = false,
+    val errore: String? = null,
+)
+
 data class LineupEdit(
     val formation: Formation = Formation.F_4_3_3,
     /** Un elemento per casella del modulo, nell'ordine del modulo. Null = casella vuota. */

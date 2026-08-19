@@ -53,28 +53,105 @@ fun SquadreScreen(
     state: AppState.Dentro,
     onOpenClub: (Long) -> Unit,
 ) {
+    val divisioni = state.lega.league.config.divisions
     val mio = state.lega.myClub
-    val altri = state.lega.clubs
-        .filterNot { it.id == mio?.id }
-        .sortedByDescending { it.available }
-    val ordinate = listOfNotNull(mio) + altri
+    val minimo = state.lega.league.config.setup.minSquadSize
+
+    // Raggruppate per divisione, non tutte in fila.
+    //
+    // ## Perche' non bastava ordinarle per disponibilita'
+    //
+    // Perche' rispondeva a una domanda sola — chi puo' ancora spendere — e ne lasciava
+    // scoperta una piu' importante: **in che campionato gioco, e contro chi**. Con venti
+    // club in un elenco unico, la Serie A e la Serie B erano indistinguibili: `division_level`
+    // esisteva sul database, decideva promozioni e retrocessioni, e non era scritto in
+    // nessuna schermata. Chi retrocedeva se ne accorgeva dal calendario.
+    //
+    // Con una divisione sola il raggruppamento non si vede: c'e' un blocco solo, senza
+    // titolo, ed e' esattamente com'era prima.
+    val gruppi = state.lega.clubs
+        .groupBy { it.divisionLevel }
+        .toSortedMap()
+        .map { (livello, club) ->
+            livello to (
+                club.sortedWith(
+                    // Il proprio per primo dentro la sua divisione, poi gli altri per
+                    // disponibilita': la domanda "chi puo' spendere" resta, dentro il
+                    // gruppo in cui ha senso farsela.
+                    compareByDescending<ClubInfo> { it.id == mio?.id }
+                        .thenByDescending { it.available },
+                )
+                )
+        }
 
     Column(Modifier.fillMaxSize().background(MFootColors.bg)) {
         Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 10.dp)) {
-            Label("${state.lega.clubs.size} squadre · ordinate per disponibilita'")
+            Label(
+                if (divisioni.enabled) {
+                    "${state.lega.clubs.size} squadre in ${gruppi.size} divisioni"
+                } else {
+                    "${state.lega.clubs.size} squadre · ordinate per disponibilita'"
+                },
+            )
+            mio?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    buildString {
+                        append("Tu giochi in ")
+                        append(if (divisioni.enabled) divisioni.nameOf(it.divisionLevel) else "girone unico")
+                        append(" con ")
+                        append(gruppi.firstOrNull { g -> g.first == it.divisionLevel }?.second?.size ?: 0)
+                        append(" squadre.")
+                    },
+                    style = MFootType.chip,
+                    color = MFootColors.elite,
+                )
+            }
         }
 
         LazyColumn(Modifier.fillMaxSize()) {
-            items(ordinate, key = { it.id }) { club ->
-                ClubRow(
-                    club = club,
-                    inRosa = state.lega.squadOf(club.id).size,
-                    minimo = state.lega.league.config.setup.minSquadSize,
-                ) { onOpenClub(club.id) }
+            gruppi.forEach { (livello, club) ->
+                if (divisioni.enabled) {
+                    item(key = "div-$livello") {
+                        Intestazione(divisioni.nameOf(livello), club.size, livello == mio?.divisionLevel)
+                    }
+                }
+                items(club, key = { it.id }) { c ->
+                    ClubRow(
+                        club = c,
+                        inRosa = state.lega.squadOf(c.id).size,
+                        minimo = minimo,
+                    ) { onOpenClub(c.id) }
+                }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
+}
+
+/** Il nome della divisione, con quante squadre ci sono e se e' la propria. */
+@Composable
+private fun Intestazione(nome: String, quante: Int, mia: Boolean) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(if (mia) MFootColors.elite.copy(alpha = 0.10f) else MFootColors.core)
+            .padding(MFootSpacing.section, 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            nome.uppercase(),
+            style = MFootType.label,
+            color = if (mia) MFootColors.elite else MFootColors.ink2,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            if (mia) "$quante squadre · la tua" else "$quante squadre",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).background(MFootColors.line))
 }
 
 @Composable
@@ -100,7 +177,13 @@ private fun ClubRow(club: ClubInfo, inRosa: Int, minimo: Int, onClick: () -> Uni
 
         Column(Modifier.weight(1f)) {
             Text(
-                club.name,
+                buildString {
+                    append(club.name)
+                    // La seconda squadra si riconosce a colpo d'occhio: senza, in una
+                    // classifica di venti righe «Milan» e «Milan Primavera» sono due club
+                    // qualsiasi che per caso si somigliano.
+                    if (club.parentClubId != null) append("  ⤷")
+                },
                 style = MFootType.rowTitle,
                 color = if (club.isMine) MFootColors.elite else MFootColors.ink,
                 maxLines = 1,
@@ -110,6 +193,7 @@ private fun ClubRow(club: ClubInfo, inRosa: Int, minimo: Int, onClick: () -> Uni
                 buildString {
                     append(if (club.isAi) "AI" else club.ownerName ?: "senza proprietario")
                     append(" · ").append(inRosa).append(" in rosa")
+                    if (club.parentClubId != null) append(" · Primavera")
                 },
                 style = MFootType.chip,
                 color = if (inRosa < minimo) MFootColors.gamble else MFootColors.ink3,

@@ -17,11 +17,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
+import dev.mfoot.android.app.CompetizioniMie
 import dev.mfoot.android.app.Route
 import dev.mfoot.android.app.TabLega
 import dev.mfoot.android.app.TabMercato
@@ -53,11 +55,15 @@ import dev.mfoot.core.model.Money
 @Composable
 fun DashboardScreen(
     state: AppState.Dentro,
+    competizioni: CompetizioniMie,
+    onCaricaCompetizioni: () -> Unit,
     onNavigate: (Route) -> Unit,
     onFoundClub: () -> Unit,
     onDismissNotice: () -> Unit,
 ) {
     val club = state.lega.myClub
+
+    LaunchedEffect(state.lega.league.id) { onCaricaCompetizioni() }
 
     Column(
         Modifier
@@ -146,6 +152,9 @@ fun DashboardScreen(
         }
 
         Spacer(Modifier.height(28.dp))
+        ACosaGiochi(state, competizioni, onNavigate)
+
+        Spacer(Modifier.height(28.dp))
         Label("Scorciatoie")
         Spacer(Modifier.height(10.dp))
         Scorciatoia("Schiera la squadra", "Campo, modulo, panchina") { onNavigate(Route.Squadra(TabSquadra.CAMPO)) }
@@ -155,6 +164,108 @@ fun DashboardScreen(
 
         Spacer(Modifier.height(30.dp))
     }
+}
+
+/**
+ * A cosa stai giocando: la divisione, e i tornei a cui il tuo club e' iscritto.
+ *
+ * ## Perche' e' una sezione e non una riga
+ *
+ * Perche' erano due informazioni fondamentali che il gioco non scriveva da nessuna parte.
+ *
+ * La **divisione** decide contro chi giochi e cosa succede a fine stagione, ed esisteva
+ * solo come numero nel database: l'unico modo di sapere in che serie si stava era dedurlo
+ * dal calendario.
+ *
+ * Le **competizioni** vivevano dentro un menu a tendina della classifica. Un admin puo'
+ * creare un campionato, una coppa e un torneo a gironi insieme — e' la cosa che rende una
+ * lega la sua — e chi ci gioca dentro vedeva solo delle partite, senza sapere di che
+ * torneo facessero parte.
+ */
+@Composable
+private fun ACosaGiochi(
+    state: AppState.Dentro,
+    competizioni: CompetizioniMie,
+    onNavigate: (Route) -> Unit,
+) {
+    val club = state.lega.myClub ?: return
+    val primavera = state.lega.myYouthClub
+    val divisioni = state.lega.league.config.divisions
+
+    // Sia la prima squadra sia la Primavera: sono due club veri, giocano due campionati
+    // diversi, e chi ha la seconda squadra vuole sapere anche dove gioca quella.
+    val miei = listOfNotNull(club.id, primavera?.id).toSet()
+    val mie = competizioni.tutte.filter { c -> c.participants.any { it in miei } }
+
+    Label("A cosa giochi")
+    Spacer(Modifier.height(10.dp))
+
+    if (divisioni.enabled) {
+        Riga(
+            titolo = divisioni.nameOf(club.divisionLevel),
+            dettaglio = buildString {
+                append("la tua divisione · ")
+                append(state.lega.clubs.count { it.divisionLevel == club.divisionLevel })
+                append(" squadre")
+                primavera?.let {
+                    append(" · Primavera in ").append(divisioni.nameOf(it.divisionLevel))
+                }
+            },
+        ) { onNavigate(Route.Lega(TabLega.SQUADRE)) }
+    }
+
+    when {
+        !competizioni.letto -> Text(
+            "Leggo le competizioni…",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+
+        mie.isEmpty() -> Text(
+            "Nessuna competizione in corso per il tuo club. Finche' l'admin non ne crea " +
+                "una, si gioca solo il mercato e le amichevoli.",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+
+        else -> mie.forEach { c ->
+            val perPrimavera = primavera != null && club.id !in c.participants
+            Riga(
+                titolo = c.name,
+                dettaglio = buildString {
+                    append(c.type.label)
+                    append(" · ").append(c.participants.size).append(" squadre")
+                    if (c.fixtures > 0) {
+                        append(" · ").append(c.played).append(" di ").append(c.fixtures)
+                            .append(" partite giocate")
+                    }
+                    if (c.isFinished) append(" · finita")
+                    if (perPrimavera) append(" · e' della tua Primavera")
+                },
+            ) { onNavigate(Route.Lega(TabLega.CLASSIFICA)) }
+        }
+    }
+}
+
+@Composable
+private fun Riga(titolo: String, dettaglio: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MFootColors.core, MFootShapes.field)
+            .border(1.dp, MFootColors.line, MFootShapes.field)
+            .clickable(onClick = onClick)
+            .padding(13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(titolo, style = MFootType.rowTitle, color = MFootColors.ink)
+            Spacer(Modifier.height(2.dp))
+            Text(dettaglio, style = MFootType.chip, color = MFootColors.ink3)
+        }
+        Text("›", style = MFootType.price, color = MFootColors.ink3)
+    }
+    Spacer(Modifier.height(8.dp))
 }
 
 @Composable

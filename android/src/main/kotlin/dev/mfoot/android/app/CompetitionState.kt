@@ -201,6 +201,24 @@ data class DeskState(
 )
 
 /**
+ * A cosa sta giocando il proprio club.
+ *
+ * ## Perche' vale una lettura in piu' all'apertura
+ *
+ * Perche' l'admin puo' creare un campionato, una coppa e un torneo a gironi tutti insieme,
+ * e la lista delle competizioni viveva **solo** dentro la schermata della classifica, in un
+ * menu a tendina che va aperto per sapere che esiste. Il risultato e' un gioco in cui si
+ * giocano partite senza sapere di che torneo fanno parte: se ne vede il risultato, non il
+ * significato.
+ *
+ * E' una richiesta sola, che riguarda al massimo qualche riga.
+ */
+data class CompetizioniMie(
+    val tutte: List<dev.mfoot.android.data.CompetitionInfo> = emptyList(),
+    val letto: Boolean = false,
+)
+
+/**
  * L'elenco delle proprie leghe.
  *
  * ## A cosa serve, che e' meno ovvio del nome

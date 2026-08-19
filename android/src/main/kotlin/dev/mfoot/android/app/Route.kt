@@ -92,6 +92,7 @@ sealed interface Route {
             Competizioni -> "Competizioni"
             RegistroAdmin -> "Registro attivita'"
             is Rosa -> "Rosa"
+            is Formazione -> "Formazione"
             is Giocatore -> row.player.fullName
             is Offerta -> auction.label
         }
@@ -189,6 +190,14 @@ sealed interface Route {
 
     /** La rosa di un club qualsiasi, aperta dall'elenco delle squadre. */
     data class Rosa(val clubId: Long) : Route
+
+    /**
+     * Come schiera un club qualsiasi: campo e panchina, in sola lettura.
+     *
+     * Distinta da `Squadra(CAMPO)`, che e' l'editor della **propria**: sono due schermate
+     * diverse e non la stessa coi pulsanti spenti.
+     */
+    data class Formazione(val clubId: Long) : Route
 
     data class Giocatore(val row: PlayerRow) : Route
     data class Offerta(val auction: AuctionRow) : Route

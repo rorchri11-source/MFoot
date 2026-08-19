@@ -296,6 +296,10 @@ class AppViewModel : ViewModel() {
                     // Ripulito a ogni ricarica: dopo che qualcuno fonda un club, un elenco
                     // partecipanti in memoria dalla volta prima lo mostrerebbe ancora senza.
                     _desk.value = DeskState()
+                    // Stessa ragione: una competizione appena creata, o una giornata
+                    // appena giocata, cambiano quello che la Casa deve dire.
+                    _competizioni.value = CompetizioniMie()
+                    _altrui.value = FormazioneAltrui()
                 }
             }
         }
@@ -1093,6 +1097,28 @@ class AppViewModel : ViewModel() {
                 // "sto ancora caricando".
                 is ApiResult.Ok ->
                     _desk.value = _desk.value.copy(tick = esito.value, tickLetto = true, errore = null)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ le mie competizioni
+
+    private val _competizioni = MutableStateFlow(CompetizioniMie())
+    val competizioni: StateFlow<CompetizioniMie> = _competizioni
+
+    /** Le competizioni della lega, lette una volta per apertura. */
+    fun caricaCompetizioni() {
+        val dentro = statoCorrente() ?: return
+        if (_competizioni.value.letto) return
+
+        viewModelScope.launch {
+            when (val esito = CompetitionRepository.list(dentro.lega.league.id)) {
+                // Nessun messaggio d'errore: la Casa non e' il posto in cui segnalare che
+                // una lettura secondaria non e' riuscita. La sezione semplicemente non
+                // compare, e ricomparira' al prossimo giro.
+                is ApiResult.Error -> Unit
+                is ApiResult.Ok ->
+                    _competizioni.value = CompetizioniMie(tutte = esito.value, letto = true)
             }
         }
     }
@@ -1976,6 +2002,68 @@ class AppViewModel : ViewModel() {
             // server, aprire la schermata la mostrerebbe subito come da salvare ogni volta
             // che un titolare non c'e' piu'.
             _lineup.value = base.copy(clubId = club.id, salvata = base.snapshot)
+        }
+    }
+
+    // ------------------------------------------------------- la formazione degli altri
+
+    private val _altrui = MutableStateFlow(FormazioneAltrui())
+    val formazioneAltrui: StateFlow<FormazioneAltrui> = _altrui
+
+    /**
+     * Come schiera un altro club.
+     *
+     * Se non ha schierato niente si mostra **cio' che scenderebbe in campo da solo**,
+     * calcolato con lo stesso [AutoLineup] che usa il server: e' un'ipotesi e la schermata
+     * lo dice, ma e' un'ipotesi esatta, non un campo vuoto. Un campo vuoto direbbe «non si
+     * sa», che e' falso — si sa benissimo, ed e' l'informazione che serve.
+     */
+    fun caricaFormazioneAltrui(clubId: Long) {
+        val dentro = statoCorrente() ?: return
+        if (_altrui.value.clubId == clubId && _altrui.value.letto) return
+
+        val squad = dentro.lega.squadOf(clubId)
+        val today = MatchDay(dentro.lega.league.currentMatchDay)
+
+        viewModelScope.launch {
+            _altrui.value = FormazioneAltrui(clubId = clubId)
+
+            val salvata = when (val esito = LineupRepository.read(clubId)) {
+                is ApiResult.Error -> null
+                is ApiResult.Ok -> esito.value
+            }
+            val composta = salvata?.takeIf { it.eleven.any { id -> id != null } }
+
+            _altrui.value = if (composta != null) {
+                val byId = squad.associateBy { it.id.value }
+                FormazioneAltrui(
+                    clubId = clubId,
+                    formation = composta.formation,
+                    eleven = composta.eleven.map { id -> id?.let { byId[it] } },
+                    bench = composta.bench.mapNotNull { byId[it] },
+                    tactics = composta.tactics,
+                    suPrevisione = false,
+                    letto = true,
+                )
+            } else {
+                val modulo = AutoLineup.bestFormation(squad, today)
+                val auto = AutoLineup.build(squad, modulo, today)
+                FormazioneAltrui(
+                    clubId = clubId,
+                    formation = modulo,
+                    eleven = auto?.slots?.map { it.player }
+                        ?: List(modulo.positions.size) { null },
+                    bench = auto?.bench.orEmpty(),
+                    tactics = salvata?.tactics,
+                    suPrevisione = true,
+                    letto = true,
+                    errore = if (auto == null) {
+                        "Rosa troppo corta per undici: questa squadra non scende in campo."
+                    } else {
+                        null
+                    },
+                )
+            }
         }
     }
 
