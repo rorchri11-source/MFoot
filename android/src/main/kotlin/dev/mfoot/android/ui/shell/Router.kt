@@ -54,6 +54,7 @@ import dev.mfoot.android.ui.screens.CampoScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
 import dev.mfoot.android.ui.screens.MercatiScreen
 import dev.mfoot.android.ui.screens.MieLegheScreen
+import dev.mfoot.android.ui.screens.ObiettiviScreen
 import dev.mfoot.android.ui.screens.PartecipantiScreen
 import dev.mfoot.android.ui.screens.ProfiloLegaScreen
 import dev.mfoot.android.ui.screens.RegistroScreen
@@ -103,6 +104,9 @@ fun Router(
     onConfigChange: (LeagueConfig) -> Unit,
     onConfigSave: () -> Unit,
     desk: DeskState,
+    obiettivi: dev.mfoot.android.app.ObiettiviState,
+    onLoadObjectives: () -> Unit,
+    onAssignObjectives: () -> Unit,
     competizioni: dev.mfoot.android.app.CompetizioniMie,
     onLoadCompetitions: () -> Unit,
     formazioneAltrui: dev.mfoot.android.app.FormazioneAltrui,
@@ -146,7 +150,9 @@ fun Router(
         is Route.Casa -> DashboardScreen(
             state = state,
             competizioni = competizioni,
+            obiettivi = obiettivi,
             onCaricaCompetizioni = onLoadCompetitions,
+            onCaricaObiettivi = onLoadObjectives,
             onNavigate = onNavigate,
             onFoundClub = onFoundClub,
             onDismissNotice = onDismissNotice,
@@ -273,6 +279,13 @@ fun Router(
             LaunchedEffect(state.lega.league.id) { onLoadMembers() }
             PartecipantiScreen(desk)
         }
+
+        is Route.Obiettivi -> ObiettiviScreen(
+            state = state,
+            obiettivi = obiettivi,
+            onCarica = onLoadObjectives,
+            onAssegna = onAssignObjectives,
+        )
 
         is Route.MieLeghe -> MieLegheScreen(
             stato = mieLeghe,

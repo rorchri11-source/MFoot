@@ -36,6 +36,43 @@ data class LeagueConfig(
     val notifications: NotificationConfig = NotificationConfig(),
     val ai: AiConfig = AiConfig(),
     val engine: EngineConfig = EngineConfig(),
+    val objectives: ObjectivesConfig = ObjectivesConfig(),
+)
+
+// ------------------------------------------------------------------------ obiettivi
+
+/**
+ * Cosa la societa' chiede a ogni allenatore, e quanto paga.
+ *
+ * ## Perche' i premi sono percentuali e non cifre
+ *
+ * Come tutto il resto dell'economia. Un premio da ventimila crediti e' un incentivo serio
+ * in una lega che ne distribuisce centomila all'inizio, ed e' una mancia nella stessa lega
+ * col budget moltiplicato per dieci. Scritto in percentuale, il premio segue l'economia
+ * scelta dall'admin senza che nessuno debba ricordarsi di aggiornarlo.
+ *
+ * ## Perche' si possono spegnere
+ *
+ * Perche' cambiano il gioco: con gli obiettivi accesi, una squadra che gioca per non
+ * retrocedere ha un motivo economico per giocare cosi' e non per divertirsi. C'e' chi vuole
+ * quella pressione e chi no, e imporla sarebbe decidere che tipo di lega e' quella degli
+ * altri.
+ */
+data class ObjectivesConfig(
+    val enabled: Boolean = true,
+    /** Il premio dell'obiettivo di classifica, in percentuale del budget di partenza. */
+    val leagueRewardPercent: Int = 25,
+    /** Il premio dell'obiettivo di crescita. */
+    val developmentRewardPercent: Int = 15,
+    /**
+     * Il premio dell'obiettivo lungo.
+     *
+     * Piu' alto degli altri due perche' costa piu' di una stagione, e perche' e' l'unico
+     * che chiede di non svendere tutto a giugno per far quadrare il bilancio di adesso.
+     */
+    val longTermRewardPercent: Int = 40,
+    /** Quante stagioni dura l'obiettivo lungo. */
+    val longTermSeasons: Int = 2,
 )
 
 // ---------------------------------------------------------------------------- setup

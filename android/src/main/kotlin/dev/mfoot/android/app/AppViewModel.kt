@@ -16,6 +16,7 @@ import dev.mfoot.android.data.MatchRepository
 import dev.mfoot.android.data.MyLeaguesRepository
 import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
+import dev.mfoot.android.data.ObjectiveRepository
 import dev.mfoot.android.data.PlayerRepository
 import dev.mfoot.android.data.PromiseRepository
 import dev.mfoot.android.data.CounterRepository
@@ -47,11 +48,18 @@ import dev.mfoot.core.conversation.ConversationTopic
 import dev.mfoot.core.conversation.LeagueFacts
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.market.Valuation
+import dev.mfoot.core.objectives.ClubSeason
+import dev.mfoot.core.objectives.ClubStanding
+import dev.mfoot.core.objectives.Objective
+import dev.mfoot.core.objectives.ObjectiveBoard
+import dev.mfoot.core.objectives.ObjectiveEngine
+import dev.mfoot.core.objectives.ObjectiveStatus
 import dev.mfoot.core.match.AutoLineup
 import dev.mfoot.core.match.Tactics
 import dev.mfoot.core.model.Attr
 import dev.mfoot.core.model.ClubId
 import dev.mfoot.core.model.MatchDay
+import dev.mfoot.core.model.Money
 import dev.mfoot.core.model.Position
 import dev.mfoot.core.world.CustomPlayerBuilder
 import dev.mfoot.core.world.PotentialEstimator
@@ -300,6 +308,7 @@ class AppViewModel : ViewModel() {
                     // appena giocata, cambiano quello che la Casa deve dire.
                     _competizioni.value = CompetizioniMie()
                     _altrui.value = FormazioneAltrui()
+                    _obiettivi.value = ObiettiviState()
                 }
             }
         }
@@ -1101,6 +1110,220 @@ class AppViewModel : ViewModel() {
         }
     }
 
+    // ---------------------------------------------------------------------- obiettivi
+
+    private val _obiettivi = MutableStateFlow(ObiettiviState())
+    val obiettivi: StateFlow<ObiettiviState> = _obiettivi
+
+    fun caricaObiettivi(forza: Boolean = false) {
+        val dentro = statoCorrente() ?: return
+        if (_obiettivi.value.letto && !forza) return
+
+        viewModelScope.launch {
+            val righe = ObjectiveRepository.all(dentro.lega.league.id)
+            _obiettivi.value = _obiettivi.value.copy(righe = righe, letto = true, busy = null)
+        }
+    }
+
+    /**
+     * Assegna gli obiettivi della stagione a **tutti** i club della lega.
+     *
+     * ## Perche' a tutti insieme e non uno per volta
+     *
+     * Perche' una lega in cui meta' squadre hanno obiettivi e meta' no e' peggio di una in
+     * cui non ne ha nessuno: le prime giocano per un premio, le seconde no, e la stagione
+     * non e' piu' la stessa per tutti.
+     *
+     * ## Perche' li calcola il telefono e non il database
+     *
+     * Perche' la regola vive in `core`, con i suoi test, ed e' la stessa che spiega
+     * l'obiettivo nella schermata. Riscriverla in SQL vorrebbe dire due regolamenti che si
+     * separano al primo ritocco, e un premio calcolato in modo diverso da come e'
+     * annunciato. Il database non si fida comunque: controlla che i club siano di questa
+     * lega e rifiuta il resto.
+     */
+    fun assegnaObiettivi() {
+        val dentro = statoCorrente() ?: return
+        val config = dentro.lega.league.config
+        if (!config.objectives.enabled) {
+            _obiettivi.value = _obiettivi.value.copy(
+                errore = "Gli obiettivi sono spenti nel regolamento di questa lega.",
+            )
+            return
+        }
+
+        val stagione = _obiettivi.value.stagione + 1
+
+        viewModelScope.launch {
+            _obiettivi.value = _obiettivi.value.copy(busy = "Assegno gli obiettivi…", errore = null)
+
+            val coppe = when (val esito = CompetitionRepository.list(dentro.lega.league.id)) {
+                is ApiResult.Error -> emptyList()
+                is ApiResult.Ok -> esito.value.filter { it.type == CompetitionType.ELIMINAZIONE_DIRETTA }
+            }
+
+            val items = ArrayList<Pair<Long, Objective>>(dentro.lega.clubs.size * 3)
+
+            // Le Primavere non ricevono obiettivi propri: non hanno portafoglio, e chiedere
+            // a una seconda squadra di vincere il suo campionato vorrebbe dire pagare due
+            // volte la stessa persona per la stessa stagione.
+            val prime = dentro.lega.clubs.filter { it.parentClubId == null }
+
+            prime.groupBy { it.divisionLevel }.forEach { (livello, club) ->
+                // La forza e' la somma degli overall della rosa: e' la stessa misura con
+                // cui si compongono le divisioni, quindi le due cose non si contraddicono.
+                val perForza = club.sortedByDescending { c ->
+                    dentro.lega.squadOf(c.id).sumOf { it.overall.toLong() }
+                }
+
+                perForza.forEachIndexed { indice, c ->
+                    val rosa = dentro.lega.squadOf(c.id)
+                    val standing = ClubStanding(
+                        strengthRank = indice + 1,
+                        teamsInDivision = perForza.size,
+                        divisionLevel = livello,
+                        divisionCount = config.divisions.count,
+                        customOverall = c.customPlayerId
+                            ?.let { id -> rosa.firstOrNull { it.id.value == id }?.overall }
+                            ?: 0,
+                        bestOverall = rosa.maxOfOrNull { it.overall } ?: 0,
+                        hasCup = coppe.any { c.id in it.participants },
+                        hasYouth = dentro.lega.clubs.any { it.parentClubId == c.id },
+                    )
+
+                    ObjectiveBoard.forClub(standing, config).forEach { items += c.id to it }
+                }
+            }
+
+            when (val esito = ObjectiveRepository.assign(dentro.lega.league.id, stagione, items)) {
+                is ApiResult.Error ->
+                    _obiettivi.value = _obiettivi.value.copy(busy = null, errore = esito.message)
+                is ApiResult.Ok -> {
+                    _obiettivi.value = _obiettivi.value.copy(
+                        busy = null,
+                        avviso = "Stagione $stagione: ${esito.value} obiettivi assegnati a " +
+                            "${prime.size} squadre.",
+                    )
+                    caricaObiettivi(forza = true)
+                }
+            }
+        }
+    }
+
+    /**
+     * Giudica gli obiettivi aperti con quello che e' successo, e paga chi ce l'ha fatta.
+     *
+     * ## Le stagioni precedenti non si rileggono, e non serve
+     *
+     * Un obiettivo pluriennale — «non retrocedere per due stagioni» — richiederebbe di
+     * conoscere anche gli anni prima. Non c'e' bisogno di conservarli: se in una stagione
+     * precedente quel club fosse retrocesso, l'obiettivo sarebbe **gia' stato chiuso come
+     * fallito** alla chiusura di quella stagione. Che sia ancora aperto e' esso stesso la
+     * prova che le stagioni passate sono andate bene, e le si rappresenta cosi'.
+     */
+    private suspend fun chiudiObiettivi(
+        dentro: AppState.Dentro,
+        esiti: List<ClubFate>,
+    ): String {
+        // Si rileggono adesso invece di fidarsi di cio' che c'e' in memoria: chiudere la
+        // stagione senza aver mai aperto la schermata degli obiettivi troverebbe un elenco
+        // vuoto e non pagherebbe niente **in silenzio**, che e' il modo peggiore in cui una
+        // funzione del genere puo' sbagliare.
+        val righe = ObjectiveRepository.all(dentro.lega.league.id)
+        _obiettivi.value = _obiettivi.value.copy(righe = righe, letto = true)
+
+        val stato = _obiettivi.value
+        val aperti = stato.aperti
+        if (aperti.isEmpty()) return ""
+
+        val perClub = esiti.associateBy { it.club.value }
+        val quanteInDivisione = esiti.groupingBy { it.level }.eachCount()
+        val vincitrici = coppeVinte(dentro)
+
+        var pagati = 0
+        var quanti = 0
+
+        aperti.forEach { riga ->
+            val club = dentro.lega.clubs.firstOrNull { it.id == riga.clubId } ?: return@forEach
+            // La posizione arriva dagli esiti e non da un secondo conteggio: e' la stessa
+            // che decide promozioni e retrocessioni, quindi un obiettivo non puo' dire
+            // «quarto» mentre la classifica dice «quinto».
+            val esito = perClub[club.id] ?: return@forEach
+
+            val rosa = dentro.lega.squadOf(club.id)
+            val stagione = ClubSeason(
+                position = esito.position,
+                teamsInDivision = quanteInDivisione[esito.level] ?: esito.position,
+                divisionLevel = esito.level,
+                promoted = esito.outcome == SeasonOutcome.PROMOSSO ||
+                    esito.outcome == SeasonOutcome.CAMPIONE && esito.level > 1,
+                relegated = esito.outcome == SeasonOutcome.RETROCESSO,
+                cupWon = club.id in vincitrici,
+                bestOverall = rosa.maxOfOrNull { it.overall } ?: 0,
+                customOverall = club.customPlayerId
+                    ?.let { id -> rosa.firstOrNull { it.id.value == id }?.overall }
+                    ?: 0,
+                youthPlayed = 0,
+                finished = true,
+            )
+
+            // Le stagioni gia' passate senza far fallire l'obiettivo: vedi sopra.
+            val passate = (stato.stagione - riga.season).coerceAtLeast(0)
+            val storia = List(passate) {
+                ClubSeason(
+                    position = esito.position,
+                    teamsInDivision = quanteInDivisione[esito.level] ?: esito.position,
+                    divisionLevel = esito.level,
+                    finished = true,
+                )
+            } + stagione
+
+            val verdetto = ObjectiveEngine.status(riga.objective, storia)
+            if (verdetto == ObjectiveStatus.IN_CORSO) return@forEach
+
+            when (val esito = ObjectiveRepository.settle(riga.id, verdetto)) {
+                is ApiResult.Error -> Unit
+                is ApiResult.Ok -> {
+                    quanti++
+                    pagati += esito.value
+                }
+            }
+        }
+
+        caricaObiettivi(forza = true)
+        return if (quanti == 0) "" else " $quanti obiettivi chiusi, ${Money(pagati).format()} di premi."
+    }
+
+    /**
+     * Chi ha vinto le coppe: il vincitore dell'ultima partita giocata di un tabellone.
+     *
+     * Una finale pareggiata non ha vincitore qui. Non e' un caso che si verifichi — il
+     * motore assegna i rigori — ma se capitasse, meglio nessun premio che uno assegnato a
+     * caso fra due squadre.
+     */
+    private suspend fun coppeVinte(dentro: AppState.Dentro): Set<Long> {
+        val leagueId = dentro.lega.league.id
+        val competizioni = when (val esito = CompetitionRepository.list(leagueId)) {
+            is ApiResult.Error -> return emptySet()
+            is ApiResult.Ok -> esito.value.filter {
+                it.type == CompetitionType.ELIMINAZIONE_DIRETTA && it.isFinished
+            }
+        }
+
+        val vincitrici = HashSet<Long>(competizioni.size)
+        competizioni.forEach { competizione ->
+            val vista = caricaTabella(leagueId, competizione) ?: return@forEach
+            val finale = vista.played.maxByOrNull { it.round } ?: return@forEach
+            val casa = finale.homeGoals ?: return@forEach
+            val fuori = finale.awayGoals ?: return@forEach
+            when {
+                casa > fuori -> vincitrici += finale.homeClubId
+                fuori > casa -> vincitrici += finale.awayClubId
+            }
+        }
+        return vincitrici
+    }
+
     // ------------------------------------------------------------ le mie competizioni
 
     private val _competizioni = MutableStateFlow(CompetizioniMie())
@@ -1612,7 +1835,12 @@ class AppViewModel : ViewModel() {
             val livelli = SeasonEnd.apply(esiti)
 
             val spareggi = creaSpareggi(leagueId, dentro, esiti, config)
-            applicaLivelli(leagueId, livelli, riassunto(esiti) + spareggi)
+            // Gli obiettivi si giudicano **qui**, con gli stessi esiti che decidono
+            // promozioni e retrocessioni: e' l'unico momento in cui la stagione ha un
+            // verdetto, e chiuderli altrove vorrebbe dire un premio pagato su una
+            // classifica diversa da quella che ha mosso le divisioni.
+            val premi = chiudiObiettivi(dentro, esiti)
+            applicaLivelli(leagueId, livelli, riassunto(esiti) + spareggi + premi)
         }
     }
 

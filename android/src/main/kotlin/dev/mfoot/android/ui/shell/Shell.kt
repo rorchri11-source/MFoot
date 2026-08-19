@@ -272,6 +272,7 @@ private fun Drawer(
         }
 
         Section("Lega")
+        Item("Obiettivi e premi", Route.Obiettivi, route, onNavigate)
         Item("Registro attivita'", Route.RegistroAdmin, route, onNavigate)
 
         Spacer(Modifier.height(24.dp))

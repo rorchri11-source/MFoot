@@ -86,6 +86,7 @@ sealed interface Route {
             ProfiloLega -> "Profilo lega"
             Partecipanti -> "Partecipanti"
             MieLeghe -> "Le mie leghe"
+            Obiettivi -> "Obiettivi e premi"
             Opzioni -> "Regolamento e opzioni"
             is Regolamento -> sezione.label
             Mercati -> "Finestre di mercato"
@@ -171,6 +172,14 @@ sealed interface Route {
      * domanda che si fa chi non e' amministratore almeno quanto chi lo e'.
      */
     data object MieLeghe : Route
+
+    /**
+     * Gli obiettivi di stagione, con i premi.
+     *
+     * Non e' una voce di setup nemmeno lei: l'admin li assegna, ma poi riguardano tutti —
+     * i propri e quelli degli avversari, che sono la spiegazione delle loro mosse.
+     */
+    data object Obiettivi : Route
 
     /**
      * L'elenco delle sezioni del regolamento.

@@ -201,6 +201,41 @@ data class DeskState(
 )
 
 /**
+ * Gli obiettivi di stagione, di tutta la lega.
+ *
+ * ## Perche' tiene quelli di tutti e non solo i propri
+ *
+ * Perche' spiegano il mercato. Un avversario che a marzo compra un difensore invece di
+ * vendere sembra fare una mossa senza senso, finche' non si sa che ha in ballo un premio
+ * se non retrocede. Nascosti, gli obiettivi muoverebbero il mercato di tutti senza che
+ * nessuno capisca perche'.
+ */
+data class ObiettiviState(
+    val righe: List<dev.mfoot.android.data.ObjectiveRow> = emptyList(),
+    val letto: Boolean = false,
+    val busy: String? = null,
+    val avviso: String? = null,
+    val errore: String? = null,
+) {
+    /**
+     * La stagione in corso: la piu' recente per cui esistono obiettivi.
+     *
+     * Il gioco non ha un contatore di stagioni — le competizioni le crea l'admin quando
+     * vuole — quindi la stagione **e'** l'insieme degli obiettivi assegnati insieme. E'
+     * meno arbitrario di quanto sembri: e' esattamente il periodo per cui qualcuno ha
+     * dichiarato cosa si vuole ottenere.
+     */
+    val stagione: Int get() = righe.maxOfOrNull { it.season } ?: 0
+
+    fun diClub(clubId: Long): List<dev.mfoot.android.data.ObjectiveRow> =
+        righe.filter { it.clubId == clubId && it.season == stagione }
+
+    /** Quelli ancora aperti: sono gli unici su cui si puo' ancora fare qualcosa. */
+    val aperti: List<dev.mfoot.android.data.ObjectiveRow>
+        get() = righe.filter { it.status == dev.mfoot.core.objectives.ObjectiveStatus.IN_CORSO }
+}
+
+/**
  * A cosa sta giocando il proprio club.
  *
  * ## Perche' vale una lettura in piu' all'apertura

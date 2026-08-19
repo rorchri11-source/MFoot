@@ -56,7 +56,18 @@ object ConfigJson {
         writeNotifications(w, config.notifications)
         writeAi(w, config.ai)
         writeEngine(w, config.engine)
+        writeObjectives(w, config.objectives)
         writeRoleWeights(w)
+    }
+
+    private fun writeObjectives(w: JsonWriter, c: ObjectivesConfig) {
+        w.objectField("objectives")
+        w.field("enabled", c.enabled)
+        w.field("leagueRewardPercent", c.leagueRewardPercent)
+        w.field("developmentRewardPercent", c.developmentRewardPercent)
+        w.field("longTermRewardPercent", c.longTermRewardPercent)
+        w.field("longTermSeasons", c.longTermSeasons)
+        w.endObject()
     }
 
     /**
@@ -325,8 +336,17 @@ object ConfigJson {
             notifications = readNotifications(root["notifications"], d.notifications),
             ai = readAi(root["ai"], d.ai),
             engine = readEngine(root["engine"], d.engine),
+            objectives = readObjectives(root["objectives"], d.objectives),
         )
     }
+
+    private fun readObjectives(n: JsonNode, d: ObjectivesConfig) = ObjectivesConfig(
+        enabled = n["enabled"].bool(d.enabled),
+        leagueRewardPercent = n["leagueRewardPercent"].int(d.leagueRewardPercent),
+        developmentRewardPercent = n["developmentRewardPercent"].int(d.developmentRewardPercent),
+        longTermRewardPercent = n["longTermRewardPercent"].int(d.longTermRewardPercent),
+        longTermSeasons = n["longTermSeasons"].int(d.longTermSeasons),
+    )
 
     private fun readSetup(n: JsonNode, d: SetupConfig) = SetupConfig(
         leagueName = n["leagueName"].str(d.leagueName),

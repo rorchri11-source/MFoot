@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.CompetizioniMie
+import dev.mfoot.android.app.ObiettiviState
 import dev.mfoot.android.app.Route
 import dev.mfoot.android.app.TabLega
 import dev.mfoot.android.app.TabMercato
@@ -38,6 +39,7 @@ import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.core.model.Money
+import dev.mfoot.core.objectives.ObjectiveStatus
 
 /**
  * La schermata che si apre per prima — **il tuo club**.
@@ -56,14 +58,19 @@ import dev.mfoot.core.model.Money
 fun DashboardScreen(
     state: AppState.Dentro,
     competizioni: CompetizioniMie,
+    obiettivi: ObiettiviState,
     onCaricaCompetizioni: () -> Unit,
+    onCaricaObiettivi: () -> Unit,
     onNavigate: (Route) -> Unit,
     onFoundClub: () -> Unit,
     onDismissNotice: () -> Unit,
 ) {
     val club = state.lega.myClub
 
-    LaunchedEffect(state.lega.league.id) { onCaricaCompetizioni() }
+    LaunchedEffect(state.lega.league.id) {
+        onCaricaCompetizioni()
+        onCaricaObiettivi()
+    }
 
     Column(
         Modifier
@@ -155,6 +162,9 @@ fun DashboardScreen(
         ACosaGiochi(state, competizioni, onNavigate)
 
         Spacer(Modifier.height(28.dp))
+        Obiettivi(state, obiettivi, onNavigate)
+
+        Spacer(Modifier.height(28.dp))
         Label("Scorciatoie")
         Spacer(Modifier.height(10.dp))
         Scorciatoia("Schiera la squadra", "Campo, modulo, panchina") { onNavigate(Route.Squadra(TabSquadra.CAMPO)) }
@@ -244,6 +254,54 @@ private fun ACosaGiochi(
                 },
             ) { onNavigate(Route.Lega(TabLega.CLASSIFICA)) }
         }
+    }
+}
+
+/**
+ * Cosa ti chiede la societa' quest'anno, e quanto paga.
+ *
+ * ## Perche' sta in Casa e non solo nella sua schermata
+ *
+ * Perche' un obiettivo che si legge una volta a settembre e poi mai piu' non cambia nessuna
+ * decisione: e' un promemoria, non una pressione. Deve stare dove si guarda ogni giorno,
+ * accanto ai crediti disponibili — che sono la cosa con cui si compra quello che serve per
+ * raggiungerlo.
+ */
+@Composable
+private fun Obiettivi(
+    state: AppState.Dentro,
+    obiettivi: ObiettiviState,
+    onNavigate: (Route) -> Unit,
+) {
+    val club = state.lega.myClub ?: return
+    val miei = obiettivi.diClub(club.id)
+    if (!obiettivi.letto || miei.isEmpty()) return
+
+    val inBallo = miei
+        .filter { it.status == ObjectiveStatus.IN_CORSO }
+        .sumOf { it.premio }
+
+    Label("I tuoi obiettivi · stagione ${obiettivi.stagione}")
+    Spacer(Modifier.height(10.dp))
+
+    miei.forEach { riga ->
+        Riga(
+            titolo = riga.descrizione,
+            dettaglio = when (riga.status) {
+                ObjectiveStatus.IN_CORSO -> "in corso · ${Money(riga.premio).formatShort()} se ce la fai"
+                ObjectiveStatus.RAGGIUNTO -> "raggiunto · ${Money(riga.paid).formatShort()} incassati"
+                ObjectiveStatus.FALLITO -> "fallito · niente premio"
+            },
+        ) { onNavigate(Route.Obiettivi) }
+    }
+
+    if (inBallo > 0) {
+        Text(
+            "In ballo ${Money(inBallo).format()}. Si prendono solo raggiungendoli: " +
+                "arrivarci vicino non paga niente.",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
     }
 }
 

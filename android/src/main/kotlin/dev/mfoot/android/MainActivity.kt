@@ -78,6 +78,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val mieLeghe by viewModel.mieLeghe.collectAsStateWithLifecycle()
     val formazioneAltrui by viewModel.formazioneAltrui.collectAsStateWithLifecycle()
     val competizioni by viewModel.competizioni.collectAsStateWithLifecycle()
+    val obiettivi by viewModel.obiettivi.collectAsStateWithLifecycle()
     val scambi by viewModel.trades.collectAsStateWithLifecycle()
     val divisioni by viewModel.divisioni.collectAsStateWithLifecycle()
     val spogliatoio by viewModel.spogliatoio.collectAsStateWithLifecycle()
@@ -196,6 +197,9 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onConfigChange = viewModel::modificaRegolamento,
                         onConfigSave = viewModel::salvaRegolamento,
                         desk = desk,
+                        obiettivi = obiettivi,
+                        onLoadObjectives = { viewModel.caricaObiettivi() },
+                        onAssignObjectives = viewModel::assegnaObiettivi,
                         competizioni = competizioni,
                         onLoadCompetitions = viewModel::caricaCompetizioni,
                         formazioneAltrui = formazioneAltrui,
