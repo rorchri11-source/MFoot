@@ -17,6 +17,7 @@ import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
 import dev.mfoot.android.data.PlayerRepository
 import dev.mfoot.android.data.PromiseRepository
+import dev.mfoot.android.data.CounterRepository
 import dev.mfoot.android.data.DealRepository
 import dev.mfoot.android.data.TradeKind
 import dev.mfoot.android.data.TradeRepository
@@ -1666,7 +1667,13 @@ class AppViewModel : ViewModel() {
         viewModelScope.launch {
             _trades.value = _trades.value.copy(busy = "Mando la proposta…", errore = null)
 
-            val esito = when (bozza.kind) {
+            // Una controproposta non e una proposta nuova: chiude quella a cui risponde e
+            // ne apre una legata. Mandarla per la strada normale lascerebbe due
+            // trattative aperte sulle stesse persone.
+            val rispondeA = bozza.rispondeA
+            val esito = if (rispondeA != null) {
+                CounterRepository.counter(rispondeA, bozza.cash, bozza.message)
+            } else when (bozza.kind) {
                 TradeKind.SCAMBIO -> TradeRepository.propose(
                     fromClub = mio.id,
                     toClub = bozza.withClub,
@@ -1744,6 +1751,34 @@ class AppViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    /**
+     * Apre una controproposta a una proposta ricevuta.
+     *
+     * ## Perche' riapre la stessa bozza invece di aprirne una vuota
+     *
+     * Perche' una controproposta e' **la stessa trattativa vista dall'altra parte**: i
+     * giocatori sono quelli, cambia la cifra. Farla ricomporre da zero vorrebbe dire
+     * riselezionare a mano quello che l'altro ha gia' scelto, e sbagliare un giocatore
+     * trasformerebbe la risposta in una proposta diversa senza che nessuno se ne accorga.
+     *
+     * I due lati si scambiano: quello che lui offriva adesso lo chiedo io.
+     */
+    fun apriControproposta(trade: dev.mfoot.android.data.TradeRow) {
+        _trades.value = _trades.value.copy(
+            bozza = TradeDraft(
+                withClub = trade.fromClub,
+                offered = trade.wanted.toSet(),
+                wanted = trade.offered.toSet(),
+                // Il segno si gira con i lati: quello che lui aggiungeva, adesso lo chiedo.
+                cash = -trade.cash,
+                kind = trade.kind,
+                rispondeA = trade.id,
+            ),
+            avviso = null,
+            errore = null,
+        )
     }
 
     fun ritiraScambio(tradeId: Long) {

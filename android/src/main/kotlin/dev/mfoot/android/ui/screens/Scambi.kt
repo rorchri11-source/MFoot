@@ -33,6 +33,7 @@ import dev.mfoot.android.ui.Chip
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
+import dev.mfoot.android.ui.MFootField
 import dev.mfoot.android.ui.Notice
 import dev.mfoot.android.ui.PrimaryButton
 import dev.mfoot.android.ui.kit.CrestBadge
@@ -71,6 +72,7 @@ fun ScambiScreen(
     onInvia: () -> Unit,
     onAnnulla: () -> Unit,
     onRispondi: (Long, Boolean) -> Unit,
+    onControproponi: (TradeRow) -> Unit,
     onRitira: (Long) -> Unit,
     onChiudiAvviso: () -> Unit,
 ) {
@@ -133,14 +135,21 @@ fun ScambiScreen(
         }
 
         Sezione("Ricevute", scambi.ricevute(mio.id), state, mio.id) { trade ->
-            Row(horizontalArrangement = Arrangement.spacedBy(MFootSpacing.related)) {
-                GhostButton("Rifiuta", { onRispondi(trade.id, false) }, Modifier.weight(1f))
-                PrimaryButton(
-                    text = scambi.busy ?: "Accetta",
-                    onClick = { onRispondi(trade.id, true) },
-                    modifier = Modifier.weight(1f),
-                    enabled = scambi.busy == null,
-                )
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(MFootSpacing.related)) {
+                    GhostButton("Rifiuta", { onRispondi(trade.id, false) }, Modifier.weight(1f))
+                    PrimaryButton(
+                        text = scambi.busy ?: "Accetta",
+                        onClick = { onRispondi(trade.id, true) },
+                        modifier = Modifier.weight(1f),
+                        enabled = scambi.busy == null,
+                    )
+                }
+                // Il terzo pulsante e quello che trasforma un si/no in una trattativa:
+                // apre la stessa proposta dalla parte opposta, con i giocatori gia
+                // dentro e la cifra da ritoccare.
+                Spacer(Modifier.height(MFootSpacing.related))
+                GhostButton("Controproponi", { onControproponi(trade) })
             }
         }
 
@@ -435,6 +444,20 @@ private fun Composizione(
 
                 TradeKind.AMICHEVOLE -> Amichevole(bozza, onEdit)
             }
+
+            // Due righe da scrivere.
+            //
+            // Il campo `message` esisteva ed era mostrato, e non c era nessuna casella
+            // dove digitarlo: ogni proposta umana partiva vuota mentre le AI ti
+            // scrivevano. Una trattativa muta non e una trattativa.
+            Spacer(Modifier.height(MFootSpacing.section))
+            MFootField(
+                value = bozza.message,
+                onValueChange = { onEdit(bozza.copy(message = it)) },
+                placeholder = "Due righe per convincerlo",
+                label = "Il tuo messaggio",
+                imeAction = androidx.compose.ui.text.input.ImeAction.Done,
+            )
 
             Spacer(Modifier.height(30.dp))
         }

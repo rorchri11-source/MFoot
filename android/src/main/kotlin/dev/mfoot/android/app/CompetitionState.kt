@@ -256,6 +256,15 @@ data class TradeDraft(
 
     /** Amichevole: quando, in ora di lega. */
     val friendlyAt: java.time.LocalDateTime? = null,
+
+    /**
+     * La proposta a cui questa risponde, se e una controproposta.
+     *
+     * Cambia dove va a finire: una controproposta passa da `counter_trade`, che chiude
+     * anche quella vecchia. Mandarla come proposta nuova lascerebbe due trattative aperte
+     * sulle stesse persone, e nessuna delle due saprebbe di essere la risposta all altra.
+     */
+    val rispondeA: Long? = null,
 ) {
     val isEmpty: Boolean
         get() = when (kind) {

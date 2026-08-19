@@ -1491,6 +1491,33 @@ class TickRunner(
             if (risposta.accepted) {
                 applicaScambio(trade, risposta.reason)
                 note += "${club.name} accetta uno scambio."
+                continue
+            }
+
+            // Prima di dire no, si prova a dire **quanto** mancava.
+            //
+            // Un rifiuto secco non insegna niente: chi lo riceve non sa se ha sbagliato di
+            // poco o di tanto, e riprova alla cieca o smette di provarci. La controproposta
+            // porta con se' l'informazione che mancava, ed e' la differenza fra un mercato
+            // e un distributore automatico.
+            val contro = TradeEvaluator.counter(
+                offer = trade.offer,
+                personality = stato.personality,
+                squad = squad,
+                availableCredits = club.availableCredits,
+                config = league.config,
+                offeredValues = valori,
+            )
+
+            if (contro != null) {
+                chiudiScambio(trade.id, "CONTROPROPOSTA", contro.message)
+                salvaControproposta(league.id, trade.id, contro, trade.kind)
+                notify(
+                    league.id, trade.from,
+                    "${club.name} ha fatto una controproposta.",
+                    kind = "scambio", urgency = "immediata",
+                )
+                note += "${club.name} contropropone."
             } else {
                 chiudiScambio(trade.id, "RIFIUTATA", risposta.reason)
                 note += "${club.name} rifiuta: ${risposta.verdict.label}."
@@ -1701,6 +1728,38 @@ class TickRunner(
             st.setLong(1, a.value)
             st.setLong(2, player.value)
             st.setLong(3, da.value)
+            st.executeUpdate()
+        }
+    }
+
+    /**
+     * Scrive la controproposta come proposta nuova, legata a quella a cui risponde.
+     *
+     * `replies_to` non e ornamento: e cio che permette di leggere una trattativa come una
+     * conversazione invece che come due proposte scollegate che si somigliano.
+     */
+    private fun salvaControproposta(
+        leagueId: Long,
+        rispondeA: Long,
+        offerta: dev.mfoot.core.market.TradeOffer,
+        kind: String,
+    ) {
+        connection.prepareStatement(
+            """
+            insert into trades (league_id, from_club, to_club, offered, wanted, cash,
+                                message, kind, replies_to)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setLong(2, offerta.from.value)
+            st.setLong(3, offerta.to.value)
+            st.setArray(4, connection.createArrayOf("bigint", offerta.offered.map { it.value }.toTypedArray()))
+            st.setArray(5, connection.createArrayOf("bigint", offerta.wanted.map { it.value }.toTypedArray()))
+            st.setInt(6, offerta.cash)
+            st.setString(7, offerta.message)
+            st.setString(8, kind)
+            st.setLong(9, rispondeA)
             st.executeUpdate()
         }
     }

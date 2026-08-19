@@ -278,3 +278,37 @@ object DealRepository {
         else ApiResult.Error(node["reason"].str("Proposta rifiutata."))
     }
 }
+
+/**
+ * La controproposta: gli stessi giocatori, un'altra cifra.
+ *
+ * Sta accanto agli scambi e non dentro `TradeRepository` perche' e' l'unica operazione che
+ * **crea una proposta rispondendo a una**: le due righe restano legate da `replies_to`, e
+ * quel legame e' cio' che permette di leggere una trattativa come una conversazione invece
+ * che come due proposte scollegate.
+ */
+object CounterRepository {
+
+    suspend fun counter(tradeId: Long, cash: Int, message: String): ApiResult<Unit> {
+        val w = JsonWriter(512)
+        w.beginObject()
+        w.field("p_trade_id", tradeId)
+        w.field("p_cash", cash)
+        w.field("p_message", message)
+        w.endObject()
+
+        return SupabaseApi.rpc("counter_trade", w.toString()).then { body ->
+            val node = JsonNode.parse(body).let { if (it.asList().isNotEmpty()) it[0] else it }
+            if (node["ok"].bool(false)) ApiResult.Ok(Unit)
+            else ApiResult.Error(node["reason"].str("Controproposta rifiutata."))
+        }.mapMissing()
+    }
+
+    private fun ApiResult<Unit>.mapMissing(): ApiResult<Unit> = when {
+        this is ApiResult.Error && message.contains("counter_trade") -> ApiResult.Error(
+            "Le controproposte hanno bisogno della migrazione 0021_controproposte.sql, " +
+                "che non e' ancora stata applicata a questo database.",
+        )
+        else -> this
+    }
+}

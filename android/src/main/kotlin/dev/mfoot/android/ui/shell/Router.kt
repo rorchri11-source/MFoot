@@ -107,6 +107,7 @@ fun Router(
     onSendTrade: () -> Unit,
     onCancelTrade: () -> Unit,
     onRespondTrade: (Long, Boolean) -> Unit,
+    onCounterTrade: (dev.mfoot.android.data.TradeRow) -> Unit,
     onWithdrawTrade: (Long) -> Unit,
     onDismissTradeNotice: () -> Unit,
     divisioni: DivisionsAdmin,
@@ -192,6 +193,7 @@ fun Router(
                         onInvia = onSendTrade,
                         onAnnulla = onCancelTrade,
                         onRispondi = onRespondTrade,
+                        onControproponi = onCounterTrade,
                         onRitira = onWithdrawTrade,
                         onChiudiAvviso = onDismissTradeNotice,
                     )

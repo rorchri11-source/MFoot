@@ -3,6 +3,7 @@ package dev.mfoot.core.market
 import dev.mfoot.core.ai.AiPersonality
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.model.ClubId
+import dev.mfoot.core.model.Money
 import dev.mfoot.core.model.Player
 import dev.mfoot.core.model.PlayerId
 import dev.mfoot.core.rng.MathX
@@ -51,6 +52,15 @@ enum class TradeStatus(val label: String) {
     RIFIUTATA("Rifiutata"),
     RITIRATA("Ritirata"),
     SCADUTA("Scaduta"),
+
+    /**
+     * Le e stata opposta una controproposta.
+     *
+     * Non e ne accettata ne rifiutata: e andata avanti, e la risposta e una proposta
+     * nuova nella direzione opposta. Distinguerlo serve a raccontare la trattativa invece
+     * di mostrare un rifiuto dove c e stato un rilancio.
+     */
+    CONTROPROPOSTA("Controproposta"),
 }
 
 /** Perche' una proposta e' stata rifiutata. Serve a dirlo a chi l'ha fatta. */
@@ -168,6 +178,90 @@ object TradeEvaluator {
                 "Quello che offri non basta per quello che chiedi.",
             )
         }
+    }
+
+    /**
+     * La controproposta: «non a queste condizioni, ma cosi' si'».
+     *
+     * ## Perche' un'AI deve saper controproporre
+     *
+     * Perche' senza, una trattativa e' prendere o lasciare, e il novanta per cento delle
+     * proposte finisce in un no secco che non insegna niente. Chi la riceve non sa se ha
+     * sbagliato di poco o di tanto, e riprova alla cieca — o smette di provarci.
+     *
+     * Con la controproposta il rifiuto porta con se' l'informazione che mancava: **quanto**
+     * ci mancava. E' la differenza fra un mercato e un distributore automatico.
+     *
+     * ## Cosa cambia e cosa no
+     *
+     * Cambiano **solo i soldi**. I giocatori restano quelli: se A vuole il mio centravanti
+     * e mi offre il suo terzino, la risposta sensata e' "ci aggiungi qualcosa", non "invece
+     * del terzino dammi il portiere" — che sarebbe una proposta diversa, non una risposta a
+     * questa.
+     *
+     * ## Quando non c'e' nessuna cifra che vada bene
+     *
+     * Quando il no non riguarda il prezzo: un giocatore che non ho piu', un ruolo che
+     * resterebbe scoperto, una rosa che scenderebbe sotto il minimo. Per quelli non esiste
+     * un numero, e restituire null e' l'unica risposta onesta.
+     */
+    fun counter(
+        offer: TradeOffer,
+        personality: AiPersonality,
+        squad: List<Player>,
+        availableCredits: Int,
+        config: LeagueConfig,
+        offeredValues: Map<PlayerId, Int>,
+    ): TradeOffer? {
+        val risposta = evaluate(offer, personality, squad, availableCredits, config, offeredValues)
+        if (risposta.accepted) return null
+        // Solo il prezzo si contratta. Sugli altri rifiuti non c'e' cifra che tenga.
+        if (risposta.verdict != TradeVerdict.VALORE_INSUFFICIENTE) return null
+
+        val byId = squad.associateBy { it.id }
+        val ceduti = offer.wanted.mapNotNull { byId[it] }
+        if (ceduti.size != offer.wanted.size) return null
+
+        val valoreGiocatoriRicevuti = offer.offered.sumOf { offeredValues[it] ?: 0 }
+        val valoreCeduti = ceduti.sumOf { Valuation.marketValue(it, config) }
+
+        val margine = MathX.lerp(MARGINE_MAX, MARGINE_MIN, personality.marketAggression)
+
+        // La cifra che rende l'affare accettabile, risolta rispetto a `cash`.
+        //
+        // Ricevuto = giocatori offerti + max(cash, 0); ceduto = miei giocatori +
+        // max(-cash, 0). Chiedendo denaro (`cash` positivo per chi propone) il conto e'
+        // lineare, quindi basta isolarlo invece di cercarlo per tentativi.
+        val servono = valoreCeduti * (1.0 + margine) - valoreGiocatoriRicevuti
+
+        // Per eccesso, non al piu' vicino.
+        //
+        // Arrotondando si finisce sotto meta' delle volte: la cifra chiesta manca di un
+        // soldo, l'altro la paga per intero e si sente rispondere di nuovo di no. Una
+        // controproposta che il suo stesso autore poi rifiuta e' peggio di un rifiuto
+        // secco, perche' fa perdere anche un giro.
+        val richiesta = StrictMath.ceil(servono).toInt()
+
+        // Se serve meno di zero l'affare era gia' buono, e ci sarebbe stato un ACCETTO.
+        if (richiesta <= 0) return null
+
+        // I due lati si scambiano, perche' adesso a proporre e' chi aveva ricevuto.
+        //
+        // Non e' un dettaglio contabile: la controproposta e' **una proposta nuova, nella
+        // direzione opposta**, e deve finire nella casella "ricevute" dell'altro. Con i
+        // lati invariati si presenterebbe come una proposta di chi l'aveva gia' mandata, e
+        // resterebbe nella casella sbagliata ad aspettare una risposta da chi l'ha scritta.
+        //
+        // Anche il segno del denaro segue: `cash` positivo vuol dire "chi propone
+        // aggiunge", e adesso chi propone e' l'altro — quindi la cifra si **chiede**.
+        return TradeOffer(
+            from = offer.to,
+            to = offer.from,
+            offered = offer.wanted,
+            wanted = offer.offered,
+            cash = -richiesta,
+            message = "Non a queste condizioni. Con ${Money(richiesta).format()} sopra, si'.",
+        )
     }
 
     /**

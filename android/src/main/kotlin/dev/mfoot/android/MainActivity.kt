@@ -200,6 +200,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onSendTrade = viewModel::inviaScambio,
                         onCancelTrade = viewModel::annullaScambio,
                         onRespondTrade = viewModel::rispondiScambio,
+                        onCounterTrade = viewModel::apriControproposta,
                         onWithdrawTrade = viewModel::ritiraScambio,
                         onDismissTradeNotice = viewModel::chiudiAvvisoScambi,
                         divisioni = divisioni,
