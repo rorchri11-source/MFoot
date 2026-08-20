@@ -119,6 +119,20 @@ Quello che il server rifiuterebbe va spento prima, non spiegato dopo.
 Il nome si legge prima di premere, non dopo. Chi è iscritto a più leghe lo vede scritto.
 *Detta il 2026-08-20 · `peek_league`, `ui/Door.kt`*
 
+**L'app si aggiorna da sola, ogni trenta secondi.**
+Non «chiudi e riapri»: mentre la guardi. Un giro leggero rilegge lega, club, contratti e
+aste; un giro pieno scatta quando il server ha giocato una giornata, quando si torna
+sull'app, o quando lo si chiede.
+Due vincoli che non si negoziano: **non sbianca lo schermo** e **non tocca niente che si
+stia modificando** — formazione in composizione, proposta in scrittura, regolamento in
+modifica. Chi lo chiede a mano aggiorna tutto, perché l'ha chiesto lui.
+*Detta il 2026-08-20 · `AppViewModel.aggiornaLeggero`, `CADENZA_MS`*
+
+**Quando entra una squadra nuova, l'app lo dice.**
+*«Il Bar di Marco è entrata nella lega.»* È il momento che è mancato al proprietario e al
+suo amico: uno fonda il club e dall'altra parte non succede niente, per sempre.
+*Detta il 2026-08-20 · `AppViewModel.squadreNuove`*
+
 ---
 
 ## Come si tiene aggiornato

@@ -84,6 +84,7 @@ gradlew :android:assembleDebug
 | 40 | **I giocatori in prima serie** | `DivisionAssignment`: gli umani partono dalla massima, le AI riempiono, l'admin sceglie le dimensioni |
 | 41 | **Traguardi e offerte** | Obiettivi a multipli di cinque che pagano ogni scalino; l'asta dice «ha offerto» e quante squadre sono dentro |
 | 42 | **`docs/REGOLE.md`** | Le decisioni del proprietario in un posto solo, e un `CLAUDE.md` che le fa leggere a ogni sessione |
+| 43 | **L'app si aggiorna da sola** | Giro leggero ogni 30s, giro pieno quando serve. Non sbianca lo schermo e non tocca il lavoro in corso |
 
 ### Numeri di bilanciamento raggiunti
 
@@ -323,3 +324,12 @@ Non refusi: difetti di logica che sarebbero arrivati fino in produzione.
     ogni attributo, stelle e crescita, e si apriva toccando una riga qualsiasi. Niente
     diceva che una riga si potesse toccare, quindi per il proprietario della lega quei dati
     semplicemente non esistevano.
+18. **L'app non si aggiornava mai.** Letto il mondo all'avvio, non lo rileggeva più da sola:
+    nessun timer, nessuna sottoscrizione, nessuna ricarica al ritorno da sfondo. Un club
+    creato dopo la tua lettura era invisibile per sempre, e con lui le sue aste e le sue
+    mosse. In un gioco multiplayer è il difetto che li contiene tutti: due amici nella
+    stessa lega, ognuno con la sua fotografia di momenti diversi, convinti di giocare
+    insieme. Peggiorato da una cosa di piattaforma: su Android uscire col tasto home e
+    rientrare **non fa ripartire niente**, quindi «ho chiuso e riaperto» non ricaricava
+    nulla — ed è la risposta che mi aveva fatto scartare la diagnosi giusta per un giorno
+    intero.

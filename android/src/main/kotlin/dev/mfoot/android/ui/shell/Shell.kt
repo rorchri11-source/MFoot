@@ -22,10 +22,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import dev.mfoot.android.BuildConfig
 import dev.mfoot.android.app.Route
 import dev.mfoot.android.app.SettingsSection
@@ -65,14 +71,18 @@ fun Shell(
     drawerOpen: Boolean,
     /** In quante leghe risulta iscritto chi guarda. Uno e' il caso normale. */
     quanteLeghe: Int,
+    /** L'ultima lettura andata a buon fine, o null se non ce n'e' ancora stata nessuna. */
+    ultimoAggiornamento: java.time.Instant?,
     onToggleDrawer: () -> Unit,
     onNavigate: (Route) -> Unit,
+    onRefresh: () -> Unit,
     onLeaveLeague: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(MFootColors.bg)) {
         Column(Modifier.fillMaxSize()) {
             TopBar(title, subtitle, onToggleDrawer)
+            Aggiornamento(ultimoAggiornamento, onRefresh)
 
             // La riga che avverte di stare guardando una lega fra tante.
             //
@@ -227,6 +237,69 @@ private fun TabBar(route: Route, onNavigate: (Route) -> Unit) {
             }
         }
     }
+}
+
+/**
+ * «aggiornato 12s fa», toccabile.
+ *
+ * ## Perche' una riga per un'informazione cosi' piccola
+ *
+ * Perche' un aggiornamento silenzioso e un aggiornamento rotto, da fuori, sono la stessa
+ * cosa: in entrambi i casi non succede niente. Con l'app che non si aggiornava mai, il
+ * proprietario di questa lega ha passato giorni a chiedersi se l'amico stesse giocando
+ * davvero. Un numero che sale dice «sto guardando», e quando smette di salire dice
+ * «qualcosa non va» — che e' la meta' del valore di tutto il meccanismo.
+ *
+ * Toccarla forza una rilettura completa: e' il gesto per chi non vuole aspettare il
+ * prossimo giro, tipo negli ultimi minuti di un'asta.
+ */
+@Composable
+private fun Aggiornamento(quando: java.time.Instant?, onRefresh: () -> Unit) {
+    // Un orologio che batte da solo: senza, la scritta direbbe «2s fa» per mezz'ora,
+    // che e' peggio di non scriverla.
+    var adesso by remember { mutableStateOf(java.time.Instant.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5_000)
+            adesso = java.time.Instant.now()
+        }
+    }
+
+    val testo = when {
+        quando == null -> "in attesa del primo aggiornamento"
+        else -> {
+            val secondi = java.time.Duration.between(quando, adesso).seconds.coerceAtLeast(0)
+            when {
+                secondi < 10 -> "aggiornato adesso"
+                secondi < 60 -> "aggiornato ${secondi}s fa"
+                secondi < 3600 -> "aggiornato ${secondi / 60}min fa"
+                else -> "aggiornato ${secondi / 3600}h fa"
+            }
+        }
+    }
+
+    // Oltre due minuti qualcosa non gira: l'orologio batte ogni trenta secondi, quindi
+    // quattro giri saltati di fila non sono un caso.
+    val vecchio = quando != null &&
+        java.time.Duration.between(quando, adesso).seconds > 120
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MFootColors.core)
+            .clickable(onClick = onRefresh)
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            testo,
+            style = MFootType.chip,
+            color = if (vecchio) MFootColors.gamble else MFootColors.ink3,
+            modifier = Modifier.weight(1f),
+        )
+        Text("aggiorna", style = MFootType.chip, color = MFootColors.ink3)
+    }
+    Hairline()
 }
 
 private data class Tab(val route: Route, val label: String, val glyph: String)

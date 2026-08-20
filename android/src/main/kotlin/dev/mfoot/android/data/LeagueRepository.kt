@@ -200,6 +200,38 @@ object LeagueRepository {
     suspend fun clubs(leagueId: Long): ApiResult<List<ClubInfo>> = readClubs(leagueId)
 
     /**
+     * Lo stato della lega e basta: due colonne, una riga.
+     *
+     * E' la lettura piu' economica che esista qui dentro, ed e' quella che il giro
+     * automatico fa per prima. La giornata di campionato e' la spia che dice se il server
+     * ha giocato: quando cambia, attributi, stamina, infortuni e presenze sono tutti
+     * diversi da prima e vale la pena rileggere il mondo. Finche' non cambia, non c'e'
+     * niente in quei quattrocento kilobyte che sia cambiato.
+     */
+    suspend fun stato(leagueId: Long): ApiResult<Pair<String, Int>> {
+        val path = "/rest/v1/leagues?select=status,current_match_day&id=eq.$leagueId&limit=1"
+
+        return SupabaseApi.get(path).then { body ->
+            val row = JsonNode.parse(body)[0]
+            if (!row.exists) {
+                ApiResult.Error("Lega non visibile.")
+            } else {
+                ApiResult.Ok(row["status"].str("setup") to row["current_match_day"].int(0))
+            }
+        }
+    }
+
+    /**
+     * Chi possiede chi, da solo.
+     *
+     * Poche centinaia di righe da tre colonne: e' la lettura che fa comparire un acquisto
+     * altrui senza rileggere i giocatori. Un'asta chiusa o uno scambio accettato cambiano
+     * **questa** tabella, non gli attributi di nessuno.
+     */
+    suspend fun contracts(leagueId: Long): ApiResult<Pair<Map<Long, Long>, Set<Long>>> =
+        readContracts(leagueId)
+
+    /**
      * I club **completi**: divisione e club padre compresi.
      *
      * ## Il difetto che questa funzione esiste per non far tornare

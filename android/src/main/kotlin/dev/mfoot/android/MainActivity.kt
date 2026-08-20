@@ -22,11 +22,15 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.mfoot.android.app.AppState
@@ -80,6 +84,27 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val competizioni by viewModel.competizioni.collectAsStateWithLifecycle()
     val obiettivi by viewModel.obiettivi.collectAsStateWithLifecycle()
     val quanteLeghe by viewModel.quanteLeghe.collectAsStateWithLifecycle()
+    val ultimoAggiornamento by viewModel.ultimoAggiornamento.collectAsStateWithLifecycle()
+
+    // L'app davanti o dietro.
+    //
+    // Non e' pignoleria sul risparmio di batteria: e' il caso in cui prima non si
+    // aggiornava mai niente. Su Android uscire col tasto home e rientrare dal selettore
+    // **non fa ripartire l'app** — resta viva con la stessa fotografia del mondo di
+    // mezz'ora fa — quindi tornare davanti e' esattamente il momento in cui c'e' piu'
+    // roba nuova da leggere, ed era l'unico momento in cui non si leggeva niente.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.cambiaPrimoPiano(true)
+                Lifecycle.Event.ON_STOP -> viewModel.cambiaPrimoPiano(false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val scambi by viewModel.trades.collectAsStateWithLifecycle()
     val divisioni by viewModel.divisioni.collectAsStateWithLifecycle()
     val spogliatoio by viewModel.spogliatoio.collectAsStateWithLifecycle()
@@ -172,6 +197,8 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         }
                     },
                     quanteLeghe = quanteLeghe,
+                    ultimoAggiornamento = ultimoAggiornamento,
+                    onRefresh = viewModel::aggiornaAdesso,
                     onLeaveLeague = viewModel::lasciaLega,
                 ) {
                     Router(

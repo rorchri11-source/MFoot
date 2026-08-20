@@ -93,6 +93,15 @@ class AppViewModel : ViewModel() {
     companion object {
         /** Quanti giorni si danno agli spareggi: sono due o tre turni, non un torneo. */
         private const val GIORNI_SPAREGGIO = 4L
+
+        /**
+         * Ogni quanto l'app si guarda intorno, con lo schermo acceso.
+         *
+         * Trenta secondi, scelti dal proprietario. Piu' spesso non servirebbe — il mercato
+         * e' fatto apposta perche' si possa andare a dormire durante un'asta — e piu' di
+         * rado si tornerebbe a chiedersi se l'app sia viva.
+         */
+        private const val CADENZA_MS = 30_000L
     }
 
     /**
@@ -109,6 +118,7 @@ class AppViewModel : ViewModel() {
 
     init {
         avvia()
+        avviaOrologio()
     }
 
     // ------------------------------------------------------------------------- ingresso
@@ -284,7 +294,15 @@ class AppViewModel : ViewModel() {
         Session.leagueId?.let { carica(it) } ?: run { _state.value = AppState.Porta() }
     }
 
-    private fun carica(leagueId: Long, avviso: String? = null) {
+    /**
+     * Rilegge tutta la lega.
+     *
+     * @param silenzioso non mostrare la schermata di caricamento e conservare tutto il
+     *   contesto — ricerca, filtri, scheda aperta, interruttore fra le due squadre. Vale
+     *   per i giri automatici: uno che sbiancasse lo schermo ogni volta che il server
+     *   gioca una giornata renderebbe l'app inusabile.
+     */
+    private fun carica(leagueId: Long, avviso: String? = null, silenzioso: Boolean = false) {
         // Dove si era: la ricarica non deve buttare fuori da dove si stava lavorando.
         //
         // Ricaricare la lega e' l'ultimo passo di mezza dozzina di azioni — parlare con un
@@ -292,13 +310,23 @@ class AppViewModel : ViewModel() {
         // conti in banca. Ricostruendo lo stato da zero si ricostruiva anche la pila delle
         // schermate, e chi aveva appena risposto a un giocatore si ritrovava alla Dashboard
         // senza aver toccato niente: sembra che l'app abbia perso il filo.
-        val dovEro = statoCorrente()?.stack
+        val prima = statoCorrente()
+        val dovEro = prima?.stack
 
         viewModelScope.launch {
-            _state.value = AppState.Caricamento("Leggo la lega…")
+            if (!silenzioso) _state.value = AppState.Caricamento("Leggo la lega…")
 
             when (val snapshot = LeagueRepository.snapshot(leagueId)) {
                 is ApiResult.Error -> {
+                    // Un giro automatico che fallisce non butta fuori nessuno.
+                    //
+                    // La rete cade, il treno entra in galleria, il telefono passa dal wifi
+                    // ai dati: sono cose che succedono ogni giorno, e un aggiornamento
+                    // silenzioso che per un errore di rete rispedisse alla porta d'ingresso
+                    // sarebbe molto peggio del non aggiornarsi affatto. Si tiene quello che
+                    // c'e' e si riprova fra trenta secondi.
+                    if (silenzioso) return@launch
+
                     // Non si cancella la lega salvata: quasi sempre e' un problema di rete
                     // e al prossimo tentativo funziona. Buttarla via costringerebbe a
                     // reinserire il codice ogni volta che il treno entra in galleria.
@@ -329,33 +357,292 @@ class AppViewModel : ViewModel() {
 
                     val rows = withContext(Dispatchers.Default) { righe(lega) }
                     val aste = AuctionRepository.openAuctions(leagueId)
-                    _state.value = AppState.Dentro(
-                        lega = lega,
-                        rows = rows,
-                        auctions = asteViste(aste, rows, lega),
-                        browse = BrowseState(
-                            // Chi ha gia. una rosa vuole vedere la sua rosa; chi non ce
-                            // l.ha ancora vuole vedere cosa c.e. da prendere.
-                            scope = if (lega.myClub != null) ListScope.MIA_ROSA
-                            else ListScope.SVINCOLATI,
-                        ),
-                        // Con la pila di prima se c'era: le rotte con un dato dentro —
-                        // la rosa di un club, la scheda di un giocatore — restano valide,
-                        // perche' sono gli stessi club e gli stessi giocatori appena riletti.
-                        stack = dovEro ?: listOf(Route.Casa),
-                        avviso = avviso,
-                    )
-                    caricaFormazione(lega)
-                    // Ripulito a ogni ricarica: dopo che qualcuno fonda un club, un elenco
-                    // partecipanti in memoria dalla volta prima lo mostrerebbe ancora senza.
-                    _desk.value = DeskState()
-                    // Stessa ragione: una competizione appena creata, o una giornata
-                    // appena giocata, cambiano quello che la Casa deve dire.
-                    _competizioni.value = CompetizioniMie()
-                    _altrui.value = FormazioneAltrui()
-                    _obiettivi.value = ObiettiviState()
+                    val nuove = squadreNuove(prima, lega)
+
+                    // Un giro silenzioso conserva il contesto; uno chiesto ricomincia.
+                    //
+                    // Sono due gesti diversi. Chi apre l'app o chi ha appena accettato uno
+                    // scambio si aspetta di ripartire da capo; chi sta scorrendo il listone
+                    // mentre il server gioca una giornata si aspetta di non perdere il
+                    // posto in cui era, la ricerca che aveva scritto e la scheda aperta.
+                    val corrente = statoCorrente()
+
+                    // Un giro silenzioso che arriva mentre si sta guardando altro non
+                    // trascina nessuno indietro.
+                    //
+                    // Calendario, competizioni e la partita rivista sono schermate intere
+                    // fuori dal guscio: fra l'inizio di questa lettura e adesso ci si puo'
+                    // essere entrati. Ricostruire `Dentro` da qui vorrebbe dire chiudere il
+                    // calendario in faccia a chi lo stava leggendo, senza che avesse
+                    // toccato niente. Si lascia perdere questo giro: fra trenta secondi
+                    // ce n'e' un altro.
+                    if (silenzioso && corrente == null) return@launch
+
+                    val righeAste = asteViste(aste, rows, lega)
+                    _state.value = if (silenzioso && corrente != null) {
+                        corrente.copy(
+                            lega = lega,
+                            rows = rows,
+                            auctions = righeAste,
+                            // Il foglio dell'offerta aperto segue il prezzo.
+                            //
+                            // E' l'unico posto in cui un aggiornamento in tempo reale conta
+                            // davvero: si sta guardando quel numero, e vederlo salire da
+                            // solo e' la ragione per cui questo meccanismo esiste. Se
+                            // quell'asta nel frattempo si e' chiusa, il foglio resta con
+                            // l'ultimo che si sapeva invece di svanire sotto le dita.
+                            bidding = corrente.bidding?.let { aperta ->
+                                righeAste.firstOrNull { it.auction.id == aperta.auction.id }
+                                    ?: aperta
+                            },
+                            avviso = nuove ?: avviso ?: corrente.avviso,
+                        )
+                    } else {
+                        AppState.Dentro(
+                            lega = lega,
+                            rows = rows,
+                            auctions = righeAste,
+                            browse = BrowseState(
+                                // Chi ha gia. una rosa vuole vedere la sua rosa; chi non ce
+                                // l.ha ancora vuole vedere cosa c.e. da prendere.
+                                scope = if (lega.myClub != null) ListScope.MIA_ROSA
+                                else ListScope.SVINCOLATI,
+                            ),
+                            // Con la pila di prima se c'era: le rotte con un dato dentro —
+                            // la rosa di un club, la scheda di un giocatore — restano valide,
+                            // perche' sono gli stessi club e gli stessi giocatori appena riletti.
+                            stack = dovEro ?: listOf(Route.Casa),
+                            avviso = nuove ?: avviso,
+                        )
+                    }
+                    segnaAggiornamento()
+                    caricaFormazione(lega, conservaSeInModifica = silenzioso)
+
+                    if (silenzioso) {
+                        // Le schermate secondarie si **rileggono**, non si svuotano.
+                        //
+                        // Svuotarle e' quello che fa una ricarica chiesta, e li' funziona
+                        // perche' la schermata riparte da zero e la sua `LaunchedEffect`
+                        // rilegge. In un giro silenzioso la schermata non riparte — e' la
+                        // stessa, con la stessa chiave — quindi svuotarla la lascerebbe su
+                        // «sto leggendo…» per sempre.
+                        rileggiSecondarie()
+                    } else {
+                        // Ripulito a ogni ricarica: dopo che qualcuno fonda un club, un elenco
+                        // partecipanti in memoria dalla volta prima lo mostrerebbe ancora senza.
+                        _desk.value = DeskState()
+                        // Stessa ragione: una competizione appena creata, o una giornata
+                        // appena giocata, cambiano quello che la Casa deve dire.
+                        _competizioni.value = CompetizioniMie()
+                        _altrui.value = FormazioneAltrui()
+                        _obiettivi.value = ObiettiviState()
+                    }
                     contaLeghe()
                 }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ aggiornamento da solo
+
+    /**
+     * Quando e' stata l'ultima lettura andata a buon fine.
+     *
+     * Sta in cima allo schermo come «aggiornato 12s fa», ed e' l'unica cosa che distingue
+     * «non e' successo niente» da «l'app e' morta». Senza, un aggiornamento silenzioso e
+     * un aggiornamento rotto sono indistinguibili — e questo progetto ha gia' pagato una
+     * volta il prezzo di un dato che il database aveva e nessuna schermata scriveva.
+     */
+    private val _ultimoAggiornamento = MutableStateFlow<java.time.Instant?>(null)
+    val ultimoAggiornamento: StateFlow<java.time.Instant?> = _ultimoAggiornamento
+
+    private fun segnaAggiornamento() {
+        _ultimoAggiornamento.value = java.time.Instant.now()
+    }
+
+    /** L'app e' davanti agli occhi di qualcuno? Se no, l'orologio non ha niente da fare. */
+    @Volatile
+    private var davanti: Boolean = false
+
+    /** Un giro alla volta: due letture sovrapposte si scriverebbero addosso a vicenda. */
+    @Volatile
+    private var giroInCorso: Boolean = false
+
+    /**
+     * Le squadre comparse dall'ultima lettura, scritte come una frase. Null se nessuna.
+     *
+     * E' il momento che e' mancato: un amico che fonda il suo club e dall'altra parte non
+     * succede niente, per sempre. Costa il confronto fra due elenchi di id.
+     */
+    private fun squadreNuove(prima: AppState.Dentro?, adesso: LeagueSnapshot): String? {
+        val vecchie = prima?.lega?.clubs?.map { it.id }?.toSet() ?: return null
+        // Le seconde squadre non si annunciano: nascono insieme a chi le fonda e sarebbero
+        // un doppio annuncio per la stessa persona.
+        val nuove = adesso.clubs.filter { it.id !in vecchie && it.parentClubId == null }
+        if (nuove.isEmpty()) return null
+
+        return when (nuove.size) {
+            1 -> "${nuove.first().name} e' entrata nella lega."
+            else -> "${nuove.size} squadre nuove nella lega: " +
+                nuove.joinToString(", ") { it.name } + "."
+        }
+    }
+
+    /**
+     * Le letture secondarie, rifatte solo dove erano gia' state fatte.
+     *
+     * Nessuna richiesta per una schermata che nessuno ha aperto: se i partecipanti non sono
+     * mai stati letti, un giro automatico non e' il momento di andarli a prendere.
+     */
+    private suspend fun rileggiSecondarie() {
+        val dentro = statoCorrente() ?: return
+        val leagueId = dentro.lega.league.id
+
+        if (_desk.value.members != null) {
+            when (val esito = LeagueDeskRepository.members(leagueId, dentro.lega.clubs)) {
+                is ApiResult.Error -> Unit
+                is ApiResult.Ok -> _desk.value = _desk.value.copy(members = esito.value)
+            }
+        }
+        if (_competizioni.value.letto) {
+            when (val esito = CompetitionRepository.list(leagueId)) {
+                is ApiResult.Error -> Unit
+                is ApiResult.Ok -> _competizioni.value = CompetizioniMie(esito.value, letto = true)
+            }
+        }
+        if (_obiettivi.value.letto) {
+            _obiettivi.value = _obiettivi.value.copy(righe = ObjectiveRepository.all(leagueId))
+        }
+    }
+
+    /**
+     * Il giro leggero: cosa e' cambiato, senza rileggere il mondo.
+     *
+     * ## Cosa chiede, e cosa no
+     *
+     * Chiede la riga della lega, i club, i contratti e le aste. Non i milletrecento
+     * giocatori: attributi e stamina cambiano quando il server gioca una giornata, non
+     * perche' qualcuno ha rilanciato — e quando la giornata cambia se ne accorge da qui e
+     * passa la mano al giro pieno.
+     *
+     * ## I club si rileggono per intero
+     *
+     * Con divisione e club padre, che costano due richieste minuscole in piu'. La versione
+     * ridotta e' esattamente quella che faceva sparire la Primavera dopo ogni offerta: due
+     * richieste da niente ogni mezzo minuto sono il prezzo giusto per non rifare quel
+     * difetto.
+     */
+    private suspend fun aggiornaLeggero() {
+        val dentro = statoCorrente() ?: return
+        if (giroInCorso) return
+        giroInCorso = true
+
+        try {
+            val leagueId = dentro.lega.league.id
+
+            val stato = when (val esito = LeagueRepository.stato(leagueId)) {
+                is ApiResult.Error -> return
+                is ApiResult.Ok -> esito.value
+            }
+
+            // Il server ha giocato: crescita, stamina, infortuni e presenze sono tutti
+            // diversi da prima. Qui non basta piu' un giro leggero.
+            if (stato.second != dentro.lega.league.currentMatchDay) {
+                giroInCorso = false
+                carica(leagueId, silenzioso = true)
+                return
+            }
+
+            val clubs = when (val esito = LeagueRepository.clubs(leagueId)) {
+                is ApiResult.Error -> return
+                is ApiResult.Ok -> esito.value
+            }
+            val contratti = when (val esito = LeagueRepository.contracts(leagueId)) {
+                is ApiResult.Error -> return
+                is ApiResult.Ok -> esito.value
+            }
+            val aste = AuctionRepository.openAuctions(leagueId)
+
+            // Rileggere dopo ogni sospensione: fra la prima richiesta e l'ultima si puo'
+            // essere usciti dalla lega, o averne cambiata una.
+            // Rileggere dopo ogni sospensione: fra la prima richiesta e l'ultima si puo'
+            // essere usciti dalla lega, averne cambiata una, o essere entrati in una
+            // schermata piena come il calendario. In tutti e tre i casi si lascia perdere
+            // questo giro invece di scrivere addosso a quello che c'e'.
+            val corrente = statoCorrente() ?: return
+            if (corrente.lega.league.id != leagueId) return
+
+            val lega = corrente.lega.copy(
+                league = corrente.lega.league.copy(
+                    status = stato.first,
+                    currentMatchDay = stato.second,
+                ),
+                clubs = clubs,
+                clubOfPlayer = contratti.first,
+                youth = contratti.second,
+            )
+            ultimaLega = lega
+
+            // Le righe si ricostruiscono: senza, un club nuovo comparirebbe nell'elenco
+            // squadre e resterebbe sconosciuto ovunque altro — i suoi giocatori senza
+            // proprietario, le sue aste aperte «dalla lega».
+            val rows = withContext(Dispatchers.Default) { righe(lega) }
+            val nuove = squadreNuove(corrente, lega)
+            val righeAste = asteViste(aste, rows, lega)
+
+            _state.value = corrente.copy(
+                lega = lega,
+                rows = rows,
+                auctions = righeAste,
+                // Il foglio dell'offerta aperto segue il prezzo: e' l'unico posto in cui
+                // vedere il numero salire da solo e' esattamente cio' che serve.
+                bidding = corrente.bidding?.let { aperta ->
+                    righeAste.firstOrNull { it.auction.id == aperta.auction.id } ?: aperta
+                },
+                avviso = nuove ?: corrente.avviso,
+            )
+            segnaAggiornamento()
+
+            // La formazione **non** si tocca qui: e' l'unica cosa che si compone a mano per
+            // minuti e che si perderebbe per sempre.
+            if (nuove != null) rileggiSecondarie()
+        } finally {
+            giroInCorso = false
+        }
+    }
+
+    /**
+     * L'app e' passata davanti o dietro.
+     *
+     * Tornando davanti si rilegge tutto subito: chi riapre l'app dopo mezz'ora non deve
+     * aspettare il prossimo giro per vedere cosa e' successo. E su Android «riaprire» quasi
+     * mai fa ripartire l'app — si torna dal selettore e tutto e' rimasto com'era, con la
+     * stessa fotografia di prima. E' precisamente il caso in cui prima non si aggiornava
+     * niente, per sempre.
+     */
+    fun cambiaPrimoPiano(davanti: Boolean) {
+        this.davanti = davanti
+        if (!davanti) return
+        Session.leagueId?.let { if (statoCorrente() != null) carica(it, silenzioso = true) }
+    }
+
+    /** L'aggiornamento chiesto a mano: rilegge tutto, perche' l'ha chiesto una persona. */
+    fun aggiornaAdesso() {
+        Session.leagueId?.let { carica(it, silenzioso = true) }
+    }
+
+    /**
+     * L'orologio.
+     *
+     * Un giro ogni trenta secondi, e solo con l'app davanti: in sottofondo non serve a
+     * niente e consuma batteria. Vive in `viewModelScope`, quindi muore con il ViewModel
+     * senza che nessuno debba ricordarsi di spegnerlo.
+     */
+    private fun avviaOrologio() {
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(CADENZA_MS)
+                if (davanti && statoCorrente() != null) aggiornaLeggero()
             }
         }
     }
@@ -2329,7 +2616,27 @@ class AppViewModel : ViewModel() {
      * altrimenti salvare mentre l interruttore e sulla Primavera schiererebbe undici
      * ragazzi al posto della prima squadra.
      */
-    private fun caricaFormazione(snapshot: LeagueSnapshot, clubId: Long? = null) {
+    /**
+     * @param conservaSeInModifica non toccare una formazione con modifiche non salvate.
+     *
+     * ## Perche' esiste
+     *
+     * Comporre un undici e' un lavoro lungo: si prova un modulo, si sposta un uomo, si
+     * cambia idea. Questa funzione lo ricostruisce da capo dal database, ed e' la cosa
+     * giusta dopo un'azione — la rosa e' cambiata, la formazione va rifatta.
+     *
+     * Chiamata da un giro automatico sarebbe un disastro: mentre uno compone, ogni trenta
+     * secondi gli si cancella tutto sotto le dita, senza che abbia toccato niente e senza
+     * capire perche'. `dirty` distingue una formazione in lavorazione da una gia' salvata,
+     * ed e' l'unica cosa che serve sapere.
+     */
+    private fun caricaFormazione(
+        snapshot: LeagueSnapshot,
+        clubId: Long? = null,
+        conservaSeInModifica: Boolean = false,
+    ) {
+        if (conservaSeInModifica && _lineup.value.dirty) return
+
         val club = (clubId?.let { id -> snapshot.clubs.firstOrNull { it.id == id } } ?: snapshot.myClub)
             ?: run {
                 _lineup.value = LineupEdit()
