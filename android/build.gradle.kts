@@ -28,11 +28,37 @@ fun secret(name: String, fallback: String = ""): String =
     (localProps.getProperty(name) ?: System.getenv(name) ?: fallback)
 
 android {
+    /**
+     * Il pacchetto del **codice**: dove vivono le classi e la R generata.
+     *
+     * Resta `dev.mfoot.android` e non segue l'applicationId di proposito. Cambiarlo
+     * vorrebbe dire spostare ogni file sorgente e riscrivere ogni import per un beneficio
+     * nullo: nessuno lo vede, non compare da nessuna parte fuori dal codice, e Android non
+     * chiede che i due coincidano.
+     */
     namespace = "dev.mfoot.android"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "dev.mfoot.android"
+        /**
+         * Il pacchetto dell'**app**: come Android la chiama, e come la conosce Google.
+         *
+         * E' quello registrato sulla Android Developer Console insieme alla fingerprint
+         * SHA-256 della chiave di rilascio, ed e' la coppia che rende l'app verificata
+         * invece che «di sviluppatore sconosciuto».
+         *
+         * ## Cambiarlo non e' un aggiornamento
+         *
+         * Per Android un applicationId diverso e' un'**altra applicazione**: si installa
+         * accanto alla precedente invece di sostituirla, con i suoi dati suoi. E siccome
+         * qui l'identita' del giocatore e' un token salvato nei dati dell'app — niente
+         * email, niente password — un club fondato con il pacchetto vecchio resta nella
+         * lega senza piu' nessuno che possa reclamarlo.
+         *
+         * Il cambio e' stato fatto il 2026-08-20, con il proprietario che sapeva di
+         * perdere i club delle leghe di prova. Da qui in avanti non si tocca piu'.
+         */
+        applicationId = "com.christianrocco.mfoot"
         // minSdk 26: `core` usa java.time ovunque per il calendario, e sotto questo
         // livello servirebbe il desugaring.
         minSdk = libs.versions.minSdk.get().toInt()
@@ -46,8 +72,8 @@ android {
         //
         // La versione compare in fondo al menu laterale, non in una schermata "info" che
         // nessuno apre.
-        versionCode = 17
-        versionName = "0.17.0"
+        versionCode = 18
+        versionName = "0.18.0"
 
         buildConfigField("String", "SUPABASE_URL", "\"${secret("supabase.url")}\"")
         buildConfigField("String", "SUPABASE_KEY", "\"${secret("supabase.key")}\"")
