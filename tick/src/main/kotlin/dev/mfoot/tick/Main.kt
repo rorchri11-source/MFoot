@@ -44,7 +44,9 @@ fun main() {
             val runner = TickRunner(connection, config)
             val summary = runner.runAllLeagues(startedAt)
             log(summary.describe())
-            0
+            // Una lega fallita rende rosso il giro. Vedi TickSummary.failed: prima
+            // finivano tutte in un elenco che nessuno leggeva, sotto un'esecuzione verde.
+            if (summary.failed) 2 else 0
         }
     } catch (e: Exception) {
         // Un tick fallito non e' un disastro: quello dopo recupera. Ma va registrato,

@@ -11,8 +11,19 @@ name: World Tick
 
 on:
   schedule:
-    # Ogni 5 minuti. E' il minimo consentito da GitHub.
-    - cron: '*/5 * * * *'
+    # Ogni 10 minuti, non ogni 5.
+    #
+    # Cinque e' il minimo che GitHub consente, ed era la scelta ovvia. Misurato pero' sul
+    # registro delle esecuzioni: un giro dura circa **otto minuti** — un minuto di build e
+    # sette di elaborazione — quindi con il cron a cinque i giri si accavallano sempre.
+    # Con `concurrency` il secondo si mette in coda e il terzo lo annulla: un terzo delle
+    # esecuzioni risultava "cancelled" senza che nessuno ne capisse il motivo.
+    #
+    # Dieci non rallenta il gioco: GitHub ritarda comunque i lavori pianificati, e la
+    # cadenza vera misurata era gia' fra i trenta e i cinquanta minuti. Dieci descrive la
+    # realta' invece di fingere una precisione che non c'e', e smette di produrre
+    # annullamenti che sembrano guasti.
+    - cron: '*/10 * * * *'
   # Permette di lanciarlo a mano dalla tab Actions, utile per provare.
   workflow_dispatch:
     inputs:

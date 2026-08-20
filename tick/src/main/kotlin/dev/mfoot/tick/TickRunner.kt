@@ -84,6 +84,28 @@ data class LeagueSummary(
 )
 
 data class TickSummary(val leagues: List<LeagueSummary>, val failures: List<String>) {
+
+    /**
+     * Qualcosa e' andato storto, e il giro non puo' dirsi riuscito.
+     *
+     * ## Perche' esiste
+     *
+     * Perche' senza, non esisteva. Ogni lega viene elaborata in una transazione a se' e un
+     * suo errore viene catturato, riportato indietro e messo in [failures] — cosa giusta,
+     * perche' una lega rotta non deve fermare le altre. Ma poi `main` restituiva **zero
+     * comunque**, quindi su GitHub l'esecuzione risultava **verde**.
+     *
+     * L'effetto: una lega che fallisce a ogni singolo giro — per un dato incoerente, una
+     * migrazione mancante, un vincolo violato — resta ferma per giorni mentre il registro
+     * delle esecuzioni e' una fila ininterrotta di spunte verdi. Nessuno va a leggere il
+     * log di un giro riuscito.
+     *
+     * Il prezzo di questa scelta e' che una lega problematica tinge di rosso anche i giri
+     * in cui tutte le altre sono andate bene. E' il prezzo giusto: un verde che non
+     * significa niente e' peggio di un rosso che si impara a leggere.
+     */
+    val failed: Boolean get() = failures.isNotEmpty()
+
     fun describe(): String = buildString {
         if (leagues.isEmpty() && failures.isEmpty()) {
             append("Nessuna lega attiva.")
