@@ -11,7 +11,7 @@
 ```
 mfoot/
 ├── core/          ✅ il gioco: motore, mondo, mercato, AI. Zero dipendenze di piattaforma
-├── tick/          🟡 il battito: gira su GitHub Actions ogni 5 minuti
+├── tick/          🟡 il battito: gira su GitHub Actions ogni 10 minuti
 ├── android/       🟡 l'app: entra in lega, fonda il club, compra all'asta
 └── supabase/      ✅ schema, RLS, funzioni transazionali
 ```
@@ -333,3 +333,15 @@ Non refusi: difetti di logica che sarebbero arrivati fino in produzione.
     rientrare **non fa ripartire niente**, quindi «ho chiuso e riaperto» non ricaricava
     nulla — ed è la risposta che mi aveva fatto scartare la diagnosi giusta per un giorno
     intero.
+19. **Le leghe rotte producevano esecuzioni verdi per sempre.** `runAllLeagues` catturava
+    l'eccezione di una singola lega, faceva rollback e la metteva in `failures`, ma `main`
+    restituiva sempre `0`. Su GitHub Actions l'esecuzione risultava verde e nessuno leggeva
+    i log: una lega con un errore bloccante (come aste non chiudibili o migrazioni non ancora
+    allineate) restava ferma per sempre. Ora `summary.failed` esce con codice 2 e tinge di
+    rosso il giro.
+20. **Il cron ogni 5 minuti si accavallava e si auto-annullava.** Un giro di tick durava
+    circa 8 minuti (build + elaborazione) contro una frequenza cron di 5 minuti. Le corse
+    si sovrapponevano e GitHub cancellava i lavori in coda (un terzo delle esecuzioni era
+    `cancelled`). La frequenza è ora portata a 10 minuti (`*/10 * * * *`).
+
+
