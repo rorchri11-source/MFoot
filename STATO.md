@@ -1,6 +1,6 @@
 # MFoot — stato del progetto
 
-**Aggiornato:** 2026-08-20
+**Aggiornato:** 2026-08-23
 **Test:** 654 verdi, 0 falliti
 **Verificato:** su emulatore Android e su Supabase, non solo nei test
 
@@ -160,6 +160,24 @@ trovato perché **qualcuno ha guardato**, non perché una prova ha fallito.
    ventisei test in `core`, ma il giro completo — assegnazione, stagione, chiusura,
    premio accreditato — non è mai girato su un database vero. È il punto 1 di questo
    elenco visto da un'altra angolazione.
+5. **Il tick impiega otto minuti a giro, e il grosso non è la build.**
+   Misurato il 2026-08-23 dal registro pubblico delle esecuzioni: un giro riuscito dura
+   **8 min 24 s**, di cui 50 secondi di build e circa **sette minuti e mezzo di
+   elaborazione**. Portare il cron a dieci minuti non è bastato: sulle ultime cento
+   esecuzioni **59 restano `cancelled`** perché i giri continuano ad accavallarsi, e la
+   cadenza vera è fra i venti e i quaranta minuti.
+
+   Non è solo spreco di CI. **L'anti-snipe è tarato su sessanta secondi**: se il tick
+   passa ogni mezz'ora, un'asta che scade alle 21:00 chiude alle 21:35, e il meccanismo
+   che dovrebbe far vincere chi valuta di più invece di chi ha il dito veloce smette di
+   funzionare.
+
+   Il sospetto, da leggere prima di intervenire: `loadSquad` fa **una query per club** ed
+   è chiamata da sette punti diversi, uno dei quali dentro un ciclo su tutte le squadre.
+   Con sedici club per lega, più leghe, e ogni risveglio AI che rilegge la propria rosa,
+   sono centinaia di andate e ritorno verso Supabase, ognuna con la sua latenza di rete.
+   La correzione sarebbe leggere le rose **una volta per lega** a inizio giro. È dentro il
+   codice che sposta soldi, contratti e aggiudicazioni: va fatta con attenzione.
 
 ### Cosa fa e cosa non fa il tick, oggi
 
