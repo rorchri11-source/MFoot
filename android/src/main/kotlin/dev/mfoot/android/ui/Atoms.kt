@@ -410,7 +410,16 @@ private fun Archi(modifier: Modifier = Modifier) {
     // schermata e non e' piu' com'era.
     val gradi = rotazioneLenta()
 
-    androidx.compose.foundation.Canvas(modifier.graphicsLayer { rotationZ = gradi }) {
+    // `clip = true` non e' un dettaglio: un `graphicsLayer` **non ritaglia** per
+    // impostazione predefinita, e ruotando gli angoli del riquadro escono dai suoi
+    // limiti. Senza, gli archi si mettevano a disegnare sopra tutta la pagina sotto la
+    // testata — date, chip e pulsanti attraversati da cerchi azzurri.
+    androidx.compose.foundation.Canvas(
+        modifier.graphicsLayer {
+            rotationZ = gradi
+            clip = true
+        },
+    ) {
         val centro = Offset(size.width * 1.02f, -size.height * 0.34f)
         val tinte = listOf(
             MFootColors.blueArc.copy(alpha = 0.85f),
