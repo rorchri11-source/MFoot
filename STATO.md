@@ -413,7 +413,20 @@ Non refusi: difetti di logica che sarebbero arrivati fino in produzione.
 24. **«Classifica» compariva tre volte sullo stesso schermo** indicando tre cose diverse: il
     posto, il segmentato, e la vista interna della competizione. Le due viste si chiamano
     ora «Punti» e «Partite» — dicono cosa si guarda invece di ripetere dove si è.
-25. **Le accentate erano scritte con l'apostrofo in tutto il testo visibile.** 176 fra
+25. **Un'asta nasceva senza nessuno in testa, nemmeno chi l'aveva aperta.** Segnalato dal
+    proprietario guardando il mercato. `start_auction` inseriva la riga dell'asta e
+    nient'altro; il tick faceva lo stesso su due strade sue. Tre conseguenze, tutte
+    sbagliate: un'asta che nessun altro guardava scadeva **deserta** e chi l'aveva aperta
+    restava a mani vuote, avendo consumato uno slot per un'ora — ed è il caso più
+    frequente, perché un'asta la si apre su chi si vuole; l'app scriveva «nessuno ha
+    ancora offerto» anche sulla propria; e i crediti di chi apriva non risultavano
+    impegnati, quindi lo stesso club poteva aprire tre aste che insieme valevano più della
+    sua cassa. Peggiorato da un secondo scarto: l'AI teneva il conto dell'impegno **in
+    memoria** mentre sul database non c'era niente, e al giro dopo il conto ripartiva da
+    zero. La regola sta ora in `core` con due prove, e le due implementazioni — SQL e tick
+    — la seguono. Chi **vende** un proprio giocatore continua a non offrire: sarebbe
+    comprare da sé stesso.
+26. **Le accentate erano scritte con l'apostrofo in tutto il testo visibile.** 176 fra
     `velocita'`, `puo'`, `perche'`, `sara'`, `giu'`. Corrette con una macchina a stati che
     distingue stringhe da commenti — i commenti il progetto li tiene in ASCII e restano
     così. Restano intatti di proposito `po'`, i minuti di gioco (`dal 45'`) e le virgolette

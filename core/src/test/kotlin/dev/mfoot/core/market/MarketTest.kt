@@ -222,9 +222,64 @@ class AuctionRulesTest {
 
     @Test
     fun `un'asta senza offerte resta deserta`() {
-        val outcome = AuctionRules.close(newAuction(), T0.plusSeconds(7200), config)
+        // Un'asta davvero senza offerte esiste solo quando si **vende**: chi apre per
+        // comprare parte in testa al prezzo base, quindi la sua non puo' essere vuota.
+        val invenduto = AuctionRules.open(
+            id = 9L,
+            target = AuctionTarget.ForPlayer(PlayerId(9)),
+            startedBy = clubA,
+            now = T0,
+            config = config,
+            vendendo = true,
+        )
+        val outcome = AuctionRules.close(invenduto, T0.plusSeconds(7200), config)
         assertNull(outcome.winner)
         assertEquals(AuctionStatus.DESERTA, outcome.auction.status)
+    }
+
+    /**
+     * Chi apre un'asta per comprare ha gia' offerto il prezzo base.
+     *
+     * Senza, l'asta nasceva senza nessuno in testa: se nessun altro la guardava scadeva
+     * deserta e chi l'aveva aperta restava a mani vuote, avendo consumato uno dei suoi
+     * slot per un'ora. Ed era proprio il caso piu' frequente, perche' un'asta la si apre
+     * su chi si vuole.
+     */
+    @Test
+    fun `chi apre un'asta per comprare e' subito in testa al prezzo base`() {
+        val a = AuctionRules.open(
+            id = 7L,
+            target = AuctionTarget.ForPlayer(PlayerId(7)),
+            startedBy = clubA,
+            now = T0,
+            config = config,
+            startingPrice = 5,
+        )
+
+        assertEquals(clubA, a.leader)
+        assertEquals(5, a.bidOf(clubA)?.maxAmount)
+        assertEquals(5, a.currentPrice(config))
+
+        // E se non la guarda nessuno, se lo prende lui invece di restare deserta.
+        val outcome = AuctionRules.close(a, T0.plusSeconds(7200), config)
+        assertEquals(clubA, outcome.winner)
+        assertEquals(AuctionStatus.AGGIUDICATA, outcome.auction.status)
+    }
+
+    /** Chi vende non offre su se' stesso: quell'asta nasce vuota davvero. */
+    @Test
+    fun `chi mette in vendita un proprio giocatore non offre`() {
+        val a = AuctionRules.open(
+            id = 8L,
+            target = AuctionTarget.ForPlayer(PlayerId(8)),
+            startedBy = clubA,
+            now = T0,
+            config = config,
+            vendendo = true,
+        )
+
+        assertNull(a.leader)
+        assertNull(a.bidOf(clubA))
     }
 
     /**

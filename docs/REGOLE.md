@@ -44,6 +44,17 @@ Allenatori, preparatori e osservatori non si assegnano solo alla generazione del
 *Chiesta all'inizio del progetto, implementata con `0019_staff_e_scouting.sql`. È la
 richiesta che ha fatto nascere questo file.*
 
+**Chi apre un'asta per comprare ha già offerto il prezzo base.**
+L'ha aperta perché lo vuole: parte in testa. Chi invece mette all'asta **un proprio**
+giocatore è il venditore e non offre — sarebbe comprare da sé stesso — e se nessuno si fa
+avanti resta invenduto.
+Prima l'asta nasceva senza nessuno in testa, e succedevano tre cose: scadeva deserta anche
+per chi l'aveva aperta, l'app scriveva «nessuno ha ancora offerto» pure sulla propria, e i
+crediti di chi apriva non risultavano impegnati — quindi si potevano aprire tre aste che
+insieme valevano più della cassa.
+*Detta il 2026-08-24 · `core/market/Auction.kt` (`AuctionRules.open`),
+`supabase/migrations/0026_chi_apre_ha_offerto.sql`, `TickRunner.apriAsta`*
+
 **Gli under 20 non passano dalle aste.**
 Si trovano mandandoci un osservatore. Un fuoriclasse di diciotto anni non deve poter essere
 comprato da chi ha solo più soldi.

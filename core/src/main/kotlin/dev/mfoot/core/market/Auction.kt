@@ -267,6 +267,28 @@ object AuctionRules {
     fun committedCredits(club: ClubId, openAuctions: List<Auction>): Int =
         openAuctions.filter { it.isOpen }.sumOf { it.bidOf(club)?.maxAmount ?: 0 }
 
+    /**
+     * Apre un'asta.
+     *
+     * ## Chi la apre ha gia' offerto il prezzo base
+     *
+     * Perche' l'ha aperta per prenderlo. Senza questa offerta l'asta nasceva **senza
+     * nessuno in testa**, e da li' seguivano tre cose tutte sbagliate:
+     *
+     * 1. Se nessun altro la guardava, scadeva `DESERTA` e chi l'aveva aperta restava a
+     *    mani vuote, avendo per giunta consumato uno dei suoi slot di aste parallele per
+     *    un'ora.
+     * 2. L'app scriveva «nessuno ha ancora offerto» anche sulla propria, che e' falso:
+     *    qualcuno l'ha voluta abbastanza da aprirla.
+     * 3. I crediti di chi apriva non risultavano impegnati, quindi lo stesso club poteva
+     *    aprire tre aste che insieme valevano piu' di quanto aveva in cassa.
+     *
+     * ## Tranne quando si vende
+     *
+     * Chi mette all'asta **un proprio** giocatore e' il venditore, non un compratore:
+     * un'offerta sua sarebbe comprare da se' stesso. Li' l'asta nasce davvero vuota, e
+     * se nessuno offre resta invenduto — che e' l'esito giusto.
+     */
     fun open(
         id: Long,
         target: AuctionTarget,
@@ -274,12 +296,18 @@ object AuctionRules {
         now: Instant,
         config: MarketConfig,
         startingPrice: Int = 1,
-    ): Auction = Auction(
-        id = id,
-        target = target,
-        startedBy = startedBy,
-        startedAt = now,
-        endsAt = now.plusSeconds(config.auctionDurationMinutes * 60L),
-        startingPrice = startingPrice.coerceAtLeast(1),
-    )
+        /** Vero quando chi apre possiede gia' il giocatore: lo sta cedendo. */
+        vendendo: Boolean = false,
+    ): Auction {
+        val base = startingPrice.coerceAtLeast(1)
+        return Auction(
+            id = id,
+            target = target,
+            startedBy = startedBy,
+            startedAt = now,
+            endsAt = now.plusSeconds(config.auctionDurationMinutes * 60L),
+            startingPrice = base,
+            bids = if (vendendo) emptyList() else listOf(Bid(startedBy, base, now)),
+        )
+    }
 }

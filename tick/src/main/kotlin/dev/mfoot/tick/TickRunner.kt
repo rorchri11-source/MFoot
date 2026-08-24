@@ -644,11 +644,14 @@ class TickRunner(
         val base = 1.coerceAtLeast(candidato.second * candidato.second * 200)
         if (base > club.availableCredits) return false
 
-        connection.prepareStatement(
+        // Lo staff libero non e' di nessuno, quindi chi apre sta sempre **comprando**:
+        // l'offerta di apertura ci va sempre, senza il caso «sto vendendo».
+        val auctionId = connection.prepareStatement(
             """
             insert into auctions (league_id, target_type, target_id, started_by, ends_at,
                                   starting_price, current_price, status)
             values (?, 'staff', ?, ?, now() + make_interval(mins => ?), ?, ?, 'APERTA')
+            returning id
             """.trimIndent(),
         ).use { st ->
             st.setLong(1, league.id)
@@ -657,6 +660,23 @@ class TickRunner(
             st.setInt(4, market.auctionDurationMinutes)
             st.setInt(5, base)
             st.setInt(6, base)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else null }
+        } ?: return false
+
+        connection.prepareStatement(
+            "insert into bids (auction_id, club_id, max_amount) values (?, ?, ?)",
+        ).use { st ->
+            st.setLong(1, auctionId)
+            st.setLong(2, club.id.value)
+            st.setInt(3, base)
+            st.executeUpdate()
+        }
+
+        connection.prepareStatement(
+            "update clubs set committed_credits = committed_credits + ? where id = ?",
+        ).use { st ->
+            st.setInt(1, base)
+            st.setLong(2, club.id.value)
             st.executeUpdate()
         }
 
@@ -2873,9 +2893,11 @@ class TickRunner(
             .toSet()
         if (giocatore.id.value in giaInAsta) return false
 
+        // Qui il club **vende un suo** giocatore: non offre, o comprerebbe da se' stesso.
         apriAsta(
             league.id, giocatore.id.value, club.id, base,
             league.config.market.auctionDurationMinutes,
+            vendendo = true,
         )
 
         notify(
@@ -2888,18 +2910,39 @@ class TickRunner(
         return true
     }
 
+    /**
+     * Apre un'asta per conto di un club dell'AI.
+     *
+     * ## Chi apre per comprare ha gia' offerto il prezzo base
+     *
+     * La stessa regola di `AuctionRules.open` in `core` e di `start_auction` sul
+     * database. Qui mancava come mancava la': l'asta nasceva senza nessuno in testa, e
+     * quella aperta da un'AI su un giocatore che voleva poteva scadere **deserta** con
+     * l'AI stessa che non aveva mai offerto.
+     *
+     * C'era anche un secondo effetto, piu' silenzioso: la routine che apre le aste teneva
+     * il conto dell'impegno **in memoria** (`impegnato += appeal.ceiling`) mentre sul
+     * database non risultava impegnato niente, perche' l'impegno si legge dalle offerte.
+     * Al giro dopo il conto ripartiva da zero e lo stesso club poteva riaprire aste che
+     * insieme valevano piu' della sua cassa.
+     *
+     * Quando [vendendo] e' vero il club possiede gia' il giocatore: e' il venditore, e
+     * un'offerta sua sarebbe comprare da se' stesso.
+     */
     private fun apriAsta(
         leagueId: Long,
         playerId: Long,
         startedBy: ClubId,
         base: Int,
         durataMinuti: Int,
+        vendendo: Boolean = false,
     ) {
-        connection.prepareStatement(
+        val auctionId = connection.prepareStatement(
             """
             insert into auctions (league_id, target_type, target_id, started_by, ends_at,
                                   starting_price, current_price, status)
             values (?, 'player', ?, ?, now() + make_interval(mins => ?), ?, ?, 'APERTA')
+            returning id
             """.trimIndent(),
         ).use { st ->
             st.setLong(1, leagueId)
@@ -2908,6 +2951,25 @@ class TickRunner(
             st.setInt(4, durataMinuti)
             st.setInt(5, base)
             st.setInt(6, base)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else null }
+        } ?: return
+
+        if (vendendo) return
+
+        connection.prepareStatement(
+            "insert into bids (auction_id, club_id, max_amount) values (?, ?, ?)",
+        ).use { st ->
+            st.setLong(1, auctionId)
+            st.setLong(2, startedBy.value)
+            st.setInt(3, base)
+            st.executeUpdate()
+        }
+
+        connection.prepareStatement(
+            "update clubs set committed_credits = committed_credits + ? where id = ?",
+        ).use { st ->
+            st.setInt(1, base)
+            st.setLong(2, startedBy.value)
             st.executeUpdate()
         }
     }
