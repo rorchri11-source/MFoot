@@ -106,30 +106,16 @@ fun DashboardScreen(
             .verticalScroll(rememberScrollState()),
     ) {
         // Il cielo: fondo blu a tutta larghezza, nome del club, maglia sulla cupola.
+        //
+        // ## Il nome e la maglia stanno in una colonna, non impilati con gli allineamenti
+        //
+        // Prima erano due figli dello stesso `Box`, uno in alto e uno in basso: ma
+        // l'altezza di un `Box` e' quella del figlio piu' alto — la maglia — e la maglia
+        // allineata in basso se la prendeva tutta. Il risultato era il nome del club
+        // **dietro** la maglia, con tre lettere che spuntavano sopra il colletto. Una
+        // colonna impone l'ordine invece di sperare che gli ingombri non si incontrino;
+        // nel `Box` resta solo cio' che deve stare davvero dietro o sopra.
         Box(Modifier.fillMaxWidth().background(MFootColors.hero)) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 76.dp)
-                    .padding(top = 20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    club.name,
-                    style = MFootType.playerName,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    club.ownerName ?: "il tuo club",
-                    style = MFootType.secondary,
-                    color = Color.White.copy(alpha = 0.80f),
-                )
-            }
-
             // La cupola dietro la maglia.
             //
             // E' il pezzo che fa sembrare la maglia **appoggiata** invece che incollata
@@ -144,11 +130,38 @@ fun DashboardScreen(
                     .background(Color.White.copy(alpha = 0.08f)),
             )
 
-            Box(
+            Column(
                 Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 14.dp),
+                    .fillMaxWidth()
+                    .padding(top = 20.dp, bottom = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                // I 76 di margine tengono il nome lontano dai tre tondi a destra: senza,
+                // un nome lungo ci finisce sotto.
+                Column(
+                    Modifier.padding(horizontal = 76.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        club.name,
+                        style = MFootType.playerName,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        club.ownerName ?: "il tuo club",
+                        style = MFootType.secondary,
+                        color = Color.White.copy(alpha = 0.80f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Spacer(Modifier.height(14.dp))
                 Shirt(club.kit, Modifier.size(140.dp, 158.dp), showNumber = false)
             }
 
