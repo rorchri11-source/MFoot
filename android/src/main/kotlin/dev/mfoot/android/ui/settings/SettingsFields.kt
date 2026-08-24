@@ -101,7 +101,6 @@ fun MoneyField(value: Int, enabled: Boolean, onChange: (Int) -> Unit) {
         Modifier
             .width(116.dp)
             .background(if (enabled) MFootColors.core else MFootColors.bg, MFootShapes.field)
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.field)
             .padding(horizontal = 11.dp, vertical = 9.dp),
     ) {
         BasicTextField(
@@ -142,7 +141,6 @@ fun NameField(
         modifier
             .fillMaxWidth()
             .background(if (enabled) MFootColors.core else MFootColors.bg, MFootShapes.field)
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.field)
             .padding(horizontal = 11.dp, vertical = 9.dp),
     ) {
         BasicTextField(
@@ -186,7 +184,6 @@ fun DecimalField(value: Double, enabled: Boolean, onChange: (Double) -> Unit) {
         Modifier
             .width(92.dp)
             .background(if (enabled) MFootColors.core else MFootColors.bg, MFootShapes.field)
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.field)
             .padding(horizontal = 11.dp, vertical = 9.dp),
     ) {
         BasicTextField(
@@ -224,7 +221,6 @@ fun Switch(on: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
                 if (on) MFootColors.elite else MFootColors.core,
                 MFootShapes.pill,
             )
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.pill)
             .then(if (enabled) Modifier.clickable { onChange(!on) } else Modifier),
         contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
@@ -279,7 +275,7 @@ fun PrizeList(prizes: List<Int>, enabled: Boolean, onChange: (List<Int>) -> Unit
         Text("Premi per posizione", style = MFootType.rowTitle, color = MFootColors.ink)
         Spacer(Modifier.height(5.dp))
         Text(
-            "Dal primo in giu'. Togli tutte le righe se non vuoi premi di posizione.",
+            "Dal primo in giù. Togli tutte le righe se non vuoi premi di posizione.",
             style = MFootType.chip,
             color = MFootColors.ink3,
         )

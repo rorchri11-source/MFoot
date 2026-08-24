@@ -61,7 +61,7 @@ enum class Trait(
 
     GRANDI_PARTITE(
         "Uomo delle grandi partite",
-        "Nelle sfide che contano tira fuori qualcosa in piu'.",
+        "Nelle sfide che contano tira fuori qualcosa in più.",
         bigMatchBonus = 4.0,
     ),
 

@@ -114,7 +114,7 @@ object ConversationRepository {
         return SupabaseApi.rpc("answer_conversation", w.toString()).then { body ->
             val node = risposta(body)
             if (node["ok"].bool(false)) ApiResult.Ok(node["morale"].int(0))
-            else ApiResult.Error(node["reason"].str("Il discorso non e' piu' aperto."))
+            else ApiResult.Error(node["reason"].str("Il discorso non è più aperto."))
         }
     }
 
@@ -124,7 +124,7 @@ object ConversationRepository {
     /** L'errore tecnico diventa la migrazione che manca, che e' cio' che si puo' fare. */
     private fun ApiResult<Spogliatoio>.mapMissingTable(): ApiResult<Spogliatoio> = when {
         this is ApiResult.Error && message.contains("conversations") -> ApiResult.Error(
-            "Lo spogliatoio ha bisogno della migrazione 0013_colloqui.sql, che non e' " +
+            "Lo spogliatoio ha bisogno della migrazione 0013_colloqui.sql, che non è " +
                 "ancora stata applicata a questo database.",
         )
         else -> this

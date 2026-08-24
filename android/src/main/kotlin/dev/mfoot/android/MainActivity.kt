@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -48,7 +49,6 @@ import dev.mfoot.android.ui.DoorScreen
 import dev.mfoot.android.ui.FoundingScreen
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.PlayerDetailScreen
-import dev.mfoot.android.ui.PlayerListScreen
 import dev.mfoot.android.ui.TableScreen
 import dev.mfoot.android.ui.screens.CalendarioScreen
 import dev.mfoot.android.ui.screens.PartitaScreen
@@ -60,7 +60,16 @@ import dev.mfoot.android.ui.theme.MFootType
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Icone di sistema chiare, sempre.
+        //
+        // `enableEdgeToEdge()` senza argomenti le decide dal tema del telefono: su un
+        // telefono in modalita' chiara le disegna **nere**, e MFoot e' scura sempre —
+        // barra blu in cima, blu notte sotto. Il risultato era l'orologio e la batteria
+        // neri sul blu, illeggibili, su ogni telefono non impostato in scuro.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent { MFootTheme { MFootApp() } }
     }
 }
@@ -114,11 +123,19 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val concluse by viewModel.asteConcluse.collectAsStateWithLifecycle()
     val conclusePronte by viewModel.asteConclusePronte.collectAsStateWithLifecycle()
 
+    // Dentro la lega gli inset li gestisce il guscio, non la radice.
+    //
+    // Nel riferimento la barra di stato e' **blu**: la barra in alto ci passa sotto e la
+    // colora. Con un `systemBarsPadding()` qui alla radice quello non e' possibile — resta
+    // una striscia di fondo pagina sopra la barra blu, ed e' esattamente la cucitura che
+    // fa sembrare l'app un contenuto dentro una cornice invece di una schermata sola.
+    // Fuori dalla lega non c'e' nessun guscio a cui delegare, e la radice fa da se'.
+    val guscioSuo = state is AppState.Dentro
     Box(
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg)
-            .systemBarsPadding(),
+            .then(if (guscioSuo) Modifier else Modifier.systemBarsPadding()),
     ) {
         when (val current = state) {
             is AppState.Avvio -> Attesa("")
@@ -180,6 +197,22 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     clubName = current.lega.myClub?.name,
                     isAdmin = current.lega.league.isAdmin,
                     route = current.route,
+                    // Con le divisioni accese la piu' utile e' in quale si gioca: e' la
+                    // cosa che decide contro chi si scende in campo e non e' scritta in
+                    // nessun'altra schermata. Senza divisioni quella riga direbbe sempre
+                    // «girone unico», che non e' un'informazione, quindi al suo posto va
+                    // quante squadre ci sono.
+                    contesto = buildString {
+                        val divisioni = current.lega.league.config.divisions
+                        val club = current.lega.myClub
+                        if (divisioni.enabled && club != null) {
+                            append(divisioni.nameOf(club.divisionLevel))
+                        } else {
+                            append(current.lega.clubs.size).append(" squadre")
+                        }
+                        append(" · ").append(current.lega.league.currentMatchDay)
+                        append("ª giornata")
+                    },
                     drawerOpen = current.drawerOpen,
                     onToggleDrawer = viewModel::apriChiudiMenu,
                     onNavigate = { route ->
@@ -200,13 +233,13 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                     ultimoAggiornamento = ultimoAggiornamento,
                     onRefresh = viewModel::aggiornaAdesso,
                     onLeaveLeague = viewModel::lasciaLega,
+                    onBack = { viewModel.indietro() },
                 ) {
                     Router(
                         state = current,
                         onNavigate = viewModel::vai,
                         onQuery = viewModel::onQuery,
                         onFilter = viewModel::onFilter,
-                        onScope = viewModel::onScope,
                         onSelect = viewModel::select,
                         onOpenBid = viewModel::apriOfferta,
                         onRefreshAuctions = { viewModel.aggiornaAste() },
@@ -283,6 +316,10 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                 // ogni altra cosa a schermo in quel momento e' una distrazione.
                 AnimatedVisibility(
                     visible = current.bidding != null,
+                    // I due fogli coprono il guscio, quindi gli inset che il guscio si
+                    // gestisce da solo qui non li ha nessuno: senza, il titolo dell'asta
+                    // finisce sotto l'orologio del telefono.
+                    modifier = Modifier.systemBarsPadding(),
                     enter = slideInVertically(
                         animationSpec = tween(MFootMotion.normal, easing = MFootMotion.easing),
                         initialOffsetY = { it / 3 },
@@ -309,6 +346,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                 // guardando un dettaglio e non si e' cambiata schermata.
                 AnimatedVisibility(
                     visible = current.browse.selected != null,
+                    modifier = Modifier.systemBarsPadding(),
                     enter = slideInVertically(
                         animationSpec = tween(MFootMotion.normal, easing = MFootMotion.easing),
                         initialOffsetY = { it / 3 },

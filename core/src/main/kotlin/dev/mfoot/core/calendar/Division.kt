@@ -26,7 +26,7 @@ data class Division(
     init {
         require(level >= 1) { "il livello di una divisione parte da 1, non da $level" }
         require(clubs.toSet().size == clubs.size) {
-            "'$name': lo stesso club compare piu' volte"
+            "'$name': lo stesso club compare più volte"
         }
     }
 
@@ -66,10 +66,10 @@ data class DivisionRules(
             "promozioni e retrocessioni non possono essere negative"
         }
         require(playoffSlots == 0 || playoffSlots >= 2) {
-            "un playoff fra meno di due squadre non e' un playoff"
+            "un playoff fra meno di due squadre non è un playoff"
         }
         require(playoutSlots == 0 || playoutSlots >= 2) {
-            "un playout fra meno di due squadre non e' un playout"
+            "un playout fra meno di due squadre non è un playout"
         }
     }
 

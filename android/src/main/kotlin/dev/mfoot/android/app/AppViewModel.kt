@@ -256,7 +256,7 @@ class AppViewModel : ViewModel() {
                 is ApiResult.Ok -> {
                     Session.leagueId = creata.value
                     Session.nickname = nickname.trim()
-                    carica(creata.value, avviso = "Lega creata. Il codice per gli altri e' ${codice.trim()}.")
+                    carica(creata.value, avviso = "Lega creata. Il codice per gli altri è ${codice.trim()}.")
                 }
             }
         }
@@ -482,7 +482,7 @@ class AppViewModel : ViewModel() {
         if (nuove.isEmpty()) return null
 
         return when (nuove.size) {
-            1 -> "${nuove.first().name} e' entrata nella lega."
+            1 -> "${nuove.first().name} è entrata nella lega."
             else -> "${nuove.size} squadre nuove nella lega: " +
                 nuove.joinToString(", ") { it.name } + "."
         }
@@ -772,7 +772,7 @@ class AppViewModel : ViewModel() {
                     Session.clubId = creato.value.clubId
                     carica(
                         fondazione.lega.league.id,
-                        avviso = "${fondazione.clubName} e' nato. " +
+                        avviso = "${fondazione.clubName} è nato. " +
                             "${fondazione.draft.firstName} ${fondazione.draft.lastName} " +
                             "esce a ${creato.value.overall}, con ${creato.value.spent} punti spesi.",
                     )
@@ -1289,11 +1289,11 @@ class AppViewModel : ViewModel() {
                     val mio = row.club?.isMine == true
                     aggiornaAste(
                         avviso = if (mio) {
-                            "${row.player.fullName} e' in vendita, base $prezzo. " +
+                            "${row.player.fullName} è in vendita, base $prezzo. " +
                                 "Alla chiusura il prezzo arriva a te."
                         } else {
-                            "${row.player.fullName} e' all'asta, base $prezzo. " +
-                                "Chiunque puo' offrire, ${club.shortName} compreso."
+                            "${row.player.fullName} è all'asta, base $prezzo. " +
+                                "Chiunque può offrire, ${club.shortName} compreso."
                         },
                     )
                 }
@@ -1785,7 +1785,7 @@ class AppViewModel : ViewModel() {
                 is ApiResult.Ok -> {
                     _mieLeghe.value = _mieLeghe.value.copy(
                         busy = null,
-                        avviso = "Il codice ora e' ${esito.value}.",
+                        avviso = "Il codice ora è ${esito.value}.",
                     )
                     caricaMieLeghe()
                 }
@@ -1899,7 +1899,7 @@ class AppViewModel : ViewModel() {
 
         val colloquio = _spogliatoio.value.spogliatoio.apertoPer(playerId) ?: run {
             _spogliatoio.value = _spogliatoio.value.copy(
-                avviso = "Questo discorso non e' piu' aperto.",
+                avviso = "Questo discorso non è più aperto.",
             )
             return
         }
@@ -1944,7 +1944,7 @@ class AppViewModel : ViewModel() {
                     }
 
                     val coda = when {
-                        debito is ApiResult.Error -> "  (la promessa non e' stata registrata: ${debito.message})"
+                        debito is ApiResult.Error -> "  (la promessa non è stata registrata: ${debito.message})"
                         promessa != null -> "  Promessa presa: ${promessa.describe()}"
                         else -> ""
                     }
@@ -2047,7 +2047,7 @@ class AppViewModel : ViewModel() {
                 is ApiResult.Ok -> {
                     _staff.value = _staff.value.copy(
                         errore = null,
-                        avviso = "${membro.shortName} e' all'asta, base $base.",
+                        avviso = "${membro.shortName} è all'asta, base $base.",
                     )
                     aggiornaAste()
                 }
@@ -2068,7 +2068,7 @@ class AppViewModel : ViewModel() {
                     _staff.value = _staff.value.copy(
                         busy = null,
                         errore = null,
-                        avviso = "E' partito per il $paese. Torna quando torna.",
+                        avviso = "è partito per il $paese. Torna quando torna.",
                     )
                     caricaStaff()
                 }
@@ -2106,7 +2106,7 @@ class AppViewModel : ViewModel() {
                     _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
 
                 is ApiResult.Ok -> Session.leagueId?.let {
-                    carica(it, avviso = "${club.name} Primavera e' iscritta all'ultima divisione.")
+                    carica(it, avviso = "${club.name} Primavera è iscritta all'ultima divisione.")
                 }
             }
         }
@@ -2828,7 +2828,6 @@ class AppViewModel : ViewModel() {
 
     fun onFilter(filter: RoleFilter) = aggiornaBrowse { it.copy(filter = filter) }
 
-    fun onScope(scope: ListScope) = aggiornaBrowse { it.copy(scope = scope) }
 
     /** La carriera del giocatore aperto: presenze, gol, media voto. */
     private val _carriera = MutableStateFlow(dev.mfoot.android.data.Carriera.NESSUNA)

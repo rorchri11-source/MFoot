@@ -43,9 +43,14 @@ import dev.mfoot.android.ui.settings.SettingsIndexScreen
 import dev.mfoot.android.ui.settings.DivisioniAzioni
 import dev.mfoot.android.ui.settings.SettingsScreen
 import dev.mfoot.core.config.LeagueConfig
+import dev.mfoot.android.ui.BarraSchede
+import dev.mfoot.android.ui.Cartellino
 import dev.mfoot.android.ui.Chip
-import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
+import dev.mfoot.android.ui.Scheda
+import dev.mfoot.android.ui.Segmentato
+import dev.mfoot.android.ui.Vuoto
+import dev.mfoot.android.ui.icons.MFootIcons
 import dev.mfoot.android.ui.PlayerListScreen
 import dev.mfoot.android.ui.TableScreen
 import dev.mfoot.android.ui.screens.AsteConcluseScreen
@@ -82,7 +87,6 @@ fun Router(
     onNavigate: (Route) -> Unit,
     onQuery: (String) -> Unit,
     onFilter: (RoleFilter) -> Unit,
-    onScope: (ListScope) -> Unit,
     onSelect: (PlayerRow) -> Unit,
     onOpenBid: (AuctionRow) -> Unit,
     onRefreshAuctions: () -> Unit,
@@ -171,7 +175,7 @@ fun Router(
         // per tutti e tre: e' il chip a cambiare posto, non la schermata a cambiare forma.
         is Route.Squadra -> Column(Modifier.fillMaxSize()) {
             Interruttore(state, onSwitchTeam, onCreateYouth)
-            Schede(TabSquadra.entries, route.tab) { onNavigate(Route.Squadra(it)) }
+            Schede(TabSquadra.entries, route.tab, { it.label }) { onNavigate(Route.Squadra(it)) }
             when (route.tab) {
                 TabSquadra.ROSA -> state.clubMostrato
                     // Sulla propria rosa il pulsante «vedi la formazione» non serve: c'e'
@@ -204,14 +208,14 @@ fun Router(
         }
 
         is Route.Mercato -> Column(Modifier.fillMaxSize()) {
-            Schede(TabMercato.entries, route.tab) { onNavigate(Route.Mercato(it)) }
+            Schede(TabMercato.entries, route.tab, { it.label }) { onNavigate(Route.Mercato(it)) }
             when (route.tab) {
                 // Le prime tre sono la stessa schermata con un ambito diverso, ed e'
                 // esattamente cio' che erano gia': tre voci di menu che aprivano lo stesso
                 // composable senza dirlo. Adesso lo dicono.
-                TabMercato.ASTE -> Lista(state, ListScope.ASTE, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
-                TabMercato.SVINCOLATI -> Lista(state, ListScope.SVINCOLATI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
-                TabMercato.LISTONE -> Lista(state, ListScope.TUTTI, onQuery, onFilter, onScope, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
+                TabMercato.ASTE -> Lista(state, ListScope.ASTE, onQuery, onFilter, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
+                TabMercato.SVINCOLATI -> Lista(state, ListScope.SVINCOLATI, onQuery, onFilter, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
+                TabMercato.LISTONE -> Lista(state, ListScope.TUTTI, onQuery, onFilter, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
 
                 TabMercato.CONCLUSE -> AsteConcluseScreen(
                     state = state,
@@ -246,8 +250,18 @@ fun Router(
             }
         }
 
-        is Route.Lega -> Column(Modifier.fillMaxSize()) {
-            Schede(TabLega.entries, route.tab) { onNavigate(Route.Lega(it)) }
+        // Due sole destinazioni, quindi un segmentato e non dei chip.
+        //
+        // E' la stessa scelta del riferimento, che sopra l'elenco squadre mette «nella
+        // competizione / nella lega»: quando le voci sono due e fisse, vederle tutte e due
+        // e' il punto — la domanda si risponde una volta, non e' un filtro da scorrere.
+        is Route.Lega -> Column(Modifier.fillMaxSize().background(MFootColors.bg)) {
+            Segmentato(
+                voci = TabLega.entries,
+                scelta = route.tab,
+                etichetta = { it.label },
+                modifier = Modifier.padding(MFootSpacing.section, 12.dp),
+            ) { onNavigate(Route.Lega(it)) }
             when (route.tab) {
                 TabLega.CLASSIFICA -> {
                     LaunchedEffect(state.lega.league.id) { onLoadTable() }
@@ -349,38 +363,37 @@ fun Router(
 }
 
 /**
- * La riga di chip in cima a un posto.
+ * Le sezioni in cima a un posto.
  *
  * ## Perche' una sola, generica
  *
- * Perche' altrimenti diventano tre righe di chip scritte tre volte, e alla quarta schermata
- * una delle tre ha una spaziatura diversa. Prende un elenco di voci con un'etichetta e
+ * Perche' altrimenti diventano tre righe scritte tre volte, e alla quarta schermata una
+ * delle tre ha una spaziatura diversa. Prende un elenco di voci con un'etichetta e
  * restituisce quella scelta: e' tutto quello che serve, ed e' l'unica cosa che le tre
  * hanno in comune.
  *
- * Scorre in orizzontale perche' cinque chip non ci stanno su un telefono stretto, e
- * tagliarne uno vorrebbe dire una destinazione che su certi schermi non esiste.
+ * ## Erano chip, adesso sono linguette
+ *
+ * Un chip dice «filtro»: si accende, si spegne, se ne possono immaginare due accesi
+ * insieme. Queste non sono filtri, sono **dove sei**, e ne esiste sempre esattamente una.
+ * La sottolineatura lo dice, la pillola no — e nel riferimento le due cose hanno appunto
+ * due forme diverse. I chip restano dove servono davvero: i ruoli, gli stati delle aste.
  */
 @Composable
 private fun <T> Schede(
     voci: List<T>,
     scelta: T,
-    etichetta: (T) -> String = { (it as? Enum<*>)?.name.orEmpty() },
+    /**
+     * L'etichetta da scrivere sulla linguetta.
+     *
+     * Era facoltativa, e il ripiego prendeva il nome dell'enum: si leggeva «SPOGLIATOIO» e
+     * «OSSERVATORI», in stampatello, perche' nessun punto di richiamo passava mai
+     * un'etichetta. Adesso e' obbligatoria, e il compilatore chiede quella giusta.
+     */
+    etichetta: (T) -> String,
     onScegli: (T) -> Unit,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(MFootColors.bg)
-            .horizontalScroll(rememberScrollState())
-            .padding(MFootSpacing.section, 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        voci.forEach { voce ->
-            Chip(etichetta(voce), voce == scelta) { onScegli(voce) }
-        }
-    }
-    Hairline()
+    BarraSchede(voci, scelta, etichetta, onScegli = onScegli)
 }
 
 /**
@@ -425,11 +438,11 @@ private fun Interruttore(
             Text(
                 "Fonda la Primavera",
                 style = MFootType.chip,
-                color = MFootColors.bg,
+                color = MFootColors.onAccent,
                 modifier = Modifier
                     .background(MFootColors.elite, MFootShapes.pill)
                     .clickable(onClick = onCreateYouth)
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
             )
             return@Row
         }
@@ -437,20 +450,15 @@ private fun Interruttore(
         Chip("Prima squadra", !state.guardoLaPrimavera) { onSwitchTeam(false) }
         Chip("Primavera", state.guardoLaPrimavera) { onSwitchTeam(true) }
     }
-    Hairline()
 }
 
 @Composable
 private fun SenzaClub() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            "Prima serve un club: fondalo dalla Casa.",
-            style = MFootType.secondary,
-            color = MFootColors.ink3,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(40.dp),
-        )
-    }
+    Vuoto(
+        "Prima serve un club.\nFondalo dalla Casa.",
+        Modifier.background(MFootColors.bg),
+        icona = MFootIcons.maglia,
+    )
 }
 
 @Composable
@@ -459,7 +467,6 @@ private fun Lista(
     scope: ListScope,
     onQuery: (String) -> Unit,
     onFilter: (RoleFilter) -> Unit,
-    onScope: (ListScope) -> Unit,
     onSelect: (PlayerRow) -> Unit,
     onOpenBid: (AuctionRow) -> Unit,
     onRefreshAuctions: () -> Unit,
@@ -474,7 +481,6 @@ private fun Lista(
         state = forzato,
         onQuery = onQuery,
         onFilter = onFilter,
-        onScope = onScope,
         onSelect = onSelect,
         onDismissNotice = onDismissNotice,
         onOpenBid = onOpenBid,
@@ -498,39 +504,39 @@ private fun Infermeria(state: AppState.Dentro) {
         ?.filter { p -> p.injuredUntil?.let { it.value >= giornata } == true }
         .orEmpty()
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(MFootColors.bg)
-            .padding(MFootSpacing.section),
-    ) {
-        if (club == null) {
-            Vuoto("Non hai ancora un club.")
-            return@Column
-        }
-        if (infortunati.isEmpty()) {
-            Vuoto("Nessun infortunato. Tutti disponibili.")
-            return@Column
-        }
+    val fondo = Modifier.fillMaxSize().background(MFootColors.bg)
 
+    if (club == null) {
+        Vuoto("Non hai ancora un club.", fondo, icona = MFootIcons.maglia)
+        return
+    }
+    if (infortunati.isEmpty()) {
+        Vuoto("Nessun infortunato.\nSono tutti disponibili.", fondo, icona = MFootIcons.croce)
+        return
+    }
+
+    Column(fondo.padding(MFootSpacing.section)) {
         Label("${infortunati.size} indisponibili")
         Spacer(Modifier.height(12.dp))
         infortunati.forEach { p ->
-            Text(
-                "${p.shortName} · ${p.primaryPosition.short} · rientra alla giornata " +
-                    "${p.injuredUntil?.value}",
-                style = MFootType.rowTitle,
-                color = MFootColors.ink,
-                modifier = Modifier.padding(vertical = 8.dp),
-            )
+            Scheda(Modifier.padding(bottom = MFootSpacing.related)) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(p.shortName, style = MFootType.rowTitle, color = MFootColors.ink)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            p.primaryPosition.short,
+                            style = MFootType.secondary,
+                            color = MFootColors.ink2,
+                        )
+                    }
+                    Cartellino("rientra alla ${p.injuredUntil?.value}ª")
+                }
+            }
         }
-    }
-}
-
-@Composable
-private fun Vuoto(testo: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(testo, style = MFootType.secondary, color = MFootColors.ink3)
     }
 }
 
@@ -542,18 +548,9 @@ private fun Vuoto(testo: String) {
  */
 @Composable
 private fun DaFare(titolo: String, cosa: String) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(MFootColors.bg)
-            .padding(32.dp),
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(titolo, style = MFootType.playerName, color = MFootColors.ink, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(10.dp))
-        Text(cosa, style = MFootType.secondary, color = MFootColors.ink3, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(18.dp))
-        Label("Non ancora scritta")
-    }
+    Vuoto(
+        "$titolo\n\n$cosa",
+        Modifier.background(MFootColors.bg),
+        icona = MFootIcons.documento,
+    )
 }

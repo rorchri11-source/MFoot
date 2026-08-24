@@ -218,8 +218,8 @@ private fun PlayerStep(
     Text("Il giocatore che sei tu", style = MFootType.playerName, color = MFootColors.ink)
     Spacer(Modifier.height(6.dp))
     Text(
-        "Non si puo' vendere ne' svincolare, solo prestare, e deve giocare titolare. " +
-            "Parte da ${config.baseOverall}: cresce molto piu' in fretta di tutti gli altri.",
+        "Non si può vendere né svincolare, solo prestare, e deve giocare titolare. " +
+            "Parte da ${config.baseOverall}: cresce molto più in fretta di tutti gli altri.",
         style = MFootType.chip,
         color = MFootColors.ink3,
     )
@@ -271,7 +271,7 @@ private fun PlayerStep(
     )
 
     Spacer(Modifier.height(MFootSpacing.section))
-    Label("Eta'")
+    Label("Età")
     Spacer(Modifier.height(8.dp))
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
@@ -297,7 +297,7 @@ private fun PlayerStep(
     Label("Attributi")
     Spacer(Modifier.height(4.dp))
     Text(
-        "Piu' un attributo e' alto, piu' costa alzarlo ancora.",
+        "Più un attributo è alto, più costa alzarlo ancora.",
         style = MFootType.chip,
         color = MFootColors.ink3,
     )

@@ -229,7 +229,6 @@ private fun Bottone(testo: String, onClick: () -> Unit) {
         color = MFootColors.ink2,
         modifier = Modifier
             .background(MFootColors.core, MFootShapes.pill)
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.pill)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     )

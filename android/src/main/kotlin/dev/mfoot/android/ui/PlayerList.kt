@@ -19,14 +19,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mfoot.android.ui.icons.MFootIcons
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.ListScope
 import dev.mfoot.android.app.PlayerRow
@@ -49,7 +49,6 @@ fun PlayerListScreen(
     state: AppState.Dentro,
     onQuery: (String) -> Unit,
     onFilter: (RoleFilter) -> Unit,
-    onScope: (ListScope) -> Unit,
     onSelect: (PlayerRow) -> Unit,
     onDismissNotice: () -> Unit,
     onOpenBid: (dev.mfoot.android.app.AuctionRow) -> Unit,
@@ -61,7 +60,7 @@ fun PlayerListScreen(
             .fillMaxSize()
             .background(MFootColors.bg),
     ) {
-        ListHeader(state, onQuery, onFilter, onScope, onDismissNotice)
+        ListHeader(state, onQuery, onFilter, onDismissNotice)
 
         if (state.browse.scope == ListScope.ASTE) {
             AuctionList(state, onOpenBid, onRefreshAuctions, onAuctionFilter)
@@ -72,7 +71,11 @@ fun PlayerListScreen(
         if (visible.isEmpty()) {
             EmptyState(state)
         } else {
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
+            ) {
                 items(visible, key = { it.player.id.value }) { row ->
                     PlayerListRow(row) { onSelect(row) }
                 }
@@ -81,20 +84,42 @@ fun PlayerListScreen(
     }
 }
 
+/**
+ * L'intestazione delle colonne: cosa sono i due numeri a destra.
+ *
+ * Nel riferimento sta sopra la lista e non dentro ogni riga, ed e' il motivo per cui li'
+ * i numeri si possono lasciare nudi. Senza, «84» e «12» sono due cifre e basta, e per
+ * capirle bisogna aprire una scheda.
+ */
+@Composable
+private fun Colonne() {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = MFootSpacing.section + 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Label("Calciatore", Modifier.weight(1f))
+        Label("OVR", Modifier.width(38.dp))
+        Label("Valore", Modifier.width(52.dp))
+    }
+}
+
 @Composable
 private fun ListHeader(
     state: AppState.Dentro,
     onQuery: (String) -> Unit,
     onFilter: (RoleFilter) -> Unit,
-    onScope: (ListScope) -> Unit,
     onDismissNotice: () -> Unit,
 ) {
     val browse = state.browse
 
+    // Niente margine in cima: la riga di schede sopra ne ha gia' uno suo, e sommandoli
+    // fra i chip e il campo di ricerca restava un buco alto quanto una riga.
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 14.dp),
+            .padding(MFootSpacing.section, 0.dp, MFootSpacing.section, 10.dp),
     ) {
         if (state.errore != null) {
             Spacer(Modifier.height(MFootSpacing.related))
@@ -110,41 +135,17 @@ private fun ListHeader(
 
         Spacer(Modifier.height(MFootSpacing.related))
 
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(MFootColors.line, MFootShapes.field)
-                .border(1.dp, MFootColors.line, MFootShapes.field)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("⌕", style = MFootType.rowTitle, color = MFootColors.ink3)
-            Spacer(Modifier.width(10.dp))
-            Box(Modifier.weight(1f)) {
-                if (browse.query.isEmpty()) {
-                    Text("Cerca un giocatore…", style = MFootType.rowTitle, color = MFootColors.ink3)
-                }
-                BasicTextField(
-                    value = browse.query,
-                    onValueChange = onQuery,
-                    singleLine = true,
-                    textStyle = MFootType.rowTitle.copy(color = MFootColors.ink),
-                    cursorBrush = SolidColor(MFootColors.elite),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-
-        Spacer(Modifier.height(MFootSpacing.related))
-
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            ListScope.entries.forEach { scope ->
-                Chip(scope.label, scope == browse.scope) { onScope(scope) }
-            }
-        }
+        // La lente disegnata, non il carattere `⌕`: quel glifo cambia forma e peso da un
+        // telefono all'altro, e su parecchi non esiste affatto.
+        // I chip dell'**ambito** stavano qui, e non facevano niente.
+        //
+        // Erano «Svincolati · Aste · Tutto il mondo · La mia rosa», cioe' le stesse tre
+        // destinazioni gia' presenti nella riga di schede sopra, piu' una quarta. E non
+        // potevano funzionare: `Lista` nel Router impone l'ambito che la rotta porta con
+        // se', a ogni ricomposizione, perche' chi entra da «Svincolati» deve vedere gli
+        // svincolati e non l'ultimo filtro lasciato attivo. Toccarli non cambiava lo
+        // schermo — occupavano una riga intera per insegnare a non fidarsi dei comandi.
+        Ricerca(browse.query, onQuery, "Cerca un giocatore…")
 
         // I filtri per ruolo non hanno senso sulle aste, che sono poche e si guardano
         // tutte: lasciarli visibili dove non fanno niente insegna a ignorarli.
@@ -153,7 +154,7 @@ private fun ListHeader(
 
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 RoleFilter.entries.forEach { filter ->
                     Chip(filter.label, filter == browse.filter) { onFilter(filter) }
@@ -176,7 +177,7 @@ private fun ListHeader(
                     "${state.auctions.size} aste aperte · ${state.myAuctions.size} con una tua offerta"
 
                 ListScope.SVINCOLATI ->
-                    "${state.visible.size} da prendere · $presi hanno gia' un club"
+                    "${state.visible.size} da prendere · $presi hanno già un club"
 
                 ListScope.TUTTI ->
                     "${state.visible.size} in tutto il mondo · $presi con un club"
@@ -187,7 +188,7 @@ private fun ListHeader(
         )
     }
 
-    Hairline()
+    if (browse.scope != ListScope.ASTE) Colonne()
 }
 /** Una lista vuota deve dire **perche'** e' vuota, o sembra che l'app sia rotta. */
 @Composable
@@ -196,18 +197,11 @@ private fun EmptyState(state: AppState.Dentro) {
         state.browse.query.isNotBlank() -> "Nessun giocatore trovato per \"${state.browse.query}\"."
         state.browse.scope == ListScope.MIA_ROSA && state.lega.myClub == null ->
             "Non hai ancora un club in questa lega."
-        state.browse.scope == ListScope.MIA_ROSA -> "La tua rosa e' ancora vuota."
+        state.browse.scope == ListScope.MIA_ROSA -> "La tua rosa è ancora vuota."
         else -> "Nessun giocatore in questa selezione."
     }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            message,
-            style = MFootType.secondary,
-            color = MFootColors.ink3,
-            modifier = Modifier.padding(horizontal = 40.dp),
-        )
-    }
+    Vuoto(message, icona = MFootIcons.cerca)
 }
 
 /**
@@ -220,91 +214,83 @@ private fun EmptyState(state: AppState.Dentro) {
 private fun PlayerListRow(row: PlayerRow, onClick: () -> Unit) {
     val player = row.player
 
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = MFootSpacing.section, vertical = MFootSpacing.rowVertical),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(34.dp)
-                .background(MFootColors.line, RoundedCornerShape(10.dp))
-                .border(1.dp, MFootColors.line, RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
+    Scheda(Modifier.padding(horizontal = MFootSpacing.section), onClick) {
+        Row(
+            Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(player.primaryPosition.short, style = MFootType.label, color = MFootColors.ink2)
-        }
+            // Il tondo con il ruolo, e sopra il gettone della crescita.
+            //
+            // Nel riferimento qui c'e' la faccia del calciatore con il ruolo appiccicato
+            // in un angolo. MFoot genera i suoi giocatori e le facce non ce le ha, quindi
+            // il ruolo prende il posto centrale — ed e' il dato che si cerca davvero
+            // scorrendo, molto piu' di un ritratto.
+            Box(Modifier.size(46.dp)) {
+                Box(
+                    Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(MFootColors.bg),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        player.primaryPosition.short,
+                        style = MFootType.value,
+                        color = MFootColors.ink2,
+                    )
+                }
+                if (row.hasUpside) {
+                    // Il **segnale di crescita** e' cio' che rende la lista utile: si trova
+                    // un prospetto scorrendo, senza aprire una scheda per volta.
+                    Text(
+                        row.growthLabel,
+                        style = MFootType.label,
+                        color = MFootColors.onAccent,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .clip(RoundedCornerShape(50))
+                            .background(MFootColors.gamble)
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                    )
+                }
+            }
 
-        Spacer(Modifier.width(MFootSpacing.related))
+            Spacer(Modifier.width(12.dp))
 
-        Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    player.fullName,
+                    style = MFootType.rowTitle,
+                    color = MFootColors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    buildString {
+                        append(bandiera(player.nationality)).append(" ")
+                            .append(player.age).append(" anni")
+                        row.club?.let { append(" · ").append(it.shortName) }
+                    },
+                    style = MFootType.secondary,
+                    color = MFootColors.ink2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
             Text(
-                player.fullName,
-                style = MFootType.rowTitle,
-                color = MFootColors.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                player.overall.toString(),
+                style = MFootType.overallRow,
+                color = MFootColors.rating(player.overall),
+                modifier = Modifier.width(38.dp),
             )
             Text(
-                buildString {
-                    append(bandiera(player.nationality)).append(" ")
-                        .append(player.age).append(" anni · ").append(player.nationality)
-                    row.club?.let { append(" · ").append(it.shortName) }
-                },
-                style = MFootType.chip,
-                color = MFootColors.ink3,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                Money(row.value).formatShort(),
+                style = MFootType.value,
+                color = MFootColors.ink2,
+                modifier = Modifier.width(52.dp),
             )
         }
-
-        GrowthBadge(row)
-
-        Spacer(Modifier.width(MFootSpacing.related))
-
-        Text(
-            player.overall.toString(),
-            style = MFootType.overallRow,
-            color = MFootColors.rating(player.overall),
-        )
-
-        Spacer(Modifier.width(MFootSpacing.related))
-
-        Text(
-            Money(row.value).formatShort(),
-            style = MFootType.value,
-            color = MFootColors.ink3,
-            modifier = Modifier.width(32.dp),
-        )
-
-        // Come nella rosa: la riga si tocca e la scheda esiste. Un carattere che vale una
-        // stagione di attributi mai guardati.
-        Spacer(Modifier.width(4.dp))
-        Text("›", style = MFootType.value, color = MFootColors.ink3)
     }
-
-    Hairline()
-}
-
-@Composable
-private fun GrowthBadge(row: PlayerRow) {
-    val upside = row.hasUpside
-    Text(
-        text = row.growthLabel,
-        style = MFootType.chip,
-        color = if (upside) MFootColors.gamble else MFootColors.ink3,
-        modifier = Modifier
-            .background(
-                if (upside) MFootColors.gamble.copy(alpha = 0.11f) else MFootColors.line,
-                RoundedCornerShape(6.dp),
-            )
-            .border(
-                1.dp,
-                if (upside) MFootColors.gamble.copy(alpha = 0.25f) else MFootColors.line,
-                RoundedCornerShape(6.dp),
-            )
-            .padding(horizontal = 7.dp, vertical = 3.dp),
-    )
 }

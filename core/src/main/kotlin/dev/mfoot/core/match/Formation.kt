@@ -113,11 +113,11 @@ data class Lineup(
         // Il minimo e' 7: sotto quella soglia il regolamento sospende la partita, e
         // arrivarci significa comunque aver preso quattro rossi in novanta minuti.
         require(slots.size in MIN_PLAYERS_ON_PITCH..Formation.PLAYERS_ON_PITCH) {
-            "una squadra in campo puo' avere da $MIN_PLAYERS_ON_PITCH a " +
+            "una squadra in campo può avere da $MIN_PLAYERS_ON_PITCH a " +
                 "${Formation.PLAYERS_ON_PITCH} giocatori, ne sono stati indicati ${slots.size}"
         }
         val ids = slots.map { it.player.id }
-        require(ids.size == ids.toSet().size) { "lo stesso giocatore compare piu' volte in formazione" }
+        require(ids.size == ids.toSet().size) { "lo stesso giocatore compare più volte in formazione" }
         require(slots.count { it.position.isGoalkeeper } <= 1) {
             "non si possono schierare due portieri"
         }

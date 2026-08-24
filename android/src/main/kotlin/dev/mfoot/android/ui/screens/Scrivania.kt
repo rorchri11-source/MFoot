@@ -14,20 +14,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.DeskState
-import dev.mfoot.android.ui.Hairline
+import dev.mfoot.android.ui.Cartellino
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Notice
+import dev.mfoot.android.ui.Scheda
+import dev.mfoot.android.ui.Spiegazione
 import dev.mfoot.android.ui.StatRow
+import dev.mfoot.android.ui.Striscia
+import dev.mfoot.android.ui.Vuoto
+import dev.mfoot.android.ui.icons.MFootIcons
 import dev.mfoot.android.ui.kit.CrestBadge
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
@@ -63,58 +70,71 @@ fun ProfiloLegaScreen(state: AppState.Dentro) {
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg)
-            .verticalScroll(rememberScrollState())
-            .padding(MFootSpacing.section),
+            .verticalScroll(rememberScrollState()),
     ) {
-        Text(lega.name, style = MFootType.playerName, color = MFootColors.ink)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            statoLeggibile(lega.status),
-            style = MFootType.chip,
-            color = if (lega.status == "in_corso") MFootColors.elite else MFootColors.gamble,
-        )
-        Spacer(Modifier.height(3.dp))
-        // L'id, non per pignoleria: due leghe possono avere lo stesso nome, e quando due
-        // amici confrontano gli schermi e' l'unico numero che non mente.
-        Text("lega #${lega.id}", style = MFootType.chip, color = MFootColors.ink3)
+        // La testata illustrata la mette il guscio, non la schermata: fuori dai cinque
+        // posti ce l'hanno tutte, e disegnarla anche qui ne farebbe due in fila.
+        Column(Modifier.padding(MFootSpacing.section)) {
+            Text(
+                statoLeggibile(lega.status),
+                style = MFootType.rowTitle,
+                color = if (lega.status == "in_corso") MFootColors.elite else MFootColors.gamble,
+            )
+            Spacer(Modifier.height(3.dp))
+            // L'id, non per pignoleria: due leghe possono avere lo stesso nome, e quando due
+            // amici confrontano gli schermi e' l'unico numero che non mente.
+            Text("lega #${lega.id}", style = MFootType.chip, color = MFootColors.ink3)
 
-        Spacer(Modifier.height(MFootSpacing.section))
+            Spacer(Modifier.height(MFootSpacing.section))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(MFootSpacing.related)) {
-            Riquadro("Club", "${clubs.size}", MFootColors.ink, Modifier.weight(1f))
-            Riquadro("Giocatori", "${state.lega.players.size}", MFootColors.ink, Modifier.weight(1f))
-            Riquadro("Giornata", "${lega.currentMatchDay}", MFootColors.ink, Modifier.weight(1f))
+            Striscia(
+                listOf(
+                    "${clubs.size}" to "Club",
+                    "${state.lega.players.size}" to "Giocatori",
+                    "${lega.currentMatchDay}" to "Giornata",
+                ),
+            )
+
+            Spacer(Modifier.height(MFootSpacing.section))
+            Label("Le regole in breve")
+            Spacer(Modifier.height(8.dp))
+
+            Scheda {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                    StatRow("Budget iniziale", Money(config.economy.startingCredits).format())
+                    StatRow("Rosa minima", "${config.setup.minSquadSize}")
+                    StatRow("Rosa massima", "${config.setup.maxSquadSize}")
+                    StatRow(
+                        "Gestiti dal computer",
+                        "${config.setup.aiClubs} su ${config.setup.totalClubs}",
+                    )
+                    StatRow(
+                        "Divisioni",
+                        if (config.divisions.enabled) "${config.divisions.count}" else "girone unico",
+                    )
+                    StatRow("Stipendi", if (config.economy.wagesEnabled) "attivi" else "spenti")
+                    StatRow("Cartellini", if (config.rules.yellowCardsEnabled) "attivi" else "spenti")
+                }
+            }
+
+            Spacer(Modifier.height(MFootSpacing.section))
+            Spiegazione(
+                "Se un amico non ti vede",
+                "Il codice per entrare, e l'elenco di tutte le leghe di cui fai parte, " +
+                    "stanno nel menu sotto «Le mie leghe». Se un amico non compare fra i " +
+                    "partecipanti, ha usato un codice diverso ed è entrato altrove.",
+            )
+
+            if (lega.isAdmin) {
+                Spacer(Modifier.height(MFootSpacing.related))
+                Notice(
+                    "Sei l'amministratore: le regole le cambi da Regolamento e opzioni.",
+                    MFootColors.elite,
+                )
+            }
+
+            Spacer(Modifier.height(30.dp))
         }
-
-        Spacer(Modifier.height(MFootSpacing.section))
-        Label("Le regole in breve")
-        Spacer(Modifier.height(8.dp))
-
-        StatRow("Budget iniziale", Money(config.economy.startingCredits).format())
-        StatRow("Rosa minima", "${config.setup.minSquadSize}")
-        StatRow("Rosa massima", "${config.setup.maxSquadSize}")
-        StatRow("Gestiti dal computer", "${config.setup.aiClubs} su ${config.setup.totalClubs}")
-        StatRow(
-            "Divisioni",
-            if (config.divisions.enabled) "${config.divisions.count}" else "girone unico",
-        )
-        StatRow("Stipendi", if (config.economy.wagesEnabled) "attivi" else "spenti")
-        StatRow("Cartellini", if (config.rules.yellowCardsEnabled) "attivi" else "spenti")
-
-        Spacer(Modifier.height(MFootSpacing.section))
-        Notice(
-            "Il codice per entrare, e l'elenco di tutte le leghe di cui fai parte, stanno " +
-                "nel menu sotto «Le mie leghe». Se un amico non compare fra i " +
-                "partecipanti, ha usato un codice diverso ed e' entrato altrove.",
-            MFootColors.ink2,
-        )
-
-        if (lega.isAdmin) {
-            Spacer(Modifier.height(MFootSpacing.related))
-            Notice("Sei l'amministratore: le regole le cambi da Regolamento e opzioni.", MFootColors.elite)
-        }
-
-        Spacer(Modifier.height(30.dp))
     }
 }
 
@@ -168,57 +188,74 @@ fun PartecipantiScreen(desk: DeskState) {
         }
 
         desk.members.forEach { membro ->
-            Row(
-                Modifier.fillMaxWidth().padding(MFootSpacing.section, 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            val club = membro.club
+            Scheda(
+                Modifier.padding(horizontal = MFootSpacing.section, vertical = 5.dp),
+                // Chi si e' iscritto e non ha fondato e' l'informazione per cui questa
+                // schermata esiste: la barretta lo segna senza bisogno di leggere.
+                evidenziata = club == null,
             ) {
-                val club = membro.club
-                if (club != null) {
-                    CrestBadge(club.crest, Modifier.size(38.dp), club.shortName)
-                } else {
-                    Box(
-                        Modifier
-                            .size(38.dp)
-                            .background(MFootColors.core, MFootShapes.field)
-                            .border(1.dp, MFootColors.lineStrong, MFootShapes.field),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("—", style = MFootType.value, color = MFootColors.ink3)
+                Row(
+                    Modifier.padding(
+                        start = if (club == null) 10.dp else 14.dp,
+                        end = 16.dp,
+                        top = 12.dp,
+                        bottom = 12.dp,
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (club != null) {
+                        CrestBadge(club.crest, Modifier.size(44.dp), club.shortName)
+                    } else {
+                        Box(
+                            Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(MFootColors.bg),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                MFootIcons.persona,
+                                contentDescription = null,
+                                tint = MFootColors.ink3,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            membro.nickname,
+                            style = MFootType.rowTitle,
+                            color = MFootColors.ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            buildString {
+                                append(club?.name ?: "nessuna squadra")
+                                if (membro.isAdmin) append(" · amministratore")
+                            },
+                            style = MFootType.secondary,
+                            color = if (club == null) MFootColors.gamble else MFootColors.ink2,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    if (club != null) {
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            Money(club.available).formatShort(),
+                            style = MFootType.price,
+                            color = MFootColors.elite,
+                        )
                     }
                 }
-
-                Spacer(Modifier.width(MFootSpacing.related))
-
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        membro.nickname,
-                        style = MFootType.rowTitle,
-                        color = MFootColors.ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        buildString {
-                            append(club?.name ?: "nessuna squadra")
-                            if (membro.isAdmin) append(" · amministratore")
-                        },
-                        style = MFootType.chip,
-                        color = if (club == null) MFootColors.gamble else MFootColors.ink3,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-
-                if (club != null) {
-                    Text(
-                        Money(club.available).formatShort(),
-                        style = MFootType.value,
-                        color = MFootColors.ink2,
-                    )
-                }
             }
-            Hairline()
         }
 
         Spacer(Modifier.height(30.dp))
@@ -255,8 +292,8 @@ fun RegistroScreen(desk: DeskState) {
         // Meglio dire tutte e due le cose che sceglierne una a caso.
         Centro(
             "Nessun registro da mostrare.\n\nO il tick non ha ancora girato su questa lega — " +
-                "se e' appena stata creata e' normale — oppure manca la migrazione " +
-                "0007_tick_state_read.sql, che da' il permesso di leggerlo.",
+                "se è appena stata creata è normale — oppure manca la migrazione " +
+                "0007_tick_state_read.sql, che dà il permesso di leggerlo.",
             MFootColors.gamble,
         )
         return
@@ -275,13 +312,17 @@ fun RegistroScreen(desk: DeskState) {
     ) {
         Label("Ultimo giro")
         Spacer(Modifier.height(8.dp))
-        StatRow("Quando", quandoLeggibile(tick.lastRunAt))
-        StatRow("Elaborato fino a", quandoLeggibile(tick.lastProcessedAt))
-        StatRow(
-            "Giornate liquidate",
-            if (tick.settledMatchDays.isEmpty()) "nessuna"
-            else tick.settledMatchDays.sorted().joinToString(", "),
-        )
+        Scheda {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                StatRow("Quando", quandoLeggibile(tick.lastRunAt))
+                StatRow("Elaborato fino a", quandoLeggibile(tick.lastProcessedAt))
+                StatRow(
+                    "Giornate liquidate",
+                    if (tick.settledMatchDays.isEmpty()) "nessuna"
+                    else tick.settledMatchDays.sorted().joinToString(", "),
+                )
+            }
+        }
 
         Spacer(Modifier.height(MFootSpacing.section))
         Label("Cosa ha fatto")
@@ -294,22 +335,30 @@ fun RegistroScreen(desk: DeskState) {
                 color = MFootColors.ink3,
             )
         } else {
+            // Una scheda per riga, con il cartellino «Lega» davanti: e' la forma del
+            // registro nel riferimento, e serve a qualcosa — venti righe di testo tutte
+            // uguali su fondo scuro si leggono come un blocco solo, e trovarci dentro
+            // quella che spiega la partita mancata vuol dire rileggerle tutte.
             tick.righe.forEach { riga ->
-                Text(
-                    riga,
-                    style = MFootType.secondary,
-                    color = MFootColors.ink2,
-                    modifier = Modifier.padding(vertical = 7.dp),
-                )
-                Hairline()
+                Scheda(Modifier.padding(bottom = 8.dp)) {
+                    Column(Modifier.padding(14.dp)) {
+                        Cartellino(
+                            "Lega",
+                            fondo = MFootColors.elite,
+                            inchiostro = MFootColors.onAccent,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(riga, style = MFootType.secondary, color = MFootColors.ink)
+                    }
+                }
             }
         }
 
         Spacer(Modifier.height(MFootSpacing.section))
-        Notice(
+        Spiegazione(
+            "Cosa c'è qui dentro",
             "Il registro conserva solo l'ultimo giro: il server lo riscrive ogni volta. " +
                 "Serve a capire cosa sta succedendo adesso, non a ricostruire la stagione.",
-            MFootColors.ink2,
         )
         Spacer(Modifier.height(30.dp))
     }
@@ -349,24 +398,24 @@ fun MercatiScreen(state: AppState.Dentro) {
         Text(
             if (allestimento) {
                 "$incomplete squadre su ${state.lega.clubs.size} non arrivano a $minimo " +
-                    "giocatori. Finche' e' cosi' comprano in fretta, e le loro partite si " +
+                    "giocatori. Finché è così comprano in fretta, e le loro partite si " +
                     "rinviano."
             } else {
-                "Tutte le squadre hanno la rosa completa. Il mercato e' quello di stagione: " +
-                    "aste piu' lunghe, meno in parallelo."
+                "Tutte le squadre hanno la rosa completa. Il mercato è quello di stagione: " +
+                    "aste più lunghe, meno in parallelo."
             },
             style = MFootType.chip,
             color = MFootColors.ink3,
         )
 
         Spacer(Modifier.height(MFootSpacing.section))
-        Label("Chi non arriva al minimo compra cosi'")
+        Label("Chi non arriva al minimo compra così")
         Spacer(Modifier.height(8.dp))
         StatRow("Aste in parallelo", "${config.market.initialParallelAuctionsPerClub}")
         StatRow("Durata", "${config.market.initialAuctionDurationMinutes} minuti")
 
         Spacer(Modifier.height(MFootSpacing.section))
-        Label("Chi ce la fa compra cosi'")
+        Label("Chi ce la fa compra così")
         Spacer(Modifier.height(8.dp))
         StatRow("Aste in parallelo", "${config.market.maxParallelAuctionsPerClub}")
         StatRow("Durata", "${config.market.auctionDurationMinutes} minuti")
@@ -386,11 +435,11 @@ fun MercatiScreen(state: AppState.Dentro) {
         )
 
         Spacer(Modifier.height(MFootSpacing.section))
-        Notice(
-            "Il confine fra i due mercati e' la rosa, non una data: un club che non puo' " +
+        Spiegazione(
+            "Cosa decide quale dei due vale",
+            "Il confine fra i due mercati è la rosa, non una data: un club che non può " +
                 "schierare una squadra legale compra in fretta, chiunque sia e in qualunque " +
                 "mese della stagione.",
-            MFootColors.ink2,
         )
         Spacer(Modifier.height(30.dp))
     }
@@ -398,40 +447,20 @@ fun MercatiScreen(state: AppState.Dentro) {
 
 // ------------------------------------------------------------------------------ comuni
 
-@Composable
-private fun Riquadro(
-    label: String,
-    valore: String,
-    colore: androidx.compose.ui.graphics.Color,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier
-            .background(MFootColors.core, MFootShapes.band)
-            .border(1.dp, MFootColors.line, MFootShapes.band)
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(valore, style = MFootType.price, color = colore)
-        Spacer(Modifier.height(3.dp))
-        Text(label, style = MFootType.label, color = MFootColors.ink3)
-    }
-}
-
+/**
+ * Quello che non c'e' da mostrare.
+ *
+ * Il colore distingue i due casi che qui si confondono sempre: giallo vuol dire «c'e' un
+ * problema», grigio vuol dire «sto leggendo, aspetta». Erano la stessa riga di testo al
+ * centro dello schermo, e da fuori un'attesa e un guasto sono identici.
+ */
 @Composable
 private fun Centro(testo: String, colore: androidx.compose.ui.graphics.Color) {
-    Box(
-        Modifier.fillMaxSize().background(MFootColors.bg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            testo,
-            style = MFootType.secondary,
-            color = colore,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 34.dp),
-        )
-    }
+    Vuoto(
+        testo,
+        Modifier.background(MFootColors.bg),
+        icona = if (colore == MFootColors.gamble) MFootIcons.info else MFootIcons.aggiorna,
+    )
 }
 
 /**

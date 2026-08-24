@@ -5,7 +5,7 @@ enum class KitPattern(val label: String) {
     TINTA_UNITA("Tinta unita"),
     STRISCE_VERTICALI("Strisce verticali"),
     STRISCE_ORIZZONTALI("Strisce orizzontali"),
-    META_VERTICALE("Meta' e meta'"),
+    META_VERTICALE("Metà e metà"),
     DIAGONALE("Banda diagonale"),
     SCACCHI("Scacchi"),
     BANDA_CENTRALE("Banda centrale"),

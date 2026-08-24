@@ -154,7 +154,7 @@ object ObjectiveRepository {
                 .any { message.contains(it) } ->
             ApiResult.Error(
                 "Gli obiettivi hanno bisogno della migrazione 0024_obiettivi.sql, che non " +
-                    "e' ancora stata applicata a questo database.",
+                    "è ancora stata applicata a questo database.",
             )
         else -> this
     }

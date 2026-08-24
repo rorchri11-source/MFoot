@@ -83,7 +83,7 @@ data class Objective(
 
     init {
         require(seasons >= 1) { "un obiettivo dura almeno una stagione, ne sono state chieste $seasons" }
-        require(reward >= 0) { "un premio non puo' essere negativo" }
+        require(reward >= 0) { "un premio non può essere negativo" }
     }
 
     /**

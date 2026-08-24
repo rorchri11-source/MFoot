@@ -136,7 +136,7 @@ object MyLeaguesRepository {
         this is ApiResult.Error && message.contains("peek_league") ->
             ApiResult.Error(
                 "L'anteprima ha bisogno della migrazione 0025_entrare_sapendo_dove.sql, " +
-                    "che non e' ancora stata applicata a questo database.",
+                    "che non è ancora stata applicata a questo database.",
             )
         else -> this
     }
@@ -235,7 +235,7 @@ object MyLeaguesRepository {
             if (node["ok"].bool(false)) {
                 ApiResult.Ok(node["code"].str(code))
             } else {
-                ApiResult.Error(node["reason"].str("Non si puo' cambiare il codice."))
+                ApiResult.Error(node["reason"].str("Non si può cambiare il codice."))
             }
         }
     }

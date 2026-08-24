@@ -23,7 +23,7 @@ enum class Tiebreaker(val label: String) {
     GOL_FATTI("Gol fatti"),
     SCONTRI_DIRETTI("Scontri diretti"),
     PARTITE_VINTE("Partite vinte"),
-    GOL_SUBITI("Gol subiti (meno e' meglio)"),
+    GOL_SUBITI("Gol subiti (meno è meglio)"),
 }
 
 /**
@@ -59,10 +59,10 @@ data class Competition(
     init {
         require(participants.size >= 2) { "'$name': servono almeno due partecipanti" }
         require(participants.toSet().size == participants.size) {
-            "'$name': lo stesso club compare piu' volte fra i partecipanti"
+            "'$name': lo stesso club compare più volte fra i partecipanti"
         }
         require(pointsForWin >= pointsForDraw) {
-            "'$name': vincere non puo' valere meno che pareggiare"
+            "'$name': vincere non può valere meno che pareggiare"
         }
         if (type == CompetitionType.GIRONI_PIU_ELIMINAZIONE) {
             require(groupCount >= 1) { "'$name': serve almeno un girone" }
@@ -100,7 +100,7 @@ data class Fixture(
     val isSecondLeg: Boolean = false,
 ) {
     init {
-        require(home != away) { "una squadra non puo' giocare contro se stessa" }
+        require(home != away) { "una squadra non può giocare contro se stessa" }
     }
 
     fun involves(club: ClubId): Boolean = club == home || club == away

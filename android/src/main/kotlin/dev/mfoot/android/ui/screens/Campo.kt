@@ -240,7 +240,6 @@ private fun Riquadro(
     Column(
         modifier
             .background(MFootColors.core, MFootShapes.band)
-            .border(1.dp, MFootColors.line, MFootShapes.band)
             .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -310,7 +309,7 @@ private fun Assetto(edit: LineupEdit, onChange: (Tactics) -> Unit) {
         Label("Assetto")
         Spacer(Modifier.height(4.dp))
         Text(
-            "Nessuno di questi e' gratis. Alzare ritmo e pressing recupera piu' palloni e " +
+            "Nessuno di questi è gratis. Alzare ritmo e pressing recupera più palloni e " +
                 "brucia stamina: con due partite al giorno si arriva alla seconda a pezzi.",
             style = MFootType.chip,
             color = MFootColors.ink3,
@@ -536,8 +535,7 @@ private fun Ruolo(position: Position) {
     Box(
         Modifier
             .size(34.dp, 22.dp)
-            .background(MFootColors.core, MFootShapes.field)
-            .border(1.dp, MFootColors.line, MFootShapes.field),
+            .background(MFootColors.core, MFootShapes.field),
         contentAlignment = Alignment.Center,
     ) {
         Text(position.short, style = MFootType.label, color = MFootColors.ink2)

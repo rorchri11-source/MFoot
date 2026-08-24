@@ -10,10 +10,10 @@ import dev.mfoot.core.rng.DeterministicRandom
 enum class AiObsession(val label: String) {
     PORTIERE_FORTE("Vuole sempre un portiere di livello"),
     TALENTI("Ama i giovani di prospettiva"),
-    ESPERIENZA("Si fida solo dei giocatori gia' fatti"),
+    ESPERIENZA("Si fida solo dei giocatori già fatti"),
     ATTACCO("Costruisce dall'attacco"),
     DIFESA("Prima non prenderle"),
-    CONNAZIONALI("Predilige una nazionalita'"),
+    CONNAZIONALI("Predilige una nazionalità"),
 }
 
 /**
@@ -55,7 +55,7 @@ data class AiPersonality(
 ) {
     init {
         require(activeFromHour in 0..23 && activeToHour in 0..23) { "orari non validi" }
-        require(activeToHour > activeFromHour) { "la finestra di attivita' deve avere durata positiva" }
+        require(activeToHour > activeFromHour) { "la finestra di attività deve avere durata positiva" }
     }
 
     val activeHours: Int get() = activeToHour - activeFromHour

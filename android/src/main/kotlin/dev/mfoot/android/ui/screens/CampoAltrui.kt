@@ -66,7 +66,7 @@ fun CampoAltruiScreen(
     val club = state.lega.clubs.firstOrNull { it.id == clubId }
     if (club == null) {
         Box(Modifier.fillMaxSize().background(MFootColors.bg), contentAlignment = Alignment.Center) {
-            Text("Questo club non esiste piu'.", style = MFootType.secondary, color = MFootColors.ink3)
+            Text("Questo club non esiste più.", style = MFootType.secondary, color = MFootColors.ink3)
         }
         return
     }
@@ -122,8 +122,8 @@ fun CampoAltruiScreen(
         Box(Modifier.padding(horizontal = MFootSpacing.section)) {
             Notice(
                 if (formazione.suPrevisione) {
-                    "Non ha ancora schierato. Questo e' l'undici che il server manderebbe " +
-                        "in campo al posto suo: puo' cambiarlo fino al fischio d'inizio."
+                    "Non ha ancora schierato. Questo è l'undici che il server manderebbe " +
+                        "in campo al posto suo: può cambiarlo fino al fischio d'inizio."
                 } else {
                     "Formazione scelta dal proprietario."
                 },
@@ -165,8 +165,7 @@ fun CampoAltruiScreen(
                             Box(
                                 Modifier
                                     .size(34.dp, 21.dp)
-                                    .background(MFootColors.core, MFootShapes.field)
-                                    .border(1.dp, MFootColors.line, MFootShapes.field),
+                                    .background(MFootColors.core, MFootShapes.field),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(

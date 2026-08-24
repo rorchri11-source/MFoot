@@ -179,7 +179,6 @@ private fun Azione(testo: String, onClick: () -> Unit) {
         color = MFootColors.ink2,
         modifier = Modifier
             .background(MFootColors.core, MFootShapes.pill)
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.pill)
             .clickable(onClick = onClick)
             .padding(horizontal = 11.dp, vertical = 7.dp),
     )
@@ -239,7 +238,7 @@ fun OsservatoriScreen(
             Spacer(Modifier.height(4.dp))
             Text(
                 "Sotto i vent'anni non si compra: si trova. Mandane uno in un paese a " +
-                    "cercare un ruolo, e aspetta. Piu' stelle ha, piu' in fretta torna e " +
+                    "cercare un ruolo, e aspetta. Più stelle ha, più in fretta torna e " +
                     "meglio sceglie.",
                 style = MFootType.chip,
                 color = MFootColors.ink3,
@@ -352,7 +351,6 @@ private fun Pulsanti(voci: List<Pair<String, String>>, onScegli: (String) -> Uni
                         modifier = Modifier
                             .weight(1f)
                             .background(MFootColors.core, MFootShapes.field)
-                            .border(1.dp, MFootColors.line, MFootShapes.field)
                             .clickable { onScegli(valore) }
                             .padding(vertical = 9.dp),
                     )

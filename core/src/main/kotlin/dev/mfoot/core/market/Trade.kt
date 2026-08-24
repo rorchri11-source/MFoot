@@ -32,7 +32,7 @@ data class TradeOffer(
     val status: TradeStatus = TradeStatus.PROPOSTA,
 ) {
     init {
-        require(from != to) { "un club non puo' scambiare con se stesso" }
+        require(from != to) { "un club non può scambiare con se stesso" }
     }
 
     /** Una proposta vuota non e' una proposta. */
@@ -132,7 +132,7 @@ object TradeEvaluator {
         if (ceduti.size != offer.wanted.size) {
             return TradeAnswer(
                 TradeVerdict.NON_VENDO,
-                "Uno dei giocatori che chiedi non e' piu' in rosa.",
+                "Uno dei giocatori che chiedi non è più in rosa.",
             )
         }
 
@@ -141,7 +141,7 @@ object TradeEvaluator {
         if (esborso > availableCredits) {
             return TradeAnswer(
                 TradeVerdict.SOLDI_INSUFFICIENTI,
-                "Mi chiedi piu' denaro di quanto ne abbia libero.",
+                "Mi chiedi più denaro di quanto ne abbia libero.",
             )
         }
 
@@ -260,7 +260,7 @@ object TradeEvaluator {
             offered = offer.wanted,
             wanted = offer.offered,
             cash = -richiesta,
-            message = "Non a queste condizioni. Con ${Money(richiesta).format()} sopra, si'.",
+            message = "Non a queste condizioni. Con ${Money(richiesta).format()} sopra, sì.",
         )
     }
 

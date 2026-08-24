@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +27,8 @@ import dev.mfoot.android.data.ObjectiveRow
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Notice
+import dev.mfoot.android.ui.Scheda
+import dev.mfoot.android.ui.icons.MFootIcons
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -148,7 +153,7 @@ private fun Vuoti(state: AppState.Dentro, obiettivi: ObiettiviState, onAssegna: 
     Spacer(Modifier.height(6.dp))
     Text(
         "Senza obiettivi la lega ha una domanda sola per tutti — chi arriva primo — e per " +
-            "le altre squadre quella domanda smette di contare a meta' stagione. Con gli " +
+            "le altre squadre quella domanda smette di contare a metà stagione. Con gli " +
             "obiettivi ognuno ha una stagione sua: chi punta al titolo, chi a non " +
             "retrocedere, chi a far crescere il proprio giocatore.",
         style = MFootType.chip,
@@ -181,8 +186,8 @@ private fun Assegnazione(obiettivi: ObiettiviState, onAssegna: () -> Unit) {
     val prossima = obiettivi.stagione + 1
 
     Text(
-        "Assegnare gli obiettivi della stagione $prossima li da' a tutte le squadre " +
-            "insieme, secondo quanto vale ciascuna nella sua divisione. Quelli gia' " +
+        "Assegnare gli obiettivi della stagione $prossima li dà a tutte le squadre " +
+            "insieme, secondo quanto vale ciascuna nella sua divisione. Quelli già " +
             "assegnati non si toccano: un obiettivo in corso non deve poter cambiare a " +
             "stagione iniziata.",
         style = MFootType.chip,
@@ -195,7 +200,7 @@ private fun Assegnazione(obiettivi: ObiettiviState, onAssegna: () -> Unit) {
     )
     Spacer(Modifier.height(8.dp))
     Text(
-        "Si chiudono da soli quando chiudi la stagione, dalle Divisioni: i premi si pagano li'.",
+        "Si chiudono da soli quando chiudi la stagione, dalle Divisioni: i premi si pagano lì.",
         style = MFootType.chip,
         color = MFootColors.ink3,
     )
@@ -209,40 +214,44 @@ private fun Riga(riga: ObjectiveRow, evidenza: Boolean) {
         ObjectiveStatus.IN_CORSO -> MFootColors.ink2
     }
 
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(
-                if (evidenza) MFootColors.core else MFootColors.bg,
-                MFootShapes.field,
-            )
-            .border(1.dp, if (evidenza) MFootColors.line else MFootColors.line, MFootShapes.field)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(riga.descrizione, style = MFootType.rowTitle, color = MFootColors.ink)
-            Spacer(Modifier.height(2.dp))
-            Text(
+    Scheda(Modifier.padding(bottom = 8.dp), evidenziata = evidenza) {
+        Row(
+            Modifier.padding(
+                start = if (evidenza) 10.dp else 14.dp,
+                end = 14.dp,
+                top = 13.dp,
+                bottom = 13.dp,
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(riga.descrizione, style = MFootType.rowTitle, color = MFootColors.ink)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    when (riga.status) {
+                        ObjectiveStatus.IN_CORSO -> "in corso · premio ${Money(riga.premio).formatShort()}"
+                        ObjectiveStatus.RAGGIUNTO -> "raggiunto · incassati ${Money(riga.paid).formatShort()}"
+                        ObjectiveStatus.FALLITO ->
+                            "fallito · ${Money(riga.premio).formatShort()} non pagati"
+                    },
+                    style = MFootType.secondary,
+                    color = colore,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            // Un'icona invece di `…`, `✓`, `✕`: quei tre caratteri arrivavano da tre
+            // famiglie tipografiche diverse e sulla stessa colonna avevano tre pesi e tre
+            // altezze, che e' il modo piu' rapido per far sembrare storto un elenco.
+            Icon(
                 when (riga.status) {
-                    ObjectiveStatus.IN_CORSO -> "in corso · premio ${Money(riga.premio).formatShort()}"
-                    ObjectiveStatus.RAGGIUNTO -> "raggiunto · incassati ${Money(riga.paid).formatShort()}"
-                    ObjectiveStatus.FALLITO ->
-                        "fallito · ${Money(riga.premio).formatShort()} non pagati"
+                    ObjectiveStatus.IN_CORSO -> MFootIcons.sveglia
+                    ObjectiveStatus.RAGGIUNTO -> MFootIcons.spunta
+                    ObjectiveStatus.FALLITO -> MFootIcons.chiudi
                 },
-                style = MFootType.chip,
-                color = colore,
+                contentDescription = null,
+                tint = colore,
+                modifier = Modifier.size(20.dp),
             )
         }
-        Text(
-            when (riga.status) {
-                ObjectiveStatus.IN_CORSO -> "…"
-                ObjectiveStatus.RAGGIUNTO -> "✓"
-                ObjectiveStatus.FALLITO -> "✕"
-            },
-            style = MFootType.value,
-            color = colore,
-        )
     }
-    Spacer(Modifier.height(8.dp))
 }

@@ -145,11 +145,11 @@ object TradeRepository {
         message.contains("kind") || message.contains("terms") ->
             ApiResult.Error(
                 "Le trattative hanno bisogno della migrazione 0014_trattative.sql, che non " +
-                    "e' ancora stata applicata a questo database.",
+                    "è ancora stata applicata a questo database.",
             )
         MANCA_LA_TABELLA.any { message.contains(it) } ->
             ApiResult.Error(
-                "Gli scambi hanno bisogno della migrazione 0008_trades.sql, che non e' " +
+                "Gli scambi hanno bisogno della migrazione 0008_trades.sql, che non è " +
                     "ancora stata applicata a questo database.",
             )
         else -> this
@@ -267,7 +267,7 @@ object DealRepository {
             listOf("propose_loan", "propose_friendly", "respond_deal").any { message.contains(it) } ->
             ApiResult.Error(
                 "Prestiti e amichevoli hanno bisogno della migrazione 0014_trattative.sql, " +
-                    "che non e' ancora stata applicata a questo database.",
+                    "che non è ancora stata applicata a questo database.",
             )
         else -> this
     }
@@ -307,7 +307,7 @@ object CounterRepository {
     private fun ApiResult<Unit>.mapMissing(): ApiResult<Unit> = when {
         this is ApiResult.Error && message.contains("counter_trade") -> ApiResult.Error(
             "Le controproposte hanno bisogno della migrazione 0021_controproposte.sql, " +
-                "che non e' ancora stata applicata a questo database.",
+                "che non è ancora stata applicata a questo database.",
         )
         else -> this
     }

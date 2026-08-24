@@ -18,7 +18,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
+import dev.mfoot.android.ui.icons.MFootIcons
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -108,7 +112,7 @@ private fun Intestazione(state: CalendarState, onMese: (Int) -> Unit, onChiudi: 
             .padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Freccia("‹") { onMese(-1) }
+        Freccia(MFootIcons.indietro, "Mese precedente") { onMese(-1) }
         Spacer(Modifier.width(6.dp))
 
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -122,29 +126,36 @@ private fun Intestazione(state: CalendarState, onMese: (Int) -> Unit, onChiudi: 
         }
 
         Spacer(Modifier.width(6.dp))
-        Freccia("›") { onMese(1) }
+        Freccia(MFootIcons.avanti, "Mese successivo") { onMese(1) }
         Spacer(Modifier.width(4.dp))
-        Text(
-            "Chiudi",
-            style = MFootType.chip,
-            color = MFootColors.ink3,
-            modifier = Modifier.clickable(onClick = onChiudi).padding(6.dp),
-        )
+        Freccia(MFootIcons.chiudi, "Chiudi", onChiudi)
     }
 }
 
+/**
+ * Un tondo con una freccia dentro.
+ *
+ * Erano i caratteri `‹` e `›` in un quadrato: due glifi che ogni carattere di sistema
+ * disegna di un peso suo, e che accanto alle icone del resto dell'app si vedevano come
+ * corpi estranei.
+ */
 @Composable
-private fun Freccia(segno: String, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(34.dp)
-            .background(MFootColors.core, MFootShapes.field)
-            .border(1.dp, MFootColors.line, MFootShapes.field)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(segno, style = MFootType.rowTitle, color = MFootColors.ink2)
-    }
+private fun Freccia(
+    icona: androidx.compose.ui.graphics.vector.ImageVector,
+    descrizione: String,
+    onClick: () -> Unit,
+) {
+    Icon(
+        icona,
+        contentDescription = descrizione,
+        tint = MFootColors.ink2,
+        modifier = Modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(50))
+            .background(MFootColors.core)
+            .clickable(onClick = onClick)
+            .padding(9.dp),
+    )
 }
 
 @Composable
@@ -267,7 +278,7 @@ private fun Dettaglio(state: CalendarState, onPartita: (Long, String, String) ->
     if (giorno == null) {
         Box(Modifier.fillMaxWidth().padding(36.dp), contentAlignment = Alignment.Center) {
             Text(
-                if (state.caricamento) "Leggo il calendario…" else "Non c'e' niente in programma.",
+                if (state.caricamento) "Leggo il calendario…" else "Non c'è niente in programma.",
                 style = MFootType.secondary,
                 color = MFootColors.ink3,
                 textAlign = TextAlign.Center,

@@ -119,7 +119,7 @@ fun SpogliatoioScreen(
         }
 
         if (rosa.isEmpty()) {
-            Vuoto("Rosa vuota: non c'e' nessuno con cui parlare.")
+            Vuoto("Rosa vuota: non c'è nessuno con cui parlare.")
             return@Column
         }
 
@@ -150,7 +150,7 @@ fun SpogliatoioScreen(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Puoi chiamare chi vuoi, ma un discorso che non nasce da niente rende " +
-                        "poco, e c'e' da aspettare prima di ripeterlo.",
+                        "poco, e c'è da aspettare prima di ripeterlo.",
                     style = MFootType.chip,
                     color = MFootColors.ink3,
                 )
@@ -165,7 +165,7 @@ fun SpogliatoioScreen(
                 Riga(
                     giocatore = giocatore,
                     sotto = if (attesa > 0) {
-                        "Gli hai gia' parlato: fra $attesa giornate"
+                        "Gli hai già parlato: fra $attesa giornate"
                     } else {
                         "Convocalo"
                     },
@@ -203,8 +203,7 @@ private fun Riga(
         Box(
             Modifier
                 .size(36.dp, 23.dp)
-                .background(MFootColors.core, MFootShapes.field)
-                .border(1.dp, MFootColors.line, MFootShapes.field),
+                .background(MFootColors.core, MFootShapes.field),
             contentAlignment = Alignment.Center,
         ) {
             Text(giocatore.primaryPosition.short, style = MFootType.label, color = MFootColors.ink2)
@@ -292,7 +291,6 @@ private fun Colloquio(
                         color = MFootColors.ink2,
                         modifier = Modifier
                             .background(MFootColors.core, MFootShapes.pill)
-                            .border(1.dp, MFootColors.line, MFootShapes.pill)
                             .padding(horizontal = 10.dp, vertical = 4.dp),
                     )
                 }
@@ -312,7 +310,7 @@ private fun Colloquio(
             Spacer(Modifier.height(MFootSpacing.related))
             Text(
                 "Lo hai chiamato tu: non aveva niente da dirti, e quello che gli dirai " +
-                    "pesera' molto meno.",
+                    "peserà molto meno.",
                 style = MFootType.chip,
                 color = MFootColors.ink3,
             )
@@ -333,7 +331,6 @@ private fun Colloquio(
                     Modifier
                         .fillMaxWidth()
                         .background(MFootColors.core, MFootShapes.field)
-                        .border(1.dp, MFootColors.lineStrong, MFootShapes.field)
                         .clickable { onParla(player.id.value, opzione) }
                         .padding(14.dp),
                 ) {
@@ -341,8 +338,8 @@ private fun Colloquio(
                     if (opzione.createsPromise != null) {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "E' una promessa: il tick conta le partite giocate, e se non la " +
-                                "mantieni il crollo e' peggiore di non aver detto niente.",
+                            "è una promessa: il tick conta le partite giocate, e se non la " +
+                                "mantieni il crollo è peggiore di non aver detto niente.",
                             style = MFootType.chip,
                             color = MFootColors.gamble,
                         )

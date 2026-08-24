@@ -36,7 +36,7 @@ fun main() {
     val config = TickEnvironment.fromEnv()
 
     log("MFoot World Tick - avvio $startedAt")
-    if (config.dryRun) log("MODALITA' DI PROVA: nessuna scrittura sul database.")
+    if (config.dryRun) log("MODALITÀ DI PROVA: nessuna scrittura sul database.")
 
     val exitCode = try {
         connect(config).use { connection ->
@@ -117,12 +117,12 @@ data class TickEnvironment(
                 error(
                     "L'URL del database non contiene le credenziali, quindi servono anche " +
                         "MFOOT_DB_USER e MFOOT_DB_PASSWORD. In alternativa usa la stringa " +
-                        "'Type: JDBC' di Supabase, che le include gia'.",
+                        "'Type: JDBC' di Supabase, che le include già.",
                 )
             }
             if (urlHasCredentials && url.contains("[YOUR-PASSWORD]")) {
                 error(
-                    "Nell'URL c'e' ancora il segnaposto [YOUR-PASSWORD]: " +
+                    "Nell'URL c'è ancora il segnaposto [YOUR-PASSWORD]: " +
                         "va sostituito con la password vera del database.",
                 )
             }

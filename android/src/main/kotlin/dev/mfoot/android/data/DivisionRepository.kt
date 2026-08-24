@@ -79,7 +79,7 @@ object DivisionRepository {
         this is ApiResult.Error &&
             (message.contains("assign_divisions") || message.contains("division_level")) ->
             ApiResult.Error(
-                "Le divisioni hanno bisogno della migrazione 0009_divisions.sql, che non e' " +
+                "Le divisioni hanno bisogno della migrazione 0009_divisions.sql, che non è " +
                     "ancora stata applicata a questo database.",
             )
         else -> this
@@ -137,7 +137,7 @@ object YouthRepository {
     private fun esito(body: String): ApiResult<Unit> {
         val node = JsonNode.parse(body).let { if (it.asList().isNotEmpty()) it[0] else it }
         return if (node["ok"].bool(false)) ApiResult.Ok(Unit)
-        else ApiResult.Error(node["reason"].str("Non si puo' fare."))
+        else ApiResult.Error(node["reason"].str("Non si può fare."))
     }
 
     private fun ApiResult<Unit>.mapMissing(): ApiResult<Unit> = when {
@@ -145,7 +145,7 @@ object YouthRepository {
             listOf("create_youth_club", "move_between_squads").any { message.contains(it) } ->
             ApiResult.Error(
                 "La seconda squadra ha bisogno della migrazione 0018_seconda_squadra.sql, " +
-                    "che non e' ancora stata applicata a questo database.",
+                    "che non è ancora stata applicata a questo database.",
             )
         else -> this
     }

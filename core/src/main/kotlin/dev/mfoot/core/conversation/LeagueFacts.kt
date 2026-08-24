@@ -103,7 +103,7 @@ object LeagueFacts {
         if (history.brokenPromise) {
             return ConversationTrigger(
                 ConversationTopic.PROMESSA_TRADITA,
-                "Gli avevi promesso qualcosa e non e' arrivata.",
+                "Gli avevi promesso qualcosa e non è arrivata.",
             )
         }
 
@@ -112,7 +112,7 @@ object LeagueFacts {
         if (history.recent.isEmpty() && today.value - history.joinedOn.value <= 2) {
             return ConversationTrigger(
                 ConversationTopic.NUOVO_ARRIVO,
-                "E' arrivato da poco e non ha ancora giocato.",
+                "è arrivato da poco e non ha ancora giocato.",
             )
         }
 
@@ -126,7 +126,7 @@ object LeagueFacts {
         if (history.isInjured) {
             return ConversationTrigger(
                 ConversationTopic.INFORTUNIO,
-                "E' fermo per infortunio.",
+                "è fermo per infortunio.",
             )
         }
 

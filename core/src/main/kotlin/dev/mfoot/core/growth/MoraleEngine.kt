@@ -78,18 +78,18 @@ object MoraleEngine {
             }
             stats.minutesPlayed > 0 -> {
                 delta += PLAYED_PARTIAL
-                reasons += "e' entrato a partita in corso"
+                reasons += "è entrato a partita in corso"
             }
             else -> {
                 delta += BENCHED
-                reasons += "e' rimasto in panchina"
+                reasons += "è rimasto in panchina"
             }
         }
 
         // Uscire presto e' una bocciatura, non un riposo.
         if (stats.minutesPlayed in 1..44) {
             delta += SUBSTITUTED_EARLY
-            reasons += "e' stato sostituito presto"
+            reasons += "è stato sostituito presto"
         }
 
         if (stats.goals > 0) {
@@ -102,7 +102,7 @@ object MoraleEngine {
         }
         if (stats.redCards > 0) {
             delta += RED_CARD
-            reasons += "e' stato espulso"
+            reasons += "è stato espulso"
         }
 
         if (stats.minutesPlayed > 0) {
@@ -142,7 +142,7 @@ object MoraleEngine {
         return MoraleChange(
             player = player.withMorale(player.morale + delta),
             delta = delta,
-            reasons = listOf("non e' stato nemmeno convocato"),
+            reasons = listOf("non è stato nemmeno convocato"),
         )
     }
 
@@ -159,7 +159,7 @@ object MoraleEngine {
         return MoraleChange(
             player.withMorale(player.morale + delta),
             delta,
-            listOf("gli e' stato rinnovato il contratto"),
+            listOf("gli è stato rinnovato il contratto"),
         )
     }
 
@@ -169,7 +169,7 @@ object MoraleEngine {
         return MoraleChange(
             player.withMorale(player.morale + delta),
             delta,
-            listOf("gli e' stata rifiutata la cessione"),
+            listOf("gli è stata rifiutata la cessione"),
         )
     }
 

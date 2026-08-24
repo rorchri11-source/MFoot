@@ -90,7 +90,7 @@ object ConfigValidator {
         if (s.mode == LeagueMode.SOLO_MULTIPLAYER && s.aiClubs > 0) {
             add(error(
                 "setup.aiClubs",
-                "La modalita' e' 'solo multiplayer' ma sono previsti ${s.aiClubs} club AI.",
+                "La modalità è 'solo multiplayer' ma sono previsti ${s.aiClubs} club AI.",
                 "Porta i club AI a 0 oppure passa a 'Multiplayer + AI'.",
             ))
         }
@@ -106,7 +106,7 @@ object ConfigValidator {
         if (s.minSquadSize < 11) {
             add(warning(
                 "setup.minSquadSize",
-                "Con meno di 11 giocatori non si puo' schierare una formazione completa.",
+                "Con meno di 11 giocatori non si può schierare una formazione completa.",
                 "Alza la rosa minima ad almeno 11, meglio 16 con due partite al giorno.",
             ))
         }
@@ -145,7 +145,7 @@ object ConfigValidator {
             add(error(
                 "divisions.count",
                 "${config.setup.totalClubs} club in ${d.count} divisioni fanno " +
-                    "$perDivisione squadre a testa: non ci si puo' giocare un campionato.",
+                    "$perDivisione squadre a testa: non ci si può giocare un campionato.",
                 "Riduci le divisioni o alza il numero di club.",
             ))
             return@buildList
@@ -155,7 +155,7 @@ object ConfigValidator {
                 "divisions.count",
                 "Solo $perDivisione club per divisione: si incontrano tutti in due giornate " +
                     "e la classifica la decide un episodio.",
-                "Quattro o piu' per divisione rendono il campionato leggibile.",
+                "Quattro o più per divisione rendono il campionato leggibile.",
             ))
         }
 
@@ -165,7 +165,7 @@ object ConfigValidator {
                 "divisions.directPromotions",
                 "Da ogni divisione salgono ${rules.totalMoves} squadre e scendono " +
                     "${rules.totalDrops}: a ogni stagione le divisioni cambiano dimensione, " +
-                    "e dopo due nessuno sa piu' rimetterle a posto." +
+                    "e dopo due nessuno sa più rimetterle a posto." +
                     playoffNota(d),
                 "Fai coincidere i due numeri.",
             ))
@@ -223,7 +223,7 @@ object ConfigValidator {
             add(warning(
                 "world.tiers",
                 "Ci sono solo ${w.playerCount} giocatori per $playersNeeded posti: il mercato " +
-                    "si svuotera' quasi subito e non ci sara' piu' niente da comprare.",
+                    "si svuoterà quasi subito e non ci sarà più niente da comprare.",
                 "Meglio almeno ${(playersNeeded * 1.6).toInt()} giocatori.",
             ))
         }
@@ -236,13 +236,13 @@ object ConfigValidator {
         if (expectedGk < s.totalClubs) {
             add(error(
                 "world.positionQuotas",
-                "Il mondo generera' circa $expectedGk portieri per ${s.totalClubs} club.",
+                "Il mondo genererà circa $expectedGk portieri per ${s.totalClubs} club.",
                 "Alza la quota dei portieri o il numero totale di giocatori.",
             ))
         }
 
         if (w.minAge > w.maxAge) {
-            add(error("world.minAge", "Eta' minima (${w.minAge}) maggiore della massima (${w.maxAge})."))
+            add(error("world.minAge", "Età minima (${w.minAge}) maggiore della massima (${w.maxAge})."))
         }
         if (w.minPotentialSpread > w.maxPotentialSpread) {
             add(error(
@@ -251,7 +251,7 @@ object ConfigValidator {
             ))
         }
         if (w.nationalities.isEmpty()) {
-            add(error("world.nationalities", "Serve almeno una nazionalita' per generare i nomi."))
+            add(error("world.nationalities", "Serve almeno una nazionalità per generare i nomi."))
         }
     }
 
@@ -264,7 +264,7 @@ object ConfigValidator {
         if (!c.endDate.isAfter(c.startDate)) {
             add(error(
                 "calendar.endDate",
-                "La data di fine (${c.endDate}) non e' dopo quella di inizio (${c.startDate}).",
+                "La data di fine (${c.endDate}) non è dopo quella di inizio (${c.startDate}).",
             ))
             return@buildList
         }
@@ -296,7 +296,7 @@ object ConfigValidator {
         if (availableDays < daysNeeded) {
             add(error(
                 "calendar.endDate",
-                "Un girone con ${s.totalClubs} club richiede $matchDaysNeeded giornate, cioe' " +
+                "Un girone con ${s.totalClubs} club richiede $matchDaysNeeded giornate, cioè " +
                     "almeno $daysNeeded giorni a ${c.matchesPerDayPerClub} partite al giorno. " +
                     "Ne sono disponibili solo $availableDays.",
                 "Sposta la fine al ${c.startDate.plusDays((daysNeeded + countRestDays(config)).toLong())} " +
@@ -306,7 +306,7 @@ object ConfigValidator {
             add(warning(
                 "calendar.endDate",
                 "Ci sono $availableDays giorni disponibili per $daysNeeded giorni di partite: " +
-                    "la stagione avra' lunghi periodi vuoti.",
+                    "la stagione avrà lunghi periodi vuoti.",
                 "Accorcia la finestra o aggiungi una seconda competizione.",
             ))
         }
@@ -319,7 +319,7 @@ object ConfigValidator {
         val s = config.setup
 
         if (e.startingCredits < 0) {
-            add(error("economy.startingCredits", "Il budget iniziale non puo' essere negativo."))
+            add(error("economy.startingCredits", "Il budget iniziale non può essere negativo."))
             return@buildList
         }
         if (e.renewalCostFraction < 0.0 || e.renewalCostFraction > 2.0) {
@@ -345,7 +345,7 @@ object ConfigValidator {
             add(warning(
                 "economy.startingCredits",
                 "Restano circa ${"%.1f".format(perSlot)} crediti per giocatore: quasi tutte le " +
-                    "aste si chiuderanno a 1 credito e non ci sara' nessuna scelta da fare.",
+                    "aste si chiuderanno a 1 credito e non ci sarà nessuna scelta da fare.",
                 "Per aste interessanti servono almeno ${s.minSquadSize * 8} crediti.",
             ))
         }
@@ -361,7 +361,7 @@ object ConfigValidator {
         if (e.wagesEnabled && e.recurringIncome <= 0) {
             add(warning(
                 "economy.recurringIncome",
-                "Gli stipendi sono attivi ma non c'e' nessuna entrata ricorrente: i club " +
+                "Gli stipendi sono attivi ma non c'è nessuna entrata ricorrente: i club " +
                     "andranno progressivamente in rosso senza poterci fare niente.",
                 "Attiva un'entrata per giornata oppure disattiva gli stipendi.",
             ))
@@ -369,7 +369,7 @@ object ConfigValidator {
         if (e.placementPrizes.isEmpty()) {
             add(warning(
                 "economy.placementPrizes",
-                "Nessun premio di piazzamento: vincere il campionato non dara' nessun vantaggio.",
+                "Nessun premio di piazzamento: vincere il campionato non darà nessun vantaggio.",
             ))
         }
     }
@@ -383,7 +383,7 @@ object ConfigValidator {
         if (!(r.peakAgeStart <= r.peakAgeEnd && r.peakAgeEnd <= r.plateauAgeEnd && r.plateauAgeEnd <= r.declineAge)) {
             add(error(
                 "rules.peakAgeStart",
-                "Le fasce d'eta' non sono in ordine: picco ${r.peakAgeStart}-${r.peakAgeEnd}, " +
+                "Le fasce d'età non sono in ordine: picco ${r.peakAgeStart}-${r.peakAgeEnd}, " +
                     "plateau fino a ${r.plateauAgeEnd}, declino da ${r.declineAge}.",
                 "Servono valori crescenti, per esempio 22 / 26 / 28 / 32.",
             ))
@@ -398,7 +398,7 @@ object ConfigValidator {
         if (r.youthTeamEnabled && r.youthMaxAge < w.minAge) {
             add(error(
                 "rules.youthMaxAge",
-                "L'eta' massima della Primavera (${r.youthMaxAge}) e' sotto l'eta' minima del mondo (${w.minAge}): " +
+                "L'età massima della Primavera (${r.youthMaxAge}) è sotto l'età minima del mondo (${w.minAge}): " +
                     "la Primavera resterebbe sempre vuota.",
                 "Alza il limite ad almeno ${w.minAge + 3}.",
             ))
@@ -417,7 +417,7 @@ object ConfigValidator {
         if (r.moraleEnabled && !r.conversationsEnabled) {
             add(warning(
                 "rules.conversationsEnabled",
-                "Il morale e' attivo ma le conversazioni no: un giocatore scontento non potra' " +
+                "Il morale è attivo ma le conversazioni no: un giocatore scontento non potrà " +
                     "essere recuperato in nessun modo.",
             ))
         }
@@ -447,21 +447,21 @@ object ConfigValidator {
             add(warning(
                 "market.proxyBiddingEnabled",
                 "Senza offerta massima automatica bisogna presidiare ogni asta di persona: " +
-                    "chi lavora o studia perdera' sistematicamente i giocatori che voleva.",
+                    "chi lavora o studia perderà sistematicamente i giocatori che voleva.",
                 "Tienila attiva salvo che tutti giochiate alla stessa ora.",
             ))
         }
         if (m.windowMode == MarketWindowMode.FASCE_ORARIE && m.windowSlots.isEmpty()) {
             add(error(
                 "market.windowSlots",
-                "Il mercato e' limitato a fasce orarie ma non ne e' stata definita nessuna: " +
+                "Il mercato è limitato a fasce orarie ma non ne è stata definita nessuna: " +
                     "non si potrebbe mai comprare.",
             ))
         }
         if (m.antiSnipeEnabled && m.antiSnipeSeconds < 10) {
             add(warning(
                 "market.antiSnipeSeconds",
-                "Un'estensione anti-snipe di ${m.antiSnipeSeconds} secondi e' troppo breve per " +
+                "Un'estensione anti-snipe di ${m.antiSnipeSeconds} secondi è troppo breve per " +
                     "permettere una risposta reale.",
                 "Almeno 30-60 secondi.",
             ))
@@ -533,7 +533,7 @@ object ConfigValidator {
                     "circa ${perOra.toInt()} caselle l'ora. Fino ad allora le squadre sono " +
                     "incomplete e le loro partite si rinviano una dopo l'altra.",
                 "Accorcia l'asta iniziale o alza le aste in parallelo: 6 aste da 15 minuti " +
-                    "completano una rosa in poco piu' di un'ora.",
+                    "completano una rosa in poco più di un'ora.",
             ))
         }
     }

@@ -163,7 +163,6 @@ private fun SlotTab(label: String, swatch: Long, selected: Boolean, onClick: () 
                 .size(11.dp)
                 .clip(RoundedCornerShape(3.dp))
                 .background(Color(swatch))
-                .border(1.dp, MFootColors.lineStrong, RoundedCornerShape(3.dp)),
         )
         Spacer(Modifier.width(6.dp))
         Text(

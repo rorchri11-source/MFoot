@@ -1,5 +1,6 @@
 package dev.mfoot.android.ui
 
+import dev.mfoot.android.ui.icons.MFootIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,40 +71,39 @@ fun CompetitionsScreen(
     onDelete: (Long) -> Unit,
     onClose: () -> Unit,
 ) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(MFootColors.bg)
-            .verticalScroll(rememberScrollState())
-            .padding(MFootSpacing.section),
-    ) {
-        Text(
-            if (state.draft == null) "‹ torna alla lega" else "‹ annulla",
-            style = MFootType.chip,
-            color = MFootColors.ink3,
-            modifier = Modifier
-                .clickable { if (state.draft == null) onClose() else onCancelDraft() }
-                .padding(vertical = 6.dp),
+    // Questa schermata vive **fuori** dal guscio — e' uno stato suo, non una rotta — quindi
+    // la testata se la disegna da se'. Prima al suo posto c'era la scritta «‹ torna alla
+    // lega»: un glifo di testo come freccia, con l'aria di un collegamento in fondo a una
+    // pagina invece che del modo per uscire.
+    Column(Modifier.fillMaxSize().background(MFootColors.bg)) {
+        Testata(
+            titolo = if (state.draft == null) "Competizioni" else "Nuova competizione",
+            onIndietro = { if (state.draft == null) onClose() else onCancelDraft() },
+            insetAlto = true,
         )
-        Spacer(Modifier.height(14.dp))
 
-        if (state.draft == null) {
-            Existing(state, onNew, onDelete)
-        } else {
-            Builder(state, state.draft, onEdit, onCreate)
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(MFootSpacing.section),
+        ) {
+            if (state.draft == null) {
+                Existing(state, onNew, onDelete)
+            } else {
+                Builder(state, state.draft, onEdit, onCreate)
+            }
         }
     }
 }
 
 @Composable
 private fun Existing(state: CompetitionsState, onNew: () -> Unit, onDelete: (Long) -> Unit) {
-    Text("Competizioni", style = MFootType.playerName, color = MFootColors.ink)
-    Spacer(Modifier.height(6.dp))
     Text(
         "Campionato, coppa, gironi: le decidi tu, con i partecipanti e le date che vuoi. " +
-            "Puoi averne piu' di una insieme.",
-        style = MFootType.chip,
-        color = MFootColors.ink3,
+            "Puoi averne più di una insieme.",
+        style = MFootType.secondary,
+        color = MFootColors.ink2,
     )
 
     Spacer(Modifier.height(20.dp))
@@ -118,46 +118,55 @@ private fun Existing(state: CompetitionsState, onNew: () -> Unit, onDelete: (Lon
     }
 
     if (state.existing.isEmpty()) {
-        Text(
-            "Nessuna competizione. Finche' non ne crei una non si gioca niente.",
-            style = MFootType.secondary,
-            color = MFootColors.ink3,
-            modifier = Modifier.padding(vertical = 20.dp),
+        Spiegazione(
+            "Non c'è ancora niente da giocare",
+            "Finché non crei una competizione le squadre esistono, il mercato gira, ma non " +
+                "si scende in campo: le partite nascono da qui.",
         )
     } else {
         state.existing.forEach { c ->
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(MFootColors.core, MFootShapes.band)
-                    .border(1.dp, MFootColors.lineStrong, MFootShapes.band)
-                    .padding(16.dp),
-            ) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(c.name, style = MFootType.value, color = MFootColors.ink)
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            "${c.type.label} · ${c.participants.size} club · " +
-                                "${c.played}/${c.fixtures} giocate",
-                            style = MFootType.chip,
-                            color = MFootColors.ink3,
-                        )
+            Scheda(Modifier.padding(bottom = 10.dp)) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Tessera(MFootIcons.coppa, MFootColors.tileBlue)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(c.name, style = MFootType.rowTitle, color = MFootColors.ink)
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "${c.type.label} · ${c.participants.size} club",
+                                style = MFootType.secondary,
+                                color = MFootColors.ink2,
+                            )
+                        }
+                        // Cancellare si puo' solo finche' non si e' giocato: dopo, i
+                        // risultati sono storia, e toglierli falserebbe la crescita dei
+                        // giocatori che quelle partite le hanno gia' giocate.
+                        if (c.canDelete) {
+                            Text(
+                                "cancella",
+                                style = MFootType.chip,
+                                color = MFootColors.gamble,
+                                modifier = Modifier.clickable { onDelete(c.id) }.padding(8.dp),
+                            )
+                        }
                     }
-                    // Cancellare si puo' solo finche' non si e' giocato: dopo, i
-                    // risultati sono storia, e toglierli falserebbe la crescita dei
-                    // giocatori che quelle partite le hanno gia' giocate.
-                    if (c.canDelete) {
-                        Text(
-                            "cancella",
-                            style = MFootType.chip,
-                            color = MFootColors.gamble,
-                            modifier = Modifier.clickable { onDelete(c.id) }.padding(8.dp),
+
+                    // La barra a che punto e': la stessa della Casa, ed e' la forma con cui
+                    // il riferimento mostra una competizione in corso. Con
+                    // «12/25 giocate» bisogna fare il conto a mente per sapere se e'
+                    // l'inizio o la fine.
+                    if (c.fixtures > 0) {
+                        Spacer(Modifier.height(14.dp))
+                        Avanzamento(
+                            fatto = c.played,
+                            totale = c.fixtures,
+                            inizio = "${c.played} giocate",
+                            fine = "${c.fixtures} in tutto",
                         )
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
         }
     }
 
@@ -172,9 +181,6 @@ private fun Builder(
     onEdit: ((CompetitionDraft) -> CompetitionDraft) -> Unit,
     onCreate: () -> Unit,
 ) {
-    Text("Nuova competizione", style = MFootType.playerName, color = MFootColors.ink)
-    Spacer(Modifier.height(20.dp))
-
     MFootField(
         value = draft.name,
         onValueChange = { n -> onEdit { it.copy(name = n) } },
@@ -244,8 +250,7 @@ private fun Builder(
                     .background(
                         if (iscritto) MFootColors.elite else MFootColors.core,
                         MFootShapes.field,
-                    )
-                    .border(1.dp, MFootColors.lineStrong, MFootShapes.field),
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 if (iscritto) {
@@ -380,7 +385,7 @@ private fun Orari(draft: CompetitionDraft, onEdit: ((CompetitionDraft) -> Compet
     Label("Orari di inizio")
     Spacer(Modifier.height(4.dp))
     Text(
-        "Ora della lega. Una giornata puo' avere piu' fasce: il calendario le usa in ordine.",
+        "Ora della lega. Una giornata può avere più fasce: il calendario le usa in ordine.",
         style = MFootType.chip,
         color = MFootColors.ink3,
     )
@@ -482,7 +487,6 @@ private fun Preview(draft: CompetitionDraft) {
         Modifier
             .fillMaxWidth()
             .background(MFootColors.core, MFootShapes.band)
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.band)
             .padding(16.dp),
     ) {
         Label("Anteprima del calendario")
@@ -599,7 +603,7 @@ private fun FormatCard(type: CompetitionType, selected: Boolean, onClick: () -> 
 private fun descrizione(type: CompetitionType): String = when (type) {
     CompetitionType.GIRONE ->
         "Come la Serie A o la Premier: tutti contro tutti, classifica a punti. " +
-            "Vince chi ne fa di piu' alla fine."
+            "Vince chi ne fa di più alla fine."
     CompetitionType.ELIMINAZIONE_DIRETTA ->
         "Tabellone: chi perde esce. Serve un numero di squadre potenza di due, " +
             "altrimenti qualcuno passa il turno senza giocare."
@@ -618,8 +622,7 @@ private fun Toggle(label: String, on: Boolean, onClick: () -> Unit) {
             Modifier
                 .width(42.dp)
                 .height(24.dp)
-                .background(if (on) MFootColors.elite else MFootColors.core, MFootShapes.pill)
-                .border(1.dp, MFootColors.lineStrong, MFootShapes.pill),
+                .background(if (on) MFootColors.elite else MFootColors.core, MFootShapes.pill),
             contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
         ) {
             Box(
@@ -654,7 +657,6 @@ private fun StepBox(label: String, onClick: () -> Unit) {
             .width(34.dp)
             .height(34.dp)
             .background(MFootColors.core, MFootShapes.field)
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.field)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

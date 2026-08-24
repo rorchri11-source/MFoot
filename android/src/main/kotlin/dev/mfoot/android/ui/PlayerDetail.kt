@@ -78,8 +78,7 @@ fun PlayerDetailScreen(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Color.White.copy(alpha = 0.03f), MFootShapes.shell)
-                .border(1.dp, MFootColors.line, MFootShapes.shell)
+                .background(MFootColors.raised, MFootShapes.shell)
                 .padding(MFootSpacing.shellPadding),
         ) {
             Column(
@@ -150,8 +149,7 @@ private fun Header(row: PlayerRow) {
         Box(
             Modifier
                 .size(72.dp)
-                .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(20.dp))
-                .border(1.dp, MFootColors.lineStrong, RoundedCornerShape(20.dp)),
+                .background(MFootColors.bg, RoundedCornerShape(20.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -175,10 +173,9 @@ private fun Chip(text: String, strong: Boolean = false) {
         color = if (strong) MFootColors.ink else MFootColors.ink2,
         modifier = Modifier
             .background(
-                if (strong) Color.White.copy(alpha = 0.09f) else Color.White.copy(alpha = 0.05f),
+                if (strong) MFootColors.raised else MFootColors.bg,
                 MFootShapes.pill,
             )
-            .border(1.dp, MFootColors.line, MFootShapes.pill)
             .padding(horizontal = 9.dp, vertical = 4.dp),
     )
 }
@@ -201,7 +198,7 @@ private fun GrowthBand(row: PlayerRow) {
             .padding(horizontal = MFootSpacing.gutter)
             .fillMaxWidth()
             .background(
-                if (upside) Color.White.copy(alpha = 0.028f) else MFootColors.elite.copy(alpha = 0.05f),
+                if (upside) MFootColors.bg else MFootColors.elite.copy(alpha = 0.10f),
                 MFootShapes.band,
             )
             .border(
@@ -237,7 +234,7 @@ private fun GrowthBand(row: PlayerRow) {
             Modifier
                 .fillMaxWidth()
                 .height(7.dp)
-                .background(Color.White.copy(alpha = 0.07f), RoundedCornerShape(4.dp)),
+                .background(MFootColors.bg, RoundedCornerShape(4.dp)),
         ) {
             // Il tratto gia' percorso. Deve staccarsi nettamente dal fondo, altrimenti
             // si legge grigio su grigio e sparisce.
@@ -246,8 +243,7 @@ private fun GrowthBand(row: PlayerRow) {
                     .fillMaxWidth(now)
                     .height(7.dp)
                     .background(
-                        if (upside) Color.White.copy(alpha = 0.45f)
-                        else MFootColors.elite.copy(alpha = 0.55f),
+                        if (upside) MFootColors.ink2 else MFootColors.elite,
                         RoundedCornerShape(4.dp),
                     ),
             )
@@ -384,7 +380,7 @@ private fun AttributeCell(attr: Attr, value: Int, key: Boolean) {
             Modifier
                 .fillMaxWidth()
                 .height(4.dp)
-                .background(Color.White.copy(alpha = 0.09f), RoundedCornerShape(2.dp)),
+                .background(MFootColors.bg, RoundedCornerShape(2.dp)),
         ) {
             Box(
                 Modifier
@@ -460,7 +456,7 @@ private fun Condizione(row: PlayerRow, giornata: Int) {
         Text(
             when {
                 infortunato -> "Infortunato: torna alla giornata $fuoriFino."
-                p.stamina < 40 -> "Stanco: schierarlo cosi' vuol dire un rendimento sotto il suo valore."
+                p.stamina < 40 -> "Stanco: schierarlo così vuol dire un rendimento sotto il suo valore."
                 p.stamina < 70 -> "Non fresco. Con una giornata di riposo torna al massimo."
                 else -> "Pronto a giocare."
             },
@@ -600,7 +596,7 @@ private fun StarGroup(label: String, filled: Int, modifier: Modifier = Modifier)
                         .weight(1f)
                         .height(4.dp)
                         .background(
-                            if (index < filled) MFootColors.ink2 else Color.White.copy(alpha = 0.09f),
+                            if (index < filled) MFootColors.elite else MFootColors.bg,
                             RoundedCornerShape(2.dp),
                         ),
                 )
@@ -624,8 +620,7 @@ private fun Traits(row: PlayerRow) {
                 style = MFootType.chip,
                 color = MFootColors.ink3,
                 modifier = Modifier
-                    .background(Color.White.copy(alpha = 0.03f), MFootShapes.pill)
-                    .border(1.dp, MFootColors.line, MFootShapes.pill)
+                    .background(MFootColors.bg, MFootShapes.pill)
                     .padding(horizontal = 11.dp, vertical = 5.dp),
             )
         } else {
@@ -685,7 +680,6 @@ private fun Footer(
                     style = MFootType.value,
                     color = MFootColors.ink2,
                     modifier = Modifier
-                        .border(1.dp, MFootColors.lineStrong, MFootShapes.pill)
                         .clickable(onClick = onYouth)
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                 )

@@ -20,13 +20,13 @@ enum class ConversationTopic(val label: String, val prompt: String) {
     RICHIESTA_CESSIONE("Vuole andarsene", "Ho saputo che vuoi lasciarci."),
     INFORTUNIO("Infortunio", "Mi dispiace. Prenditi il tempo che serve."),
     RIENTRO("Rientro", "Bentornato. Come ti senti?"),
-    PANCHINA_PROLUNGATA("Panchina", "So che non ti va giu' di non giocare."),
+    PANCHINA_PROLUNGATA("Panchina", "So che non ti va giù di non giocare."),
     PRESTAZIONI_SCARSE("Rendimento", "Le ultime partite non sono state all'altezza."),
     MORALE_BASSO("Morale basso", "Non ti vedo sereno."),
     CONTRATTO_IN_SCADENZA("Contratto in scadenza", "Fra poco il tuo contratto finisce."),
-    CAPITANO("Fascia da capitano", "Adesso la squadra ha bisogno di te piu' del solito."),
-    GRANDE_PRESTAZIONE("Grande partita", "Quella li' e' stata la tua partita."),
-    POCO_MINUTAGGIO("Poco spazio", "So che vorresti giocare di piu'."),
+    CAPITANO("Fascia da capitano", "Adesso la squadra ha bisogno di te più del solito."),
+    GRANDE_PRESTAZIONE("Grande partita", "Quella lì è stata la tua partita."),
+    POCO_MINUTAGGIO("Poco spazio", "So che vorresti giocare di più."),
     RINNOVO("Rinnovo", "Vorrei che restassi con noi."),
 }
 
@@ -116,7 +116,7 @@ object ConversationEngine {
             ConversationTopic.NUOVO_ARRIVO -> listOf(
                 option(ConversationTone.INCORAGGIA, "Ti abbiamo voluto qui. Fai il tuo gioco."),
                 option(ConversationTone.SPIEGA, "Ti spiego il ruolo che ho in mente per te."),
-                option(ConversationTone.SFIDA, "Il posto non e' regalato a nessuno, nemmeno a te."),
+                option(ConversationTone.SFIDA, "Il posto non è regalato a nessuno, nemmeno a te."),
                 promiseOption(
                     ConversationTone.PROMETTI,
                     "Comincerai titolare, hai la mia parola.",
@@ -155,18 +155,18 @@ object ConversationEngine {
             )
 
             ConversationTopic.PANCHINA_PROLUNGATA -> listOf(
-                option(ConversationTone.SPIEGA, "Non e' contro di te: ti spiego le mie scelte."),
+                option(ConversationTone.SPIEGA, "Non è contro di te: ti spiego le mie scelte."),
                 promiseOption(
                     ConversationTone.PROMETTI,
                     "Dalla prossima giochi, e non per una partita sola.",
                     PromiseType.TITOLARE_PER_PARTITE, target = 4, window = 8,
                 ),
                 option(ConversationTone.SFIDA, "Prenditelo, il posto. In allenamento."),
-                option(ConversationTone.RIMPROVERA, "Se non giochi un motivo c'e', e lo sai."),
+                option(ConversationTone.RIMPROVERA, "Se non giochi un motivo c'è, e lo sai."),
             )
 
             ConversationTopic.CONTRATTO_IN_SCADENZA -> listOf(
-                option(ConversationTone.INCORAGGIA, "Per me il tuo posto qui non e' in discussione."),
+                option(ConversationTone.INCORAGGIA, "Per me il tuo posto qui non è in discussione."),
                 option(ConversationTone.SPIEGA, "Parliamo di numeri con calma, ma voglio che resti."),
                 promiseOption(
                     ConversationTone.PROMETTI,
@@ -181,16 +181,16 @@ object ConversationEngine {
             )
 
             ConversationTopic.CAPITANO -> listOf(
-                option(ConversationTone.SFIDA, "Tirali su tu, e' per questo che porti la fascia."),
+                option(ConversationTone.SFIDA, "Tirali su tu, è per questo che porti la fascia."),
                 option(ConversationTone.SPIEGA, "Ti dico cosa non sta funzionando, e cosa ti chiedo."),
                 option(ConversationTone.INCORAGGIA, "Ho ancora fiducia in questo gruppo, e in te."),
-                option(ConversationTone.RIMPROVERA, "Da un capitano mi aspetto di piu' di cosi'."),
+                option(ConversationTone.RIMPROVERA, "Da un capitano mi aspetto di più di così."),
             )
 
             // Un complimento e' l'unico caso in cui rimproverare non compare: non esiste il
             // modo di andare male, esiste solo di andare meno bene.
             ConversationTopic.GRANDE_PRESTAZIONE -> listOf(
-                option(ConversationTone.INCORAGGIA, "Bravo davvero. Continua cosi'."),
+                option(ConversationTone.INCORAGGIA, "Bravo davvero. Continua così."),
                 option(ConversationTone.SFIDA, "Adesso fallo ogni domenica."),
                 option(ConversationTone.SPIEGA, "Ti dico cosa hai fatto meglio degli altri."),
             )
@@ -207,8 +207,8 @@ object ConversationEngine {
             )
 
             ConversationTopic.POCO_MINUTAGGIO -> listOf(
-                option(ConversationTone.SPIEGA, "In questo momento davanti a te c'e' chi sta meglio."),
-                option(ConversationTone.INCORAGGIA, "Il tuo momento arrivera', continua cosi'."),
+                option(ConversationTone.SPIEGA, "In questo momento davanti a te c'è chi sta meglio."),
+                option(ConversationTone.INCORAGGIA, "Il tuo momento arriverà, continua così."),
                 promiseOption(
                     ConversationTone.PROMETTI,
                     "Ti garantisco cinque partite da titolare.",
@@ -219,12 +219,12 @@ object ConversationEngine {
 
             ConversationTopic.PRESTAZIONI_SCARSE -> listOf(
                 option(ConversationTone.INCORAGGIA, "Capita a tutti, ne uscirai."),
-                option(ConversationTone.RIMPROVERA, "Cosi' non va. Mi aspetto molto di piu'."),
+                option(ConversationTone.RIMPROVERA, "Così non va. Mi aspetto molto di più."),
                 option(ConversationTone.SFIDA, "Fammi ricredere nella prossima partita."),
             )
 
             ConversationTopic.RICHIESTA_CESSIONE -> listOf(
-                option(ConversationTone.SPIEGA, "Per me sei importante, ti spiego perche'."),
+                option(ConversationTone.SPIEGA, "Per me sei importante, ti spiego perché."),
                 promiseOption(
                     ConversationTone.PROMETTI,
                     "Resta fino a fine stagione e poi ti lascio andare.",
@@ -272,7 +272,7 @@ object ConversationEngine {
         spontanea: Boolean = false,
     ): ConversationOutcome {
         if (!rules.conversationsEnabled) {
-            return ConversationOutcome(player, 0, "Non c'e' molto da dire.")
+            return ConversationOutcome(player, 0, "Non c'è molto da dire.")
         }
 
         val base = baseEffect(option.tone)
@@ -334,7 +334,7 @@ object ConversationEngine {
             val delta = StrictMath.round(14 * player.traits.moraleVolatility()).toInt()
             ConversationOutcome(
                 player.withMorale(player.morale + delta), delta,
-                "Hai mantenuto la parola. ${player.shortName} non se lo dimentichera'.",
+                "Hai mantenuto la parola. ${player.shortName} non se lo dimenticherà.",
             )
         }
         PromiseStatus.TRADITA -> {

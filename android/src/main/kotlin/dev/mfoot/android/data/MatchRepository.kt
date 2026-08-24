@@ -81,7 +81,7 @@ object MatchRepository {
 
             val result = row["match_results"].let { if (it.isArray) it[0] else it }
             if (!result.exists) {
-                return@then ApiResult.Error("Questa partita non e' ancora stata giocata.")
+                return@then ApiResult.Error("Questa partita non è ancora stata giocata.")
             }
 
             val timeline = result["timeline"]

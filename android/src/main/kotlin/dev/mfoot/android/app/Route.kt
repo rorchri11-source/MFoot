@@ -91,7 +91,7 @@ sealed interface Route {
             is Regolamento -> sezione.label
             Mercati -> "Finestre di mercato"
             Competizioni -> "Competizioni"
-            RegistroAdmin -> "Registro attivita'"
+            RegistroAdmin -> "Registro attività"
             is Rosa -> "Rosa"
             is Formazione -> "Formazione"
             is Giocatore -> row.player.fullName

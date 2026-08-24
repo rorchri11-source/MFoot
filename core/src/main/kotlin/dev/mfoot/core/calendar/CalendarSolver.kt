@@ -121,8 +121,8 @@ object CalendarSolver {
 
         val leftovers = queues.values.flatten()
         if (leftovers.isNotEmpty()) {
-            warnings += "Non c'e' stato spazio per ${leftovers.size} turni: " +
-                "servono piu' giorni, piu' fasce orarie o piu' partite al giorno."
+            warnings += "Non c'è stato spazio per ${leftovers.size} turni: " +
+                "servono più giorni, più fasce orarie o più partite al giorno."
         }
 
         return Schedule(fixtures, leftovers, warnings, usedSlots)

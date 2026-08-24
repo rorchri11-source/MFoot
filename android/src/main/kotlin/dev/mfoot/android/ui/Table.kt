@@ -19,11 +19,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mfoot.android.ui.icons.MFootIcons
+import dev.mfoot.android.ui.kit.CrestBadge
+import androidx.compose.foundation.layout.size
 import dev.mfoot.android.app.TableState
 import dev.mfoot.android.app.TableTab
 import dev.mfoot.android.data.MatchRow
@@ -90,7 +96,7 @@ fun TableScreen(
 
             state.tab == TableTab.CLASSIFICA && view.rows.isEmpty() ->
                 Center(
-                    "Questa competizione non ha una classifica: e' a eliminazione. " +
+                    "Questa competizione non ha una classifica: è a eliminazione. " +
                         "Guarda il calendario.",
                     MFootColors.ink3,
                 )
@@ -102,15 +108,7 @@ fun TableScreen(
 
 @Composable
 private fun Center(text: String, color: androidx.compose.ui.graphics.Color) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text,
-            style = MFootType.secondary,
-            color = color,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 40.dp),
-        )
-    }
+    Vuoto(text, icona = if (color == MFootColors.gamble) MFootIcons.info else MFootIcons.medaglia)
 }
 
 @Composable
@@ -140,6 +138,7 @@ private fun Content(
                     mine = row.club.value == state.myClubId,
                 )
             }
+            item { TableFooter() }
             item { Spacer(Modifier.height(28.dp)) }
         }
 
@@ -148,8 +147,13 @@ private fun Content(
         if (tab == TableTab.CALENDARIO) {
             matches.groupBy { it.round }.toSortedMap().forEach { (round, ofRound) ->
                 item {
-                    Column(Modifier.padding(MFootSpacing.section, 16.dp, MFootSpacing.section, 8.dp)) {
-                        Label(ofRound.firstOrNull()?.roundLabel?.takeIf { it.isNotBlank() } ?: "Turno $round")
+                    Column {
+                        Spacer(Modifier.height(12.dp))
+                        Banda(
+                            ofRound.firstOrNull()?.roundLabel?.takeIf { it.isNotBlank() }
+                                ?: "Turno $round",
+                        )
+                        Spacer(Modifier.height(8.dp))
                     }
                 }
                 items(ofRound, key = { it.id }) { match ->
@@ -168,22 +172,32 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexed(
     content: @Composable (Int) -> Unit,
 ) = items(count) { content(it) }
 
+/**
+ * La testata blu della classifica.
+ *
+ * Nel riferimento la tabella e' una scheda unica con il cappello blu: le colonne si
+ * leggono perche' il colore le stacca dalle righe, non perche' ci sia una linea sotto.
+ * Gli angoli tondi solo in alto — sotto continua la tabella, e arrotondarli li' spezzerebbe
+ * la scheda in due.
+ */
 @Composable
 private fun TableHeader() {
     Row(
         Modifier
+            .padding(horizontal = MFootSpacing.section)
             .fillMaxWidth()
-            .padding(horizontal = MFootSpacing.section, vertical = 8.dp),
+            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+            .background(MFootColors.blue)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(Modifier.width(26.dp))
-        Label("Squadra", Modifier.weight(1f))
+        Label("Squadra", Modifier.weight(1f), color = Color.White)
         listOf("G", "V", "N", "P", "DR").forEach {
-            Label(it, Modifier.width(26.dp).padding(start = 2.dp))
+            Label(it, Modifier.width(26.dp).padding(start = 2.dp), color = Color.White)
         }
-        Label("PT", Modifier.width(30.dp))
+        Label("PT", Modifier.width(30.dp), color = Color.White)
     }
-    Hairline()
 }
 
 /**
@@ -207,65 +221,146 @@ private fun TableRow(
 ) {
     Row(
         Modifier
+            .padding(horizontal = MFootSpacing.section)
             .fillMaxWidth()
-            .background(if (mine) MFootColors.elite.copy(alpha = 0.07f) else MFootColors.bg)
-            .padding(horizontal = MFootSpacing.section, vertical = 10.dp),
+            .background(MFootColors.core),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            position.toString(),
-            style = MFootType.value,
-            color = if (position <= 3) MFootColors.elite else MFootColors.ink3,
-            modifier = Modifier.width(26.dp),
+        // La barretta blu segna la propria, come nell'elenco squadre. Prima era un fondo
+        // appena schiarito: su una tabella gia' scura, con venti righe, non si vedeva.
+        Box(
+            Modifier
+                .width(4.dp)
+                .height(42.dp)
+                .background(if (mine) MFootColors.blue else Color.Transparent),
         )
-        Text(
-            name,
-            style = MFootType.rowTitle,
-            color = if (mine) MFootColors.elite else MFootColors.ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        listOf(played, won, drawn, lost, goalsFor - goalsAgainst).forEach {
+        Row(
+            Modifier.padding(start = 8.dp, end = 12.dp, top = 11.dp, bottom = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                it.toString(),
-                style = MFootType.chip,
-                color = MFootColors.ink3,
-                modifier = Modifier.width(26.dp).padding(start = 2.dp),
+                position.toString(),
+                style = MFootType.value,
+                color = if (position <= 3) MFootColors.elite else MFootColors.ink3,
+                modifier = Modifier.width(26.dp),
+            )
+            Text(
+                name,
+                style = MFootType.rowTitle,
+                color = if (mine) MFootColors.elite else MFootColors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            listOf(played, won, drawn, lost, goalsFor - goalsAgainst).forEach {
+                Text(
+                    it.toString(),
+                    style = MFootType.chip,
+                    color = MFootColors.ink2,
+                    modifier = Modifier.width(26.dp).padding(start = 2.dp),
+                )
+            }
+            Text(
+                points.toString(),
+                style = MFootType.overallRow,
+                color = MFootColors.elite,
+                modifier = Modifier.width(30.dp),
             )
         }
-        Text(
-            points.toString(),
-            style = MFootType.overallRow,
-            color = MFootColors.ink,
-            modifier = Modifier.width(30.dp),
-        )
     }
-    Hairline()
+    Box(
+        Modifier
+            .padding(horizontal = MFootSpacing.section)
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(MFootColors.bg),
+    )
 }
 
+/**
+ * Un lato della scheda partita: stemma sopra, nome sotto.
+ *
+ * Lo stemma e' quello vero, disegnato dal proprietario. Nel riferimento e' il pezzo che
+ * rende il calendario leggibile a colpo d'occhio: due nomi affiancati si confondono, due
+ * stemmi no — ed e' il motivo per cui i club hanno uno stemma.
+ */
+@Composable
+private fun Squadra(state: TableState, clubId: Long, mine: Boolean, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        val crest = state.crestOf(clubId)
+        if (crest != null) {
+            CrestBadge(crest, Modifier.size(44.dp), state.shortOf(clubId))
+        } else {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(MFootColors.bg),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(state.shortOf(clubId), style = MFootType.value, color = MFootColors.ink3)
+            }
+        }
+        Spacer(Modifier.height(7.dp))
+        Text(
+            state.clubName(clubId),
+            style = MFootType.secondary,
+            color = if (mine) MFootColors.ink else MFootColors.ink2,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Chiude la scheda della classifica: sono gli angoli tondi in fondo alla tabella. */
+@Composable
+private fun TableFooter() {
+    Box(
+        Modifier
+            .padding(horizontal = MFootSpacing.section)
+            .fillMaxWidth()
+            .height(18.dp)
+            .clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
+            .background(MFootColors.core),
+    )
+}
+
+/**
+ * Una partita del calendario.
+ *
+ * Le due squadre affiancate con il risultato in mezzo, come nel riferimento, e non
+ * «Casa — Trasferta» su una riga sola: con due nomi lunghi quella riga si troncava a
+ * meta' e non si capiva piu' chi giocasse contro chi.
+ */
 @Composable
 private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> Unit) {
     val mine = match.homeClubId == state.myClubId || match.awayClubId == state.myClubId
 
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(if (mine) MFootColors.elite.copy(alpha = 0.05f) else MFootColors.bg)
-            // Solo le giocate si aprono: una partita che deve ancora cominciare non ha
-            // niente da far rivedere.
-            .then(if (match.played) Modifier.clickable { onOpen(match) } else Modifier)
-            .padding(horizontal = MFootSpacing.section, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Scheda(
+        Modifier.padding(horizontal = MFootSpacing.section, vertical = 4.dp),
+        // Solo le giocate si aprono: una partita che deve ancora cominciare non ha
+        // niente da far rivedere.
+        onClick = if (match.played) ({ onOpen(match) }) else null,
+        evidenziata = mine,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                "${state.clubName(match.homeClubId)} — ${state.clubName(match.awayClubId)}",
-                style = MFootType.rowTitle,
-                color = if (mine) MFootColors.ink else MFootColors.ink2,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Squadra(state, match.homeClubId, mine, Modifier.weight(1f))
+                Text(
+                    match.scoreline,
+                    style = if (match.played) MFootType.price else MFootType.chip,
+                    color = if (match.played) MFootColors.elite else MFootColors.ink3,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp)
+                        .clip(MFootShapes.pill)
+                        .background(MFootColors.bg)
+                        .padding(horizontal = 13.dp, vertical = 7.dp),
+                )
+                Squadra(state, match.awayClubId, mine, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(6.dp))
             Text(
                 if (match.played) {
                     "tocca per rivederla"
@@ -274,25 +369,9 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
                 },
                 style = MFootType.chip,
                 color = if (match.played) MFootColors.elite else MFootColors.ink3,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
-
-        Text(
-            match.scoreline,
-            style = if (match.played) MFootType.price else MFootType.chip,
-            color = if (match.played) MFootColors.ink else MFootColors.ink3,
-            modifier = Modifier
-                .background(
-                    if (match.played) MFootColors.core else MFootColors.bg,
-                    MFootShapes.field,
-                )
-                .border(
-                    1.dp,
-                    if (match.played) MFootColors.lineStrong else MFootColors.line,
-                    MFootShapes.field,
-                )
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        )
     }
-    Hairline()
 }

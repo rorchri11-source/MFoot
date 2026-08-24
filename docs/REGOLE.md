@@ -104,6 +104,31 @@ avversario.
 
 ## L'interfaccia
 
+**L'aspetto di MFoot è quello del riferimento allegato il 2026-08-23.**
+Venticinque schermate di un'altra app, consegnate come modello. Blu notte di fondo, barra
+blu in cima che colora anche la barra di stato, schede **più scure** del fondo e senza
+contorno, pulsanti lavanda pieni con testo blu scuro, angoli larghi, icone disegnate.
+*Detta il 2026-08-23 · [`docs/DESIGN-SYSTEM.md`](DESIGN-SYSTEM.md), `ui/theme/Theme.kt`*
+
+**Il verde non esiste più, nemmeno nella scala di valutazione.**
+Era l'accento dell'app e insieme il gradino alto della scala — due mestieri per un colore
+solo. Chiesto esplicitamente che sparisse dappertutto: adesso i quattro gradini sono
+lavanda, bianco freddo, grigio, grigio spento. La proprietà che conta resta quella di
+sempre — **si deve poter leggere una scheda senza leggere un numero** — e i gradini sono
+sempre tre e netti.
+*Detta il 2026-08-23 · `MFootColors.rating`*
+
+**Del riferimento si copia anche la navigazione, non solo l'aspetto.**
+Chiesto per intero. Barra in basso con i cinque posti nell'ordine e con le icone del
+modello (casa, maglia, calendario, medaglia, e il carrello dove il modello ha «Video», che
+MFoot non ha); menu laterale con la testata a gradiente e i tre gruppi **Setup**, **Gioca**,
+**Gestione**.
+Una sola eccezione, e vale la pena saperla: nel modello Setup è un gruppo da amministratore,
+qui **«Profilo lega» e «Partecipanti» le vedono tutti**. Non configurano niente, raccontano
+— che lega è questa, chi c'è dentro, chi si è iscritto e non ha ancora fondato — e sono
+precisamente le due schermate che serve aprire quando un amico dice «io ti vedo e tu no».
+*Detta il 2026-08-23 · `ui/shell/Shell.kt`*
+
 **Niente dev'essere dato per scontato.**
 Se un dato esiste nel database e decide qualcosa, deve stare scritto in una schermata.
 Vale per: la stamina, la divisione in cui si gioca, la formazione degli avversari, a quale

@@ -26,10 +26,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.MyLeaguesState
 import dev.mfoot.android.data.LeagueCard
+import dev.mfoot.android.ui.Cartellino
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.MFootField
 import dev.mfoot.android.ui.Notice
+import dev.mfoot.android.ui.PrimaryButton
+import dev.mfoot.android.ui.Scheda
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -82,13 +85,13 @@ fun MieLegheScreen(
             return@Column
         }
 
-        Label("${stato.leghe.size} leghe")
+        Label(if (stato.leghe.size == 1) "1 lega" else "${stato.leghe.size} leghe")
         Spacer(Modifier.height(4.dp))
         Text(
             if (stato.leghe.size <= 1) {
                 "Sei in una lega sola: tutto quello che vedi succede qui."
             } else {
-                "Sei in piu' di una lega. L'app ne apre una alla volta — quella marcata " +
+                "Sei in più di una lega. L'app ne apre una alla volta — quella marcata " +
                     "«aperta adesso» — e le altre continuano per conto loro."
             },
             style = MFootType.chip,
@@ -109,7 +112,7 @@ fun MieLegheScreen(
 
         Spacer(Modifier.height(MFootSpacing.section))
         Text(
-            "Se un amico non compare fra gli iscritti di questa lega, e' entrato in " +
+            "Se un amico non compare fra gli iscritti di questa lega, è entrato in " +
                 "un'altra: il codice che ha usato non era questo. Mandagli il codice qui " +
                 "sopra e fallo rientrare.",
             style = MFootType.chip,
@@ -121,20 +124,8 @@ fun MieLegheScreen(
 
 @Composable
 private fun Riga(lega: LeagueCard, onApri: (Long) -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(
-                if (lega.current) MFootColors.elite.copy(alpha = 0.08f) else MFootColors.core,
-                MFootShapes.field,
-            )
-            .border(
-                1.dp,
-                if (lega.current) MFootColors.elite.copy(alpha = 0.45f) else MFootColors.line,
-                MFootShapes.field,
-            )
-            .padding(14.dp),
-    ) {
+    Scheda(evidenziata = lega.current) {
+    Column(Modifier.padding(start = if (lega.current) 10.dp else 14.dp, end = 14.dp, top = 14.dp, bottom = 14.dp)) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(
                 lega.name,
@@ -145,7 +136,14 @@ private fun Riga(lega: LeagueCard, onApri: (Long) -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             if (lega.current) {
-                Text("aperta adesso", style = MFootType.chip, color = MFootColors.elite)
+                // Lavanda pieno, non lavanda trasparente: al 18% su una scheda scura
+                // veniva fuori un grigio, e il cartellino che dovrebbe dire «sei qui»
+                // sembrava spento come tutto il resto.
+                Cartellino(
+                    "aperta adesso",
+                    fondo = MFootColors.elite,
+                    inchiostro = MFootColors.onAccent,
+                )
             }
         }
 
@@ -177,9 +175,10 @@ private fun Riga(lega: LeagueCard, onApri: (Long) -> Unit) {
         }
 
         if (!lega.current) {
-            Spacer(Modifier.height(10.dp))
-            GhostButton("Apri questa lega", onClick = { onApri(lega.id) })
+            Spacer(Modifier.height(12.dp))
+            PrimaryButton("Apri questa lega", onClick = { onApri(lega.id) })
         }
+    }
     }
 }
 
@@ -198,7 +197,7 @@ private fun CambiaCodice(stato: MyLeaguesState, onCambia: (String) -> Unit) {
     Label("Il codice di questa lega")
     Spacer(Modifier.height(6.dp))
     Text(
-        "Cambiarlo non butta fuori nessuno: chi e' gia' dentro resta. Vale solo per chi " +
+        "Cambiarlo non butta fuori nessuno: chi è già dentro resta. Vale solo per chi " +
             "entra da adesso in poi.",
         style = MFootType.chip,
         color = MFootColors.ink3,

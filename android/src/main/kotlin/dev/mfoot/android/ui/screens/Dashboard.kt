@@ -1,7 +1,6 @@
 package dev.mfoot.android.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,14 +12,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.CompetizioniMie
@@ -32,10 +37,16 @@ import dev.mfoot.android.app.TabSquadra
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Notice
 import dev.mfoot.android.ui.PrimaryButton
-import dev.mfoot.android.ui.kit.Kit
+import dev.mfoot.android.ui.Avanzamento
+import dev.mfoot.android.ui.Cartellino
+import dev.mfoot.android.ui.Scheda
+import dev.mfoot.android.ui.Spiegazione
+import dev.mfoot.android.ui.Striscia
+import dev.mfoot.android.ui.Tondo
+import dev.mfoot.android.ui.Vuoto
+import dev.mfoot.android.ui.icons.MFootIcons
 import dev.mfoot.android.ui.kit.Shirt
 import dev.mfoot.android.ui.theme.MFootColors
-import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.core.model.Money
@@ -53,6 +64,13 @@ import dev.mfoot.core.objectives.ObjectiveStatus
  * Non ci sta un riassunto di tutto: una dashboard che mostra dodici riquadri non fa
  * risparmiare tempo, lo fa perdere, perche' obbliga a cercare fra dodici cose quale
  * riguarda adesso.
+ *
+ * ## Il cielo dietro la maglia
+ *
+ * La maglia sta su una fascia blu che arriva ai bordi dello schermo, e il resto scorre
+ * sotto sul fondo scuro. Prima era su fondo scuro come tutto il resto, e il risultato era
+ * che la cosa piu' identitaria dell'app — la maglia che il proprietario ha disegnato —
+ * pesava quanto una riga di elenco.
  */
 @Composable
 fun DashboardScreen(
@@ -72,107 +90,165 @@ fun DashboardScreen(
         onCaricaObiettivi()
     }
 
+    // Chi non ha ancora un club esce di qui: la sua schermata deve occupare tutta
+    // l'altezza per mettere il pulsante in fondo, e dentro una colonna che scorre
+    // l'altezza dello schermo non esiste — il vincolo e' infinito, `fillMaxSize` non si
+    // applica, e il pulsante finirebbe appiccicato sotto al testo a meta' pagina.
+    if (club == null) {
+        SenzaClub(onFoundClub)
+        return
+    }
+
     Column(
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg)
-            .verticalScroll(rememberScrollState())
-            .padding(MFootSpacing.section),
+            .verticalScroll(rememberScrollState()),
     ) {
-        state.errore?.let {
-            Notice(it, MFootColors.gamble)
-            Spacer(Modifier.height(MFootSpacing.related))
-        }
-        state.avviso?.let {
-            Notice(it, MFootColors.elite, Modifier.clickable(onClick = onDismissNotice))
-            Spacer(Modifier.height(MFootSpacing.related))
-        }
+        // Il cielo: fondo blu a tutta larghezza, nome del club, maglia sulla cupola.
+        Box(Modifier.fillMaxWidth().background(MFootColors.hero)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 76.dp)
+                    .padding(top = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    club.name,
+                    style = MFootType.playerName,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    club.ownerName ?: "il tuo club",
+                    style = MFootType.secondary,
+                    color = Color.White.copy(alpha = 0.80f),
+                )
+            }
 
-        if (club == null) {
-            SenzaClub(onFoundClub)
-            return@Column
-        }
-
-        Text(
-            club.name,
-            style = MFootType.playerName,
-            color = MFootColors.ink,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            club.ownerName ?: "il tuo club",
-            style = MFootType.chip,
-            color = MFootColors.ink3,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(20.dp))
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            // La maglia del club, non quella predefinita. Disegnarne una fissa qui voleva
-            // dire che i colori scelti alla fondazione si vedevano una volta sola, durante
-            // la scelta, e poi mai piu': salvati, e invisibili.
-            Shirt(club.kit, Modifier.size(148.dp, 166.dp), showNumber = false)
-        }
-        Spacer(Modifier.height(24.dp))
-
-        val rosa = state.lega.squadOf(club.id)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Numero(
-                valore = Money(club.available).format(),
-                etichetta = "Disponibili",
-                colore = if (club.available > 0) MFootColors.elite else MFootColors.gamble,
-                modifier = Modifier.weight(1f),
+            // La cupola dietro la maglia.
+            //
+            // E' il pezzo che fa sembrare la maglia **appoggiata** invece che incollata
+            // sul blu. Un solo tono di bianco all'8%: piu' di cosi' e diventa una forma a
+            // se', che ruberebbe l'occhio alla maglia che sta li' per essere guardata.
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(122.dp)
+                    .clip(RoundedCornerShape(topStartPercent = 55, topEndPercent = 55))
+                    .background(Color.White.copy(alpha = 0.08f)),
             )
-            Numero(
-                valore = rosa.size.toString(),
-                etichetta = "In rosa",
-                colore = if (rosa.size >= state.lega.league.config.setup.minSquadSize) {
-                    MFootColors.ink
-                } else {
-                    MFootColors.gamble
-                },
-                modifier = Modifier.weight(1f),
-            )
-            Numero(
-                valore = state.myAuctions.size.toString(),
-                etichetta = "Tue aste",
-                colore = if (state.myAuctions.isEmpty()) MFootColors.ink3 else MFootColors.gamble,
-                modifier = Modifier.weight(1f),
-            )
+
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 14.dp),
+            ) {
+                Shirt(club.kit, Modifier.size(140.dp, 158.dp), showNumber = false)
+            }
+
+            // I tre tondi: le tre cose che si fanno tornando a casa.
+            //
+            // Non ripetono le scorciatoie qui sotto, le anticipano — quelle portano un
+            // conteggio ("3 aste in corso") che un tondo non puo' scrivere, e servono a
+            // decidere *se* aprire. Questi servono a chi ha gia' deciso.
+            Column(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(MFootSpacing.section),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Tondo(
+                    MFootIcons.campo,
+                    { onNavigate(Route.Squadra(TabSquadra.CAMPO)) },
+                    fondo = Color.White,
+                    inchiostro = MFootColors.blue,
+                    descrizione = "Schiera la squadra",
+                )
+                Tondo(
+                    MFootIcons.carrello,
+                    { onNavigate(Route.Mercato(TabMercato.ASTE)) },
+                    fondo = MFootColors.gamble,
+                    inchiostro = MFootColors.onAccent,
+                    descrizione = "Mercato",
+                )
+                Tondo(
+                    MFootIcons.persone,
+                    { onNavigate(Route.Lega(TabLega.SQUADRE)) },
+                    fondo = MFootColors.elite,
+                    inchiostro = MFootColors.onAccent,
+                    descrizione = "Le altre squadre",
+                )
+            }
         }
 
-        // La rosa incompleta non e' un dettaglio: senza il minimo, la squadra non scende in
-        // campo e le partite si rinviano. Va detto qui, non scoperto dal registro del tick.
-        val minimo = state.lega.league.config.setup.minSquadSize
-        if (rosa.size < minimo) {
-            Spacer(Modifier.height(MFootSpacing.section))
-            Notice(
-                "Ti servono ${minimo - rosa.size} giocatori per arrivare a $minimo: " +
-                    "sotto il minimo la squadra non scende in campo.",
-                MFootColors.gamble,
+        Column(Modifier.padding(MFootSpacing.section)) {
+            state.errore?.let {
+                Notice(it, MFootColors.gamble)
+                Spacer(Modifier.height(MFootSpacing.related))
+            }
+            state.avviso?.let {
+                Notice(it, MFootColors.elite, Modifier.clickable(onClick = onDismissNotice))
+                Spacer(Modifier.height(MFootSpacing.related))
+            }
+
+            val rosa = state.lega.squadOf(club.id)
+            val minimo = state.lega.league.config.setup.minSquadSize
+            Striscia(
+                listOf(
+                    Money(club.available).formatShort() to "Disponibili",
+                    rosa.size.toString() to "In rosa",
+                    state.myAuctions.size.toString() to "Tue aste",
+                ),
             )
-            Spacer(Modifier.height(MFootSpacing.related))
-            PrimaryButton(text = "Vai al mercato", onClick = { onNavigate(Route.Mercato(TabMercato.SVINCOLATI)) })
+
+            // La rosa incompleta non e' un dettaglio: senza il minimo, la squadra non
+            // scende in campo e le partite si rinviano. Va detto qui, non scoperto dal
+            // registro del tick.
+            if (rosa.size < minimo) {
+                Spacer(Modifier.height(MFootSpacing.section))
+                Notice(
+                    "Ti servono ${minimo - rosa.size} giocatori per arrivare a $minimo: " +
+                        "sotto il minimo la squadra non scende in campo.",
+                    MFootColors.gamble,
+                )
+                Spacer(Modifier.height(MFootSpacing.related))
+                PrimaryButton(
+                    text = "Vai al mercato",
+                    onClick = { onNavigate(Route.Mercato(TabMercato.SVINCOLATI)) },
+                    icona = MFootIcons.carrello,
+                )
+            }
+
+            Spacer(Modifier.height(28.dp))
+            ACosaGiochi(state, competizioni, onNavigate)
+
+            Spacer(Modifier.height(28.dp))
+            Obiettivi(state, obiettivi, onNavigate)
+
+            Spacer(Modifier.height(28.dp))
+            Label("Scorciatoie")
+            Spacer(Modifier.height(10.dp))
+            Riga("Schiera la squadra", "Campo, modulo, panchina", MFootIcons.campo) {
+                onNavigate(Route.Squadra(TabSquadra.CAMPO))
+            }
+            Riga("Aste aperte", "${state.auctions.size} in corso nella lega", MFootIcons.cartellino) {
+                onNavigate(Route.Mercato(TabMercato.ASTE))
+            }
+            Riga("Classifica", "Punti e calendario", MFootIcons.medaglia) {
+                onNavigate(Route.Lega(TabLega.CLASSIFICA))
+            }
+            Riga("Le altre squadre", "${state.lega.clubs.size} club", MFootIcons.persone) {
+                onNavigate(Route.Lega(TabLega.SQUADRE))
+            }
+
+            Spacer(Modifier.height(30.dp))
         }
-
-        Spacer(Modifier.height(28.dp))
-        ACosaGiochi(state, competizioni, onNavigate)
-
-        Spacer(Modifier.height(28.dp))
-        Obiettivi(state, obiettivi, onNavigate)
-
-        Spacer(Modifier.height(28.dp))
-        Label("Scorciatoie")
-        Spacer(Modifier.height(10.dp))
-        Scorciatoia("Schiera la squadra", "Campo, modulo, panchina") { onNavigate(Route.Squadra(TabSquadra.CAMPO)) }
-        Scorciatoia("Aste aperte", "${state.auctions.size} in corso nella lega") { onNavigate(Route.Mercato(TabMercato.ASTE)) }
-        Scorciatoia("Classifica", "Punti e calendario") { onNavigate(Route.Lega(TabLega.CLASSIFICA)) }
-        Scorciatoia("Le altre squadre", "${state.lega.clubs.size} club") { onNavigate(Route.Lega(TabLega.SQUADRE)) }
-
-        Spacer(Modifier.height(30.dp))
     }
 }
 
@@ -221,6 +297,7 @@ private fun ACosaGiochi(
                     append(" · Primavera in ").append(divisioni.nameOf(it.divisionLevel))
                 }
             },
+            icona = MFootIcons.divisioni,
         ) { onNavigate(Route.Lega(TabLega.SQUADRE)) }
     }
 
@@ -231,28 +308,81 @@ private fun ACosaGiochi(
             color = MFootColors.ink3,
         )
 
-        mie.isEmpty() -> Text(
-            "Nessuna competizione in corso per il tuo club. Finche' l'admin non ne crea " +
-                "una, si gioca solo il mercato e le amichevoli.",
-            style = MFootType.chip,
-            color = MFootColors.ink3,
+        mie.isEmpty() -> Spiegazione(
+            "Non stai giocando nessun torneo",
+            "Finché l'admin non crea una competizione si gioca solo il mercato e le " +
+                "amichevoli: il campionato non esiste ancora, quindi in classifica non " +
+                "c'è niente da vedere.",
         )
 
         else -> mie.forEach { c ->
             val perPrimavera = primavera != null && club.id !in c.participants
-            Riga(
-                titolo = c.name,
-                dettaglio = buildString {
-                    append(c.type.label)
-                    append(" · ").append(c.participants.size).append(" squadre")
-                    if (c.fixtures > 0) {
-                        append(" · ").append(c.played).append(" di ").append(c.fixtures)
-                            .append(" partite giocate")
-                    }
-                    if (c.isFinished) append(" · finita")
-                    if (perPrimavera) append(" · e' della tua Primavera")
-                },
-            ) { onNavigate(Route.Lega(TabLega.CLASSIFICA)) }
+            Competizione(c, perPrimavera) { onNavigate(Route.Lega(TabLega.CLASSIFICA)) }
+        }
+    }
+}
+
+/**
+ * Una competizione con la sua barra di avanzamento.
+ *
+ * ## Perche' la barra e non «12 di 25 partite giocate»
+ *
+ * Perche' quella frase la si legge, questa la si vede. La domanda che ci si fa guardando
+ * un torneo in corso e' «a che punto siamo» — se e' l'inizio conviene comprare, se e' la
+ * fine conviene tenere i crediti — ed e' una domanda a cui una proporzione risponde meglio
+ * di due numeri da confrontare a mente.
+ *
+ * I dati sono quelli che `onCaricaCompetizioni` legge gia': nessuna lettura in piu'.
+ */
+@Composable
+private fun Competizione(
+    c: dev.mfoot.android.data.CompetitionInfo,
+    perPrimavera: Boolean,
+    onClick: () -> Unit,
+) {
+    Scheda(Modifier.padding(bottom = 10.dp), onClick) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    MFootIcons.coppa,
+                    contentDescription = null,
+                    tint = if (c.isFinished) MFootColors.ink3 else MFootColors.blue,
+                    modifier = Modifier.size(23.dp),
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        c.name,
+                        style = MFootType.rowTitle,
+                        color = MFootColors.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        buildString {
+                            append(c.type.label)
+                            append(" · ").append(c.participants.size).append(" squadre")
+                            if (perPrimavera) append(" · della tua Primavera")
+                        },
+                        style = MFootType.secondary,
+                        color = MFootColors.ink2,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (c.isFinished) Cartellino("finita")
+            }
+
+            if (c.fixtures > 0) {
+                Spacer(Modifier.height(14.dp))
+                Avanzamento(
+                    fatto = c.played,
+                    totale = c.fixtures,
+                    inizio = "${c.played} giocate",
+                    fine = "${c.fixtures} in tutto",
+                )
+            }
         }
     }
 }
@@ -292,6 +422,7 @@ private fun Obiettivi(
                 ObjectiveStatus.RAGGIUNTO -> "raggiunto · ${Money(riga.paid).formatShort()} incassati"
                 ObjectiveStatus.FALLITO -> "fallito · niente premio"
             },
+            icona = MFootIcons.stella,
         ) { onNavigate(Route.Obiettivi) }
     }
 
@@ -305,86 +436,61 @@ private fun Obiettivi(
     }
 }
 
+/**
+ * Una riga che porta altrove.
+ *
+ * Era due composable identici — `Riga` e `Scorciatoia` — con quattordici pixel di padding
+ * di differenza e nessun motivo per averla. Adesso e' uno, e la freccia e' un'icona invece
+ * del carattere `›`, che su certi telefoni veniva disegnato piu' piccolo del resto.
+ */
 @Composable
-private fun Riga(titolo: String, dettaglio: String, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(MFootColors.core, MFootShapes.field)
-            .border(1.dp, MFootColors.line, MFootShapes.field)
-            .clickable(onClick = onClick)
-            .padding(13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(titolo, style = MFootType.rowTitle, color = MFootColors.ink)
-            Spacer(Modifier.height(2.dp))
-            Text(dettaglio, style = MFootType.chip, color = MFootColors.ink3)
+private fun Riga(
+    titolo: String,
+    dettaglio: String,
+    icona: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    Scheda(Modifier.padding(bottom = 10.dp), onClick) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Icon(
+                icona,
+                contentDescription = null,
+                tint = MFootColors.blue,
+                modifier = Modifier.size(23.dp),
+            )
+            Column(Modifier.weight(1f)) {
+                Text(titolo, style = MFootType.rowTitle, color = MFootColors.ink)
+                Spacer(Modifier.height(2.dp))
+                Text(dettaglio, style = MFootType.secondary, color = MFootColors.ink2)
+            }
+            Icon(
+                MFootIcons.avanti,
+                contentDescription = null,
+                tint = MFootColors.ink3,
+                modifier = Modifier.size(18.dp),
+            )
         }
-        Text("›", style = MFootType.price, color = MFootColors.ink3)
     }
-    Spacer(Modifier.height(8.dp))
 }
 
 @Composable
 private fun SenzaClub(onFoundClub: () -> Unit) {
-    Spacer(Modifier.height(40.dp))
-    Text(
-        "Non hai ancora un club",
-        style = MFootType.playerName,
-        color = MFootColors.ink,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        "Scegli nome, maglia, e costruisci il giocatore che sei tu. " +
-            "Senza club non si compra, non si schiera e non si gioca.",
-        style = MFootType.secondary,
-        color = MFootColors.ink3,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(Modifier.height(28.dp))
-    PrimaryButton("Fonda il tuo club", onFoundClub)
-}
-
-@Composable
-private fun Numero(
-    valore: String,
-    etichetta: String,
-    colore: androidx.compose.ui.graphics.Color,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier
-            .background(MFootColors.core, MFootShapes.band)
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.band)
-            .padding(vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(valore, style = MFootType.price, color = colore)
-        Spacer(Modifier.height(3.dp))
-        Text(etichetta.uppercase(), style = MFootType.label, color = MFootColors.ink3)
-    }
-}
-
-@Composable
-private fun Scorciatoia(titolo: String, dettaglio: String, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(MFootColors.core, MFootShapes.field)
-            .border(1.dp, MFootColors.lineStrong, MFootShapes.field)
-            .clickable(onClick = onClick)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(titolo, style = MFootType.rowTitle, color = MFootColors.ink)
-            Text(dettaglio, style = MFootType.chip, color = MFootColors.ink3)
+    Box(Modifier.fillMaxSize().background(MFootColors.bg)) {
+        Vuoto(
+            "Non hai ancora un club.\n\nScegli nome, maglia, e costruisci il giocatore che " +
+                "sei tu. Senza club non si compra, non si schiera e non si gioca.",
+            icona = MFootIcons.maglia,
+        )
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(MFootSpacing.section),
+        ) {
+            PrimaryButton("Fonda il tuo club", onFoundClub, icona = MFootIcons.piu)
         }
-        Text("›", style = MFootType.price, color = MFootColors.ink3)
     }
-    Spacer(Modifier.height(8.dp))
 }

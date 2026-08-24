@@ -33,7 +33,7 @@ object PlayerRepository {
     /** Come per gli scambi: l'errore tecnico diventa la migrazione che manca. */
     private fun ApiResult<Unit>.mapMissingFunction(): ApiResult<Unit> = when {
         this is ApiResult.Error && message.contains("set_player_morale") -> ApiResult.Error(
-            "I colloqui hanno bisogno della migrazione 0010_conversations.sql, che non e' " +
+            "I colloqui hanno bisogno della migrazione 0010_conversations.sql, che non è " +
                 "ancora stata applicata a questo database.",
         )
         else -> this
@@ -102,7 +102,7 @@ object SquadRepository {
 
     private fun ApiResult<Unit>.mapMissing(): ApiResult<Unit> = when {
         this is ApiResult.Error && message.contains("set_squad") -> ApiResult.Error(
-            "La Primavera ha bisogno della migrazione 0017_primavera.sql, che non e' " +
+            "La Primavera ha bisogno della migrazione 0017_primavera.sql, che non è " +
                 "ancora stata applicata a questo database.",
         )
         else -> this

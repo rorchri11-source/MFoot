@@ -85,6 +85,39 @@ gradlew :android:assembleDebug
 | 41 | **Traguardi e offerte** | Obiettivi a multipli di cinque che pagano ogni scalino; l'asta dice «ha offerto» e quante squadre sono dentro |
 | 42 | **`docs/REGOLE.md`** | Le decisioni del proprietario in un posto solo, e un `CLAUDE.md` che le fa leggere a ogni sessione |
 | 43 | **L'app si aggiorna da sola** | Giro leggero ogni 30s, giro pieno quando serve. Non sbianca lo schermo e non tocca il lavoro in corso |
+| 44 | **Interfaccia rifatta** | Pelle nuova sul riferimento scelto dal proprietario: blu notte, barra blu, pulsanti lavanda, schede più scure del fondo, icone disegnate. Vedi [`docs/DESIGN-SYSTEM.md`](docs/DESIGN-SYSTEM.md) |
+
+### La riprogettazione del 2026-08-23
+
+Il proprietario ha allegato venticinque schermate di un'altra app e ha chiesto che MFoot
+somigliasse a quelle. Due cose valgono la pena di essere scritte.
+
+**È costata tre file, non trentacinque.** In tutta la cartella `ui/` c'erano **quattro**
+colori scritti a mano fuori dal tema: tutto il resto passava dai token, quindi riscrivere
+`Theme.kt` ha ridipinto ogni schermata insieme. Restano `Shell.kt` per il guscio e
+`Atoms.kt` per il vocabolario dei componenti, più le rifiniture dove la struttura era
+diversa. È la prova pratica della regola «nessun colore scritto a mano»: quel giorno è
+valsa settimane.
+
+**I nomi dei token non sono cambiati coi colori.** `elite` era verde e adesso è lavanda;
+`core` era più chiaro del fondo e adesso è più scuro. I nomi dicono il **ruolo**, e il
+ruolo non è cambiato: rinominarli avrebbe voluto dire toccare settecento punti di richiamo
+per ottenere esattamente lo stesso pixel.
+
+Due decisioni di gioco prese dal proprietario in quella sessione: **via il verde
+dappertutto**, scala di valutazione compresa (adesso lavanda / bianco / grigio / grigio
+spento), e **navigazione copiata dal riferimento**, non solo l'aspetto.
+
+**Il secondo giro, lo stesso giorno.** Alla prima consegna il proprietario ha chiesto
+«ancora più uguale, più vivace e complessa». Ne sono usciti: le **linguette sottolineate**
+al posto dei chip per le sezioni di un posto (un chip dice «filtro», una linguetta dice
+«dove sei»); la **testata ad archi** che sostituisce barra e nastro fuori dai cinque posti;
+il **riquadro viola** che spiega, al posto dei paragrafi grigi che non leggeva nessuno; la
+**barra di avanzamento** delle competizioni; il **selettore numerico**; la cupola e i tre
+tondi sulla maglia in Casa; gli **stemmi** nelle schede partita.
+
+I mockup in `docs/mockups/` sono del sistema **precedente** e non sono stati rifatti: se
+si riaprono, non sono più il riferimento.
 
 ### Numeri di bilanciamento raggiunti
 
@@ -361,5 +394,30 @@ Non refusi: difetti di logica che sarebbero arrivati fino in produzione.
     circa 8 minuti (build + elaborazione) contro una frequenza cron di 5 minuti. Le corse
     si sovrapponevano e GitHub cancellava i lavori in coda (un terzo delle esecuzioni era
     `cancelled`). La frequenza è ora portata a 10 minuti (`*/10 * * * *`).
+21. **Il menu laterale si riapriva da solo dopo ogni scelta.** `vai()` mette già
+    `drawerOpen = false`, e il guscio chiamava `onToggleDrawer()` subito dopo: il toggle
+    non confermava lo stato appena deciso, lo ribaltava. Toccare una voce chiudeva e
+    riapriva il menu nello stesso istante, quindi sembrava che non facesse niente — e la
+    schermata sotto era cambiata davvero. Trovato guardando uno screenshot, non da un test.
+22. **Quattro chip del mercato non facevano niente.** «Svincolati · Aste · Tutto il mondo ·
+    La mia rosa» stavano sopra la lista e chiamavano `onScope`, ma `Lista` nel Router impone
+    l'ambito che la rotta porta con sé a ogni ricomposizione — deve farlo, o chi entra da
+    «Svincolati» vedrebbe l'ultimo filtro lasciato attivo. I chip erano quindi inerti da
+    sempre, e per giunta ripetevano tre destinazioni già presenti nella riga sopra. Tolti
+    con tutto il cablaggio: `onScope` attraversava `MainActivity`, `Router` e il ViewModel
+    per finire in un comando che non poteva funzionare.
+23. **I chip delle schede scrivevano il nome dell'enum.** `Schede` aveva un'etichetta
+    facoltativa che ripiegava su `Enum.name`, e nessun punto di richiamo ne passava una:
+    sullo schermo si leggeva «SPOGLIATOIO», «OSSERVATORI». Adesso l'etichetta è
+    obbligatoria e il compilatore chiede quella giusta.
+24. **«Classifica» compariva tre volte sullo stesso schermo** indicando tre cose diverse: il
+    posto, il segmentato, e la vista interna della competizione. Le due viste si chiamano
+    ora «Punti» e «Partite» — dicono cosa si guarda invece di ripetere dove si è.
+25. **Le accentate erano scritte con l'apostrofo in tutto il testo visibile.** 176 fra
+    `velocita'`, `puo'`, `perche'`, `sara'`, `giu'`. Corrette con una macchina a stati che
+    distingue stringhe da commenti — i commenti il progetto li tiene in ASCII e restano
+    così. Restano intatti di proposito `po'`, i minuti di gioco (`dal 45'`) e le virgolette
+    semplici intorno ai nomi. Un test di `core` verificava una sottostringa di uno di quei
+    messaggi: aggiornata l'asserzione, non l'intento.
 
 

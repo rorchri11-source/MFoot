@@ -148,7 +148,7 @@ object StaffRepository {
     private fun esito(body: String): ApiResult<Unit> {
         val node = JsonNode.parse(body).let { if (it.asList().isNotEmpty()) it[0] else it }
         return if (node["ok"].bool(false)) ApiResult.Ok(Unit)
-        else ApiResult.Error(node["reason"].str("Non si puo' fare."))
+        else ApiResult.Error(node["reason"].str("Non si può fare."))
     }
 
     private fun ApiResult<Unit>.mapMissing(): ApiResult<Unit> = when {
@@ -156,7 +156,7 @@ object StaffRepository {
             listOf("assign_staff", "send_scout").any { message.contains(it) } ->
             ApiResult.Error(
                 "Lo staff ha bisogno della migrazione 0019_staff_e_scouting.sql, che non " +
-                    "e' ancora stata applicata a questo database.",
+                    "è ancora stata applicata a questo database.",
             )
         else -> this
     }

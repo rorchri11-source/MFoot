@@ -1,5 +1,6 @@
 package dev.mfoot.android.ui
 
+import dev.mfoot.android.ui.icons.MFootIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -105,26 +106,23 @@ fun AuctionList(
         Filtri(state, onFilter)
 
         if (visibili.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
+            Vuoto(
+                buildString {
+                    append(
                         when (state.auctionFilter) {
                             AuctionFilter.MIE -> "Non hai aperto nessuna asta."
                             AuctionFilter.ALTRUI -> "Le aste aperte le hai aperte tutte tu."
                             AuctionFilter.OFFERTE -> "Non hai offerto su nessuna asta."
                             AuctionFilter.TUTTE -> "Nessuna asta aperta."
                         },
-                        style = MFootType.secondary,
-                        color = MFootColors.ink3,
                     )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Ce ne sono ${state.auctions.size} in tutto: tocca «Tutte».",
-                        style = MFootType.chip,
-                        color = MFootColors.ink3,
-                    )
-                }
-            }
+                    if (state.auctions.isNotEmpty()) {
+                        append("\n\nCe ne sono ").append(state.auctions.size)
+                        append(" in tutto: tocca «Tutte».")
+                    }
+                },
+                icona = MFootIcons.cartellino,
+            )
             return@Column
         }
 
@@ -132,6 +130,7 @@ fun AuctionList(
             items(visibili, key = { it.auction.id }) { row ->
                 AuctionCard(row, myClubId, now) { onOpenBid(row) }
             }
+            item { Spacer(Modifier.height(20.dp)) }
         }
     }
 }
@@ -155,7 +154,7 @@ private fun Filtri(state: AppState.Dentro, onFilter: (AuctionFilter) -> Unit) {
     ) {
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             AuctionFilter.entries.forEach { filtro ->
                 val quante = state.quanteAste(filtro)
@@ -164,14 +163,7 @@ private fun Filtri(state: AppState.Dentro, onFilter: (AuctionFilter) -> Unit) {
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "${state.auctions.size} aste aperte in lega · ne stai guardando ${state.asteVisibili.size}",
-            style = MFootType.chip,
-            color = MFootColors.ink3,
-        )
     }
-    Hairline()
 }
 
 @Composable
@@ -179,22 +171,23 @@ private fun AuctionCard(row: AuctionRow, myClubId: Long?, now: Instant, onClick:
     val leading = row.auction.isLeading(myClubId)
     val involved = row.auction.hasMyBid
 
+    Scheda(
+        Modifier.padding(horizontal = MFootSpacing.section, vertical = 5.dp),
+        onClick = onClick,
+    ) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = MFootSpacing.section, vertical = 13.dp),
+        Modifier.padding(start = 12.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
                 .width(4.dp)
-                .height(38.dp)
+                .height(42.dp)
                 .background(
                     when {
                         leading -> MFootColors.elite
                         involved -> MFootColors.gamble
-                        else -> MFootColors.line
+                        else -> MFootColors.lineStrong
                     },
                     RoundedCornerShape(2.dp),
                 ),
@@ -274,31 +267,22 @@ private fun AuctionCard(row: AuctionRow, myClubId: Long?, now: Instant, onClick:
         // Lo stato della propria posizione prima del prezzo: e' la cosa che si cerca
         // scorrendo, e leggerla richiede meno di un secondo.
         if (involved) {
-            Text(
+            Cartellino(
                 if (leading) "in testa" else "superato",
-                style = MFootType.chip,
-                color = if (leading) MFootColors.elite else MFootColors.gamble,
-                modifier = Modifier
-                    .background(
-                        (if (leading) MFootColors.elite else MFootColors.gamble)
-                            .copy(alpha = 0.11f),
-                        RoundedCornerShape(6.dp),
-                    )
-                    .padding(horizontal = 7.dp, vertical = 3.dp),
+                fondo = (if (leading) MFootColors.elite else MFootColors.gamble)
+                    .copy(alpha = 0.16f),
+                inchiostro = if (leading) MFootColors.elite else MFootColors.gamble,
             )
             Spacer(Modifier.width(MFootSpacing.related))
         }
 
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                Money(row.auction.currentPrice).formatShort(),
-                style = MFootType.price,
-                color = MFootColors.ink,
-            )
-        }
+        Text(
+            Money(row.auction.currentPrice).formatShort(),
+            style = MFootType.price,
+            color = MFootColors.elite,
+        )
     }
-
-    Hairline()
+    }
 }
 
 /**
@@ -412,10 +396,10 @@ fun BidSheet(
         Spacer(Modifier.height(20.dp))
 
         when {
-            tooLow -> Notice("L'offerta minima e' ${Money(minimum).format()}.", MFootColors.gamble)
+            tooLow -> Notice("L'offerta minima è ${Money(minimum).format()}.", MFootColors.gamble)
             tooMuch -> Notice("Non hai abbastanza crediti disponibili.", MFootColors.gamble)
             row.auction.myMax != null -> Notice(
-                "La tua offerta massima ora e' ${row.auction.myMax}. Si puo' solo alzare.",
+                "La tua offerta massima ora è ${row.auction.myMax}. Si può solo alzare.",
                 MFootColors.ink2,
             )
         }
@@ -430,7 +414,7 @@ fun BidSheet(
         Spacer(Modifier.height(20.dp))
         Text(
             "L'asta si chiude fra ${row.auction.timeLeft()}. Un rilancio negli ultimi " +
-                "secondi la prolunga: vince chi valuta di piu', non chi ha il dito piu' veloce.",
+                "secondi la prolunga: vince chi valuta di più, non chi ha il dito più veloce.",
             style = MFootType.chip,
             color = MFootColors.ink3,
         )
@@ -536,7 +520,7 @@ private fun Cronologia(row: AuctionRow, storia: List<BidEvent>, myClubId: Long?)
 
     Spacer(Modifier.height(8.dp))
     Text(
-        "L'importo e' il prezzo a cui l'asta e' arrivata con quella mossa. Fin dove ognuno " +
+        "L'importo è il prezzo a cui l'asta è arrivata con quella mossa. Fin dove ognuno " +
             "sarebbe disposto a spingersi resta segreto fino alla chiusura: si legge poi, " +
             "nella scheda Concluse.",
         style = MFootType.chip,

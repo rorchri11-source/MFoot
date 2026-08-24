@@ -105,7 +105,7 @@ class KickoffRulesTest {
 
         val problemi = KickoffRules.problemiDiCalendario(calendario, adesso)
         assertEquals(1, problemi.size)
-        assertTrue(problemi.first().contains("gia' passato"))
+        assertTrue(problemi.first().contains("già passato"))
     }
 
     @Test

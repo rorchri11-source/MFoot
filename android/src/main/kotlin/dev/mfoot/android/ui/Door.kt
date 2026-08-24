@@ -153,7 +153,7 @@ private fun CreateForm(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "E' quello che darai agli altri per entrare.",
+            "è quello che darai agli altri per entrare.",
             style = MFootType.chip,
             color = MFootColors.ink3,
         )
@@ -219,11 +219,11 @@ private fun JoinForm(
             anteprima != null -> Anteprima(anteprima)
             state.anteprimaVuota -> Notice(
                 "Nessuna lega con questo codice. Controlla con chi te l'ha dato: " +
-                    "e' facile che sia il codice di un'altra sua lega.",
+                    "è facile che sia il codice di un'altra sua lega.",
                 MFootColors.gamble,
             )
             else -> GhostButton(
-                text = "Che lega e' questo codice?",
+                text = "Che lega è questo codice?",
                 onClick = { onPeek(codice) },
             )
         }
@@ -247,7 +247,7 @@ private fun JoinForm(
             Spacer(Modifier.height(10.dp))
             Text(
                 "Puoi entrare anche senza guardare, ma guardare costa un tocco e ti " +
-                    "risparmia di ritrovarti in una lega che non e' quella dei tuoi amici.",
+                    "risparmia di ritrovarti in una lega che non è quella dei tuoi amici.",
                 style = MFootType.chip,
                 color = MFootColors.ink3,
             )
@@ -345,10 +345,10 @@ private fun PresetCard(preset: ConfigPresets.Preset, selected: Boolean, onClick:
  */
 @Composable
 private fun Impostazioni(scelte: SetupChoices, onChange: (SetupChoices) -> Unit) {
-    Label("Come e' fatta la lega")
+    Label("Come è fatta la lega")
     Spacer(Modifier.height(4.dp))
     Text(
-        "Queste vanno decise adesso: dopo la creazione il mondo e' gia' generato. " +
+        "Queste vanno decise adesso: dopo la creazione il mondo è già generato. " +
             "Tutto il resto lo cambi quando vuoi da Regolamento e opzioni.",
         style = MFootType.chip,
         color = MFootColors.ink3,
@@ -373,7 +373,7 @@ private fun Impostazioni(scelte: SetupChoices, onChange: (SetupChoices) -> Unit)
     SettingRow(
         "Budget iniziale",
         "Da qui deriva tutto il listino: alzandolo salgono anche i prezzi, quindi non " +
-            "rende nessuno piu' ricco — cambia solo la scala dei numeri.",
+            "rende nessuno più ricco — cambia solo la scala dei numeri.",
     ) { MoneyField(scelte.startingCredits, true) { onChange(scelte.copy(startingCredits = it)) } }
 
     SettingRow(
@@ -383,7 +383,7 @@ private fun Impostazioni(scelte: SetupChoices, onChange: (SetupChoices) -> Unit)
 
     SettingRow(
         "Massimo in rosa",
-        "Il tetto agli acquisti, perche' chi ha budget non si prenda mezzo listino.",
+        "Il tetto agli acquisti, perché chi ha budget non si prenda mezzo listino.",
     ) {
         IntStepper(scelte.maxSquadSize, scelte.minSquadSize..60, true) {
             onChange(scelte.copy(maxSquadSize = it))

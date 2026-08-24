@@ -45,7 +45,7 @@ data class Player(
 ) {
 
     init {
-        require(age > 0) { "eta' non valida: $age" }
+        require(age > 0) { "età non valida: $age" }
         require(weakFoot in 1..5) { "piede debole fuori scala: $weakFoot" }
         require(skillStars in 1..5) { "stelle tecnica fuori scala: $skillStars" }
         require(potentialMin <= potentialMax) {

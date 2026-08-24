@@ -790,7 +790,7 @@ class TickRunner(
                 chiudiMissione(m.id, "A_VUOTO", null)
                 notify(
                     league.id, padreDi(m.clubId),
-                    "L'osservatore torna dal ${m.country} a mani vuote: non c'e' rimasto " +
+                    "L'osservatore torna dal ${m.country} a mani vuote: non c'è rimasto " +
                         "nessun ${m.position} sotto i vent'anni.",
                     kind = "scouting", urgency = "riepilogo",
                 )
@@ -812,7 +812,7 @@ class TickRunner(
             notify(
                 league.id, padreDi(m.clubId),
                 "Dal ${m.country}: ${scelto.shortName}, ${scelto.age} anni, " +
-                    "${scelto.primaryPosition.short}. E' in Primavera.",
+                    "${scelto.primaryPosition.short}. è in Primavera.",
                 kind = "scouting", urgency = "immediata",
             )
             note += "${scelto.shortName} trovato in ${m.country}."
@@ -1577,7 +1577,7 @@ class TickRunner(
                 val playerId = trade.offer.offered.firstOrNull()
                     ?: return chiudiConNota(trade, club, "proposta vuota")
                 val player = loadPlayerRow(playerId)?.player
-                    ?: return chiudiConNota(trade, club, "il giocatore non c'e' piu'")
+                    ?: return chiudiConNota(trade, club, "il giocatore non c'è più")
 
                 val giornate = trade.terms["matchDays"].int(0)
                 val canone = trade.terms["fee"].int(0)
@@ -1840,7 +1840,7 @@ class TickRunner(
             ).use { it.setLong(1, auctionId); it.executeUpdate() }
             notify(
                 league.id, venditore,
-                "La vendita e' saltata: ti avrebbe lasciato sotto il minimo di rosa.",
+                "La vendita è saltata: ti avrebbe lasciato sotto il minimo di rosa.",
                 kind = "asta", urgency = "immediata",
             )
             return
@@ -2045,7 +2045,7 @@ class TickRunner(
             if (inPrima >= league.config.setup.maxSquadSize) {
                 notify(
                     league.id, ClubId(c.padre),
-                    "${c.nome} ha superato l'eta' della Primavera, ma la prima squadra e' " +
+                    "${c.nome} ha superato l'età della Primavera, ma la prima squadra è " +
                         "piena: liberane una casella.",
                     kind = "primavera", urgency = "immediata",
                 )
@@ -2061,7 +2061,7 @@ class TickRunner(
             }
             notify(
                 league.id, ClubId(c.padre),
-                "${c.nome} e' cresciuto: e' in prima squadra.",
+                "${c.nome} è cresciuto: è in prima squadra.",
                 kind = "primavera", urgency = "riepilogo",
             )
             note += "${c.nome} promosso dalla Primavera."
@@ -3104,7 +3104,7 @@ class TickRunner(
 
         notify(
             league.id, clubId,
-            "Un contratto e' scaduto: il giocatore e' tornato svincolato.",
+            "Un contratto è scaduto: il giocatore è tornato svincolato.",
             kind = "contratto",
             urgency = "riepilogo",
         )
@@ -3127,9 +3127,9 @@ class TickRunner(
             st.executeUpdate()
         }
 
-        notify(league.id, loan.borrowerClub, "Un prestito e' finito: il giocatore e' tornato al suo club.",
+        notify(league.id, loan.borrowerClub, "Un prestito è finito: il giocatore è tornato al suo club.",
             kind = "prestito", urgency = "riepilogo")
-        notify(league.id, loan.ownerClub, "Ti e' tornato un giocatore dal prestito.",
+        notify(league.id, loan.ownerClub, "Ti è tornato un giocatore dal prestito.",
             kind = "prestito", urgency = "riepilogo")
     }
 
@@ -3513,7 +3513,7 @@ class TickRunner(
         }
 
         if (scartati > 0) {
-            problems += "$scartati titolari salvati non sono piu' disponibili"
+            problems += "$scartati titolari salvati non sono più disponibili"
         }
 
         val buchi = chosen.count { it == null }

@@ -120,7 +120,6 @@ fun ScambiScreen(
                     Column(
                         Modifier
                             .background(MFootColors.core, MFootShapes.band)
-                            .border(1.dp, MFootColors.lineStrong, MFootShapes.band)
                             .clickable { onNuovo(club.id) }
                             .padding(10.dp)
                             .width(78.dp),
@@ -265,7 +264,7 @@ private fun Sezione(
                                     " · ingaggio a chi lo presta"
                                 },
                             )
-                            if (trade.terms.canPlayAgainstOwner) append(" · puo' giocare contro")
+                            if (trade.terms.canPlayAgainstOwner) append(" · può giocare contro")
                         },
                         style = MFootType.chip,
                         color = MFootColors.ink3,
@@ -538,7 +537,7 @@ private fun Prestito(miaRosa: List<Player>, bozza: TradeDraft, onEdit: (TradeDra
         Chip("Ingaggio a suo carico", bozza.wagePaidByBorrower) {
             onEdit(bozza.copy(wagePaidByBorrower = !bozza.wagePaidByBorrower))
         }
-        Chip("Puo' giocare contro di te", bozza.canPlayAgainstOwner) {
+        Chip("Può giocare contro di te", bozza.canPlayAgainstOwner) {
             onEdit(bozza.copy(canPlayAgainstOwner = !bozza.canPlayAgainstOwner))
         }
     }
@@ -581,7 +580,7 @@ private fun Amichevole(
     Label("Quando")
     Spacer(Modifier.height(4.dp))
     Text(
-        "Ora della lega. Se una delle due squadre gioca gia' in quella fascia, la " +
+        "Ora della lega. Se una delle due squadre gioca già in quella fascia, la " +
             "proposta viene rifiutata.",
         style = MFootType.chip,
         color = MFootColors.ink3,

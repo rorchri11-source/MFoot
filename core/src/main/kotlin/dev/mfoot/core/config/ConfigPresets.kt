@@ -33,7 +33,7 @@ object ConfigPresets {
             id = "classica",
             name = "Classica",
             description = "Una partita al giorno, stagione di circa tre settimane. " +
-                "Ritmo sostenibile, si puo' saltare una sera senza restare indietro.",
+                "Ritmo sostenibile, si può saltare una sera senza restare indietro.",
             build = ::classica,
         ),
         Preset(

@@ -1,35 +1,31 @@
 package dev.mfoot.android.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.data.ClubInfo
+import dev.mfoot.android.ui.Banda
 import dev.mfoot.android.ui.Label
+import dev.mfoot.android.ui.Scheda
 import dev.mfoot.android.ui.kit.CrestBadge
-import dev.mfoot.android.ui.kit.Shirt
 import dev.mfoot.android.ui.theme.MFootColors
-import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.core.model.Money
@@ -84,153 +80,143 @@ fun SquadreScreen(
                 )
         }
 
-    Column(Modifier.fillMaxSize().background(MFootColors.bg)) {
-        Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 10.dp)) {
-            Label(
-                if (divisioni.enabled) {
-                    "${state.lega.clubs.size} squadre in ${gruppi.size} divisioni"
-                } else {
-                    "${state.lega.clubs.size} squadre · ordinate per disponibilita'"
-                },
-            )
-            mio?.let {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    buildString {
-                        append("Tu giochi in ")
-                        append(if (divisioni.enabled) divisioni.nameOf(it.divisionLevel) else "girone unico")
-                        append(" con ")
-                        append(gruppi.firstOrNull { g -> g.first == it.divisionLevel }?.second?.size ?: 0)
-                        append(" squadre.")
+    LazyColumn(
+        Modifier.fillMaxSize().background(MFootColors.bg),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(MFootSpacing.related),
+    ) {
+        item(key = "sommario") {
+            Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 0.dp)) {
+                Label(
+                    if (divisioni.enabled) {
+                        "${state.lega.clubs.size} squadre in ${gruppi.size} divisioni"
+                    } else {
+                        "${state.lega.clubs.size} squadre · ordinate per disponibilità"
                     },
-                    style = MFootType.chip,
-                    color = MFootColors.elite,
                 )
-            }
-        }
-
-        LazyColumn(Modifier.fillMaxSize()) {
-            gruppi.forEach { (livello, club) ->
-                if (divisioni.enabled) {
-                    item(key = "div-$livello") {
-                        Intestazione(divisioni.nameOf(livello), club.size, livello == mio?.divisionLevel)
-                    }
-                }
-                items(club, key = { it.id }) { c ->
-                    ClubRow(
-                        club = c,
-                        inRosa = state.lega.squadOf(c.id).size,
-                        minimo = minimo,
-                    ) { onOpenClub(c.id) }
+                mio?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        buildString {
+                            append("Tu giochi in ")
+                            append(if (divisioni.enabled) divisioni.nameOf(it.divisionLevel) else "girone unico")
+                            append(" con ")
+                            append(gruppi.firstOrNull { g -> g.first == it.divisionLevel }?.second?.size ?: 0)
+                            append(" squadre.")
+                        },
+                        style = MFootType.chip,
+                        color = MFootColors.elite,
+                    )
                 }
             }
-            item { Spacer(Modifier.height(24.dp)) }
-        }
-    }
-}
-
-/** Il nome della divisione, con quante squadre ci sono e se e' la propria. */
-@Composable
-private fun Intestazione(nome: String, quante: Int, mia: Boolean) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(if (mia) MFootColors.elite.copy(alpha = 0.10f) else MFootColors.core)
-            .padding(MFootSpacing.section, 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            nome.uppercase(),
-            style = MFootType.label,
-            color = if (mia) MFootColors.elite else MFootColors.ink2,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            if (mia) "$quante squadre · la tua" else "$quante squadre",
-            style = MFootType.chip,
-            color = MFootColors.ink3,
-        )
-    }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(MFootColors.line))
-}
-
-@Composable
-private fun ClubRow(club: ClubInfo, inRosa: Int, minimo: Int, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(if (club.isMine) MFootColors.elite.copy(alpha = 0.06f) else MFootColors.bg)
-            .clickable(onClick = onClick)
-            .padding(horizontal = MFootSpacing.section, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // La maglia vera, non un quadrato colorato.
-        //
-        // Prima il colore si ricavava dall'id e non aveva niente a che vedere con la maglia
-        // che il proprietario aveva disegnato: lo stesso club aveva due identita' diverse a
-        // seconda della schermata. Qui c'e' quella che scende in campo.
-        CrestBadge(club.crest, Modifier.size(40.dp), club.shortName)
-        Spacer(Modifier.width(8.dp))
-        Shirt(club.kit, Modifier.size(30.dp, 34.dp), showNumber = false)
-
-        Spacer(Modifier.width(MFootSpacing.related))
-
-        Column(Modifier.weight(1f)) {
-            Text(
-                buildString {
-                    append(club.name)
-                    // La seconda squadra si riconosce a colpo d'occhio: senza, in una
-                    // classifica di venti righe «Milan» e «Milan Primavera» sono due club
-                    // qualsiasi che per caso si somigliano.
-                    if (club.parentClubId != null) append("  ⤷")
-                },
-                style = MFootType.rowTitle,
-                color = if (club.isMine) MFootColors.elite else MFootColors.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                buildString {
-                    append(if (club.isAi) "AI" else club.ownerName ?: "senza proprietario")
-                    append(" · ").append(inRosa).append(" in rosa")
-                    if (club.parentClubId != null) append(" · Primavera")
-                },
-                style = MFootType.chip,
-                color = if (inRosa < minimo) MFootColors.gamble else MFootColors.ink3,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
 
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                Money(club.available).formatShort(),
-                style = MFootType.value,
-                color = MFootColors.ink,
-            )
-            if (club.committedCredits > 0) {
-                Text(
-                    "${Money(club.committedCredits).formatShort()} impegnati",
-                    style = MFootType.chip,
-                    color = MFootColors.gamble,
-                )
+        gruppi.forEach { (livello, club) ->
+            if (divisioni.enabled) {
+                item(key = "div-$livello") {
+                    // La banda blu a tutta larghezza, come la giornata nel calendario del
+                    // riferimento. Arriva ai bordi di proposito: con dei margini
+                    // diventerebbe una scheda larga e smetterebbe di leggersi come lo
+                    // stacco fra due campionati.
+                    Banda(
+                        buildString {
+                            append(divisioni.nameOf(livello))
+                            append(" · ").append(club.size).append(" squadre")
+                            if (livello == mio?.divisionLevel) append(" · la tua")
+                        },
+                    )
+                }
+            }
+            items(club, key = { it.id }) { c ->
+                ClubRow(
+                    club = c,
+                    inRosa = state.lega.squadOf(c.id).size,
+                    minimo = minimo,
+                    modifier = Modifier.padding(horizontal = MFootSpacing.section),
+                ) { onOpenClub(c.id) }
             }
         }
     }
-
-    Box(Modifier.fillMaxWidth().height(1.dp).background(MFootColors.line))
 }
 
 /**
- * Un colore stabile per ogni club.
+ * Una squadra: stemma, nome, chi la porta, e quanto le resta.
  *
- * Deriva dall'id, quindi non cambia mai fra un'apertura e l'altra: uno stemma che cambia
- * tinta ogni volta smette di essere un modo per riconoscere la squadra a colpo d'occhio.
+ * E' la forma dell'elenco squadre del riferimento — tondo, due righe di testo, un numero
+ * grande a destra con la sua etichetta — e la propria si riconosce dalla barretta blu a
+ * sinistra invece che da un fondo colorato: il fondo colorato su una scheda gia' scura
+ * non si vedeva.
  */
-private fun colorFor(id: Long): Color = STEMMI[(id % STEMMI.size).toInt()]
+@Composable
+private fun ClubRow(
+    club: ClubInfo,
+    inRosa: Int,
+    minimo: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Scheda(modifier, onClick, evidenziata = club.isMine) {
+        Row(
+            Modifier.padding(
+                start = if (club.isMine) 10.dp else 14.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = 12.dp,
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Lo stemma vero, non un quadrato colorato.
+            //
+            // Prima il colore si ricavava dall'id e non aveva niente a che vedere con
+            // quello che il proprietario aveva disegnato: lo stesso club aveva due
+            // identita' diverse a seconda della schermata.
+            Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+                CrestBadge(club.crest, Modifier.size(46.dp), club.shortName)
+            }
+            Spacer(Modifier.width(12.dp))
 
-private val STEMMI = listOf(
-    Color(0xFF2BE07E), Color(0xFF3D7BFF), Color(0xFFE8483F), Color(0xFFFFC53D),
-    Color(0xFFB05CFF), Color(0xFF00C2C7), Color(0xFFFF7A3D), Color(0xFF8A0F2E),
-    Color(0xFF7A8290), Color(0xFF0B3B8C), Color(0xFF00A6A6), Color(0xFFF2F4F7),
-)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    buildString {
+                        append(club.name)
+                        // La seconda squadra si riconosce a colpo d'occhio: senza, in un
+                        // elenco di venti righe «Milan» e «Milan Primavera» sono due club
+                        // qualsiasi che per caso si somigliano.
+                        if (club.parentClubId != null) append("  ⤷")
+                    },
+                    style = MFootType.rowTitle,
+                    color = if (club.isMine) MFootColors.elite else MFootColors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    buildString {
+                        append(if (club.isAi) "AI" else club.ownerName ?: "senza proprietario")
+                        append(" · ").append(inRosa).append(" in rosa")
+                        if (club.parentClubId != null) append(" · Primavera")
+                    },
+                    style = MFootType.secondary,
+                    color = if (inRosa < minimo) MFootColors.gamble else MFootColors.ink2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    Money(club.available).formatShort(),
+                    style = MFootType.price,
+                    color = MFootColors.elite,
+                )
+                if (club.committedCredits > 0) {
+                    Label("${Money(club.committedCredits).formatShort()} impegnati", color = MFootColors.gamble)
+                } else {
+                    Label("crediti")
+                }
+            }
+        }
+    }
+}

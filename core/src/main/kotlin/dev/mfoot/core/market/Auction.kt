@@ -140,8 +140,8 @@ object AuctionRules {
         now: Instant,
         config: MarketConfig,
     ): BidResult {
-        if (!auction.isOpen) return BidResult.Rejected("L'asta non e' piu' aperta.")
-        if (auction.hasExpired(now)) return BidResult.Rejected("L'asta e' gia' scaduta.")
+        if (!auction.isOpen) return BidResult.Rejected("L'asta non è più aperta.")
+        if (auction.hasExpired(now)) return BidResult.Rejected("L'asta è già scaduta.")
         if (maxAmount <= 0) return BidResult.Rejected("L'offerta deve essere di almeno 1 credito.")
 
         val previousOwnBid = auction.bidOf(club)
@@ -160,7 +160,7 @@ object AuctionRules {
         val previousLeader = auction.leader
         val minimumAcceptable = minimumBid(auction, club, config)
         if (maxAmount < minimumAcceptable) {
-            return BidResult.Rejected("L'offerta minima e' $minimumAcceptable crediti.")
+            return BidResult.Rejected("L'offerta minima è $minimumAcceptable crediti.")
         }
 
         val withBid = auction.copy(bids = auction.bids + Bid(club, maxAmount, now))
@@ -257,7 +257,7 @@ object AuctionRules {
     ): String? {
         val mine = openAuctions.count { it.isOpen && it.startedBy == club }
         return if (mine >= config.maxParallelAuctionsPerClub) {
-            "Hai gia' ${config.maxParallelAuctionsPerClub} aste aperte."
+            "Hai già ${config.maxParallelAuctionsPerClub} aste aperte."
         } else {
             null
         }

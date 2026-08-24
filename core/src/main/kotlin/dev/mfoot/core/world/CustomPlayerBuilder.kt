@@ -149,10 +149,10 @@ object CustomPlayerBuilder {
             problems += "Serve nome e cognome."
         }
         if (draft.nationality.isBlank()) {
-            problems += "Serve una nazionalita'."
+            problems += "Serve una nazionalità."
         }
         if (draft.age !in config.minAge..config.maxAge) {
-            problems += "L'eta' deve stare fra ${config.minAge} e ${config.maxAge} anni."
+            problems += "L'età deve stare fra ${config.minAge} e ${config.maxAge} anni."
         }
         if (draft.weakFoot !in 1..5 || draft.skillStars !in 1..5) {
             problems += "Le stelle vanno da 1 a 5."
@@ -161,7 +161,7 @@ object CustomPlayerBuilder {
             problems += "Non si possono togliere punti sotto la base."
         }
         if (draft.position in draft.secondaryPositions) {
-            problems += "Il ruolo secondario non puo' essere quello principale."
+            problems += "Il ruolo secondario non può essere quello principale."
         }
 
         val speso = totalCost(draft, config)

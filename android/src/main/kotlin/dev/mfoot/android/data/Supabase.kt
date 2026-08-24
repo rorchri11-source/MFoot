@@ -31,7 +31,7 @@ sealed interface ConnectionStatus {
     val detail: String
         get() = when (this) {
             NotConfigured -> "Credenziali Supabase assenti in local.properties"
-            Placeholder -> "In local.properties c'e' ancora il segnaposto dell'esempio, " +
+            Placeholder -> "In local.properties c'è ancora il segnaposto dell'esempio, " +
                 "non l'indirizzo del tuo progetto"
             Checking -> "Verifica del collegamento in corso"
             is Connected -> "Collegato in ${millis}ms"
@@ -103,7 +103,7 @@ object Supabase {
             when {
                 code in 200..299 -> ConnectionStatus.Connected(elapsed)
                 code == 401 || code == 403 -> ConnectionStatus.Failed("Chiave rifiutata ($code)")
-                code == 404 -> ConnectionStatus.Failed("Tabelle non trovate: lo schema SQL non e' stato eseguito")
+                code == 404 -> ConnectionStatus.Failed("Tabelle non trovate: lo schema SQL non è stato eseguito")
                 else -> ConnectionStatus.Failed("Errore $code: ${body.take(80)}")
             }
         } catch (e: Exception) {

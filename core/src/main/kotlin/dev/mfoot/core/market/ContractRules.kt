@@ -64,7 +64,7 @@ object ContractRules {
         }
         if (!MoraleEngine.wouldAcceptRenewal(player, rules)) {
             return ContractAction.Refused(
-                "${player.shortName} non se la sente di rinnovare: il morale e' a ${player.morale}.",
+                "${player.shortName} non se la sente di rinnovare: il morale è a ${player.morale}.",
             )
         }
 
@@ -130,7 +130,7 @@ object ContractRules {
             return LoanResult.Refused("I prestiti sono disattivati in questa lega.")
         }
         if (owner == borrower) {
-            return LoanResult.Refused("Un club non puo' prestare a se stesso.")
+            return LoanResult.Refused("Un club non può prestare a se stesso.")
         }
         if (matchDays !in config.minLoanMatchDays..config.maxLoanMatchDays) {
             return LoanResult.Refused(

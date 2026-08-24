@@ -57,7 +57,7 @@ object KickoffRules {
      * sa e' che il sistema non lo accetta.
      */
     fun problema(kickoff: LocalDateTime, now: LocalDateTime): String? = when {
-        kickoff.isBefore(now) -> "Quell'ora e' gia' passata: scegline una piu' avanti."
+        kickoff.isBefore(now) -> "Quell'ora è già passata: scegline una più avanti."
         !isPlayable(kickoff, now) ->
             "Mancano meno di $MARGINE_MINUTI minuti: nessuno dei due farebbe in tempo a schierare."
         else -> null
@@ -112,11 +112,11 @@ object KickoffRules {
         val primo = firstKickoff(calendar)
         when {
             primo == null && problemi.isEmpty() ->
-                problemi += "Nel periodo scelto non c'e' nemmeno un giorno in cui si gioca."
+                problemi += "Nel periodo scelto non c'è nemmeno un giorno in cui si gioca."
 
             primo != null && !isPlayable(primo, now) ->
                 problemi += "La prima partita cadrebbe il ${giorno(primo)} alle ${ora(primo)}, " +
-                    "che e' gia' passato: sposta l'inizio o togli gli orari piu' presti."
+                    "che è già passato: sposta l'inizio o togli gli orari più presti."
         }
 
         return problemi

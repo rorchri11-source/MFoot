@@ -58,7 +58,7 @@ data class Negotiation(
     val history: List<OfferTerms> = emptyList(),
 ) {
     init {
-        require(buyer != seller) { "un club non puo' trattare con se stesso" }
+        require(buyer != seller) { "un club non può trattare con se stesso" }
     }
 
     val isOpen: Boolean
@@ -133,8 +133,8 @@ object NegotiationRules {
         now: Instant,
         config: MarketConfig,
     ): NegotiationResult {
-        if (!negotiation.isOpen) return NegotiationResult.Rejected("La trattativa e' chiusa.")
-        if (negotiation.hasExpired(now)) return NegotiationResult.Rejected("La trattativa e' scaduta.")
+        if (!negotiation.isOpen) return NegotiationResult.Rejected("La trattativa è chiusa.")
+        if (negotiation.hasExpired(now)) return NegotiationResult.Rejected("La trattativa è scaduta.")
         if (negotiation.awaiting != from) return NegotiationResult.Rejected("Non tocca a te rispondere.")
 
         return NegotiationResult.Updated(
@@ -154,8 +154,8 @@ object NegotiationRules {
         today: MatchDay,
         now: Instant,
     ): NegotiationResult {
-        if (!negotiation.isOpen) return NegotiationResult.Rejected("La trattativa e' chiusa.")
-        if (negotiation.hasExpired(now)) return NegotiationResult.Rejected("La trattativa e' scaduta.")
+        if (!negotiation.isOpen) return NegotiationResult.Rejected("La trattativa è chiusa.")
+        if (negotiation.hasExpired(now)) return NegotiationResult.Rejected("La trattativa è scaduta.")
         if (negotiation.awaiting != from) return NegotiationResult.Rejected("Non tocca a te rispondere.")
 
         val contract = Contract(
@@ -176,7 +176,7 @@ object NegotiationRules {
     }
 
     fun reject(negotiation: Negotiation, from: ClubId): NegotiationResult {
-        if (!negotiation.isOpen) return NegotiationResult.Rejected("La trattativa e' chiusa.")
+        if (!negotiation.isOpen) return NegotiationResult.Rejected("La trattativa è chiusa.")
         if (negotiation.awaiting != from) return NegotiationResult.Rejected("Non tocca a te rispondere.")
         return NegotiationResult.Updated(negotiation.copy(status = OfferStatus.RIFIUTATA))
     }
@@ -211,7 +211,7 @@ object NegotiationRules {
             return NegotiationResult.Rejected("Servono $clause crediti, ne hai $buyerAvailableCredits.")
         }
         if (buyer == contract.clubId) {
-            return NegotiationResult.Rejected("Il giocatore e' gia' tuo.")
+            return NegotiationResult.Rejected("Il giocatore è già tuo.")
         }
 
         return NegotiationResult.Concluded(
@@ -243,8 +243,8 @@ object NegotiationRules {
      */
     fun transferBlock(player: Player): String? =
         if (player.isCustom) {
-            "${player.shortName} e' il giocatore creato dal proprietario: " +
-                "non puo' essere ceduto, solo prestato."
+            "${player.shortName} è il giocatore creato dal proprietario: " +
+                "non può essere ceduto, solo prestato."
         } else {
             null
         }

@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +31,8 @@ import dev.mfoot.android.app.PlayerRow
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
+import dev.mfoot.android.ui.Scheda
+import dev.mfoot.android.ui.icons.MFootIcons
 import dev.mfoot.android.ui.kit.CrestBadge
 import dev.mfoot.android.ui.kit.Shirt
 import dev.mfoot.android.ui.theme.MFootColors
@@ -69,7 +74,7 @@ fun RosaScreen(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                "Questo club non esiste piu'.",
+                "Questo club non esiste più.",
                 style = MFootType.secondary,
                 color = MFootColors.ink3,
             )
@@ -129,7 +134,7 @@ fun RosaScreen(
                     Label("Primavera · ${primavera.size}")
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Si allenano e non giocano. Crescono piu' piano di chi scende in " +
+                        "Si allenano e non giocano. Crescono più piano di chi scende in " +
                             "campo, ma crescono.",
                         style = MFootType.chip,
                         color = MFootColors.ink3,
@@ -258,7 +263,6 @@ private fun Riquadro(
     Column(
         modifier
             .background(MFootColors.bg, MFootShapes.band)
-            .border(1.dp, MFootColors.line, MFootShapes.band)
             .padding(vertical = 11.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -272,23 +276,24 @@ private fun Riquadro(
 private fun Giocatore(riga: PlayerRow, onSelect: (PlayerRow) -> Unit) {
     val p = riga.player
 
+    Scheda(
+        Modifier.padding(horizontal = MFootSpacing.section, vertical = 4.dp),
+        onClick = { onSelect(riga) },
+    ) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable { onSelect(riga) }
-            .padding(MFootSpacing.section, 11.dp),
+        Modifier.padding(start = 12.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(36.dp, 23.dp)
-                .background(MFootColors.core, MFootShapes.field)
-                .border(1.dp, MFootColors.line, MFootShapes.field),
+                .size(42.dp)
+                .clip(RoundedCornerShape(50))
+                .background(MFootColors.bg),
             contentAlignment = Alignment.Center,
         ) {
-            Text(p.primaryPosition.short, style = MFootType.label, color = MFootColors.ink2)
+            Text(p.primaryPosition.short, style = MFootType.value, color = MFootColors.ink2)
         }
-        Spacer(Modifier.width(11.dp))
+        Spacer(Modifier.width(12.dp))
 
         Column(Modifier.weight(1f)) {
             Text(
@@ -299,7 +304,11 @@ private fun Giocatore(riga: PlayerRow, onSelect: (PlayerRow) -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
-            Text("${p.age} anni · ${Money(riga.value).formatShort()}", style = MFootType.chip, color = MFootColors.ink3)
+            Text(
+                "${p.age} anni · ${Money(riga.value).formatShort()}",
+                style = MFootType.secondary,
+                color = MFootColors.ink2,
+            )
         }
 
         // La stamina accanto all'overall, non solo dentro la scheda.
@@ -351,11 +360,17 @@ private fun Giocatore(riga: PlayerRow, onSelect: (PlayerRow) -> Unit) {
         // La scheda del giocatore — overall, ogni attributo, stelle, crescita, condizione —
         // e' sempre stata li' dietro, e non la trovava nessuno: le righe erano toccabili e
         // niente lo diceva. Il proprietario della lega ha giocato una stagione senza sapere
-        // che esistesse. Un carattere per riga e' tutto quello che serviva.
-        Spacer(Modifier.width(6.dp))
-        Text("›", style = MFootType.value, color = MFootColors.ink3)
+        // che esistesse. Adesso e' un'icona invece del carattere `›`, che a seconda del
+        // carattere di sistema veniva disegnato meta' della sua riga o storto.
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            MFootIcons.avanti,
+            contentDescription = null,
+            tint = MFootColors.ink3,
+            modifier = Modifier.size(17.dp),
+        )
     }
-    Hairline()
+    }
 }
 
 private fun etichetta(reparto: Reparto): String = when (reparto) {

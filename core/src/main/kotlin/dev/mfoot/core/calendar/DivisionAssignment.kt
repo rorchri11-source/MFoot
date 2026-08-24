@@ -85,9 +85,9 @@ object DivisionAssignment {
         if (umani.size > capienze[0]) {
             avvisi += PlacementWarning(
                 "Hai ${umani.size} club di giocatori veri e la prima divisione ne prevede " +
-                    "${capienze[0]}. Ci entrano tutti lo stesso — la regola e' che i " +
-                    "giocatori partono dalla massima serie — ma la prima divisione sara' " +
-                    "da ${umani.size} squadre. Se non e' quello che vuoi, cambia le " +
+                    "${capienze[0]}. Ci entrano tutti lo stesso — la regola è che i " +
+                    "giocatori partono dalla massima serie — ma la prima divisione sarà " +
+                    "da ${umani.size} squadre. Se non è quello che vuoi, cambia le " +
                     "dimensioni prima di assegnare.",
             )
         }
@@ -115,7 +115,7 @@ object DivisionAssignment {
         if (vuote.isNotEmpty()) {
             avvisi += PlacementWarning(
                 "Nessuna squadra in ${if (vuote.size == 1) "divisione" else "divisioni"} " +
-                    vuote.joinToString(", ") + ". Servono piu' club, o meno divisioni.",
+                    vuote.joinToString(", ") + ". Servono più club, o meno divisioni.",
             )
         }
 

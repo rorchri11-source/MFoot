@@ -140,6 +140,18 @@ data class TableState(
         match.kickoff?.let { java.time.LocalDateTime.ofInstant(it, zone) }
 
     fun kitOf(id: Long): dev.mfoot.android.ui.kit.Kit? = clubs.firstOrNull { it.id == id }?.kit
+
+    /**
+     * Lo stemma di un club, per le schede del calendario.
+     *
+     * I club ci sono gia' tutti in [clubs] — servono per i nomi — quindi non costa
+     * nessuna lettura in piu': costava solo non chiederlo.
+     */
+    fun crestOf(id: Long): dev.mfoot.android.ui.kit.Crest? =
+        clubs.firstOrNull { it.id == id }?.crest
+
+    /** La sigla, per il ripiego quando lo stemma non c'e'. */
+    fun shortOf(id: Long): String = clubs.firstOrNull { it.id == id }?.shortName ?: "?"
 }
 
 /**
@@ -151,9 +163,22 @@ data class TableState(
  * prima di schierare. Metterle in fila obbliga a scorrere una classifica da venti righe
  * ogni volta che si vuole sapere l'orario della prossima partita.
  */
+/**
+ * Le due viste di una competizione.
+ *
+ * ## Perche' le etichette non sono «Classifica» e «Calendario»
+ *
+ * Perche' erano gia' occupate, tutte e due, dai due gradini di navigazione sopra: il posto
+ * si chiama Classifica e sta scritto nella barra in alto **e** nel segmentato, e Calendario
+ * e' una delle cinque voci della barra in basso — che per giunta apre un'altra schermata,
+ * il calendario a mesi. Con i nomi di prima la stessa parola compariva tre volte sullo
+ * stesso schermo indicando tre cose diverse.
+ *
+ * «Punti» e «Partite» dicono cosa si guarda invece di ripetere dove si e'.
+ */
 enum class TableTab(val label: String) {
-    CLASSIFICA("Classifica"),
-    CALENDARIO("Calendario"),
+    CLASSIFICA("Punti"),
+    CALENDARIO("Partite"),
 }
 
 /** La schermata delle competizioni: quelle esistenti e quella in costruzione. */

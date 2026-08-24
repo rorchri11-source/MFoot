@@ -71,7 +71,7 @@ data class Loan(
 
     init {
         require(endsOn > startsOn) { "prestito che finisce prima di cominciare" }
-        require(ownerClub != borrowerClub) { "un club non puo' prestare a se stesso" }
+        require(ownerClub != borrowerClub) { "un club non può prestare a se stesso" }
         require(feePerMatchDay >= 0) { "canone negativo" }
     }
 
