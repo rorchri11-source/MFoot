@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,6 +26,9 @@ import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Scheda
 import dev.mfoot.android.ui.kit.CrestBadge
 import dev.mfoot.android.ui.theme.MFootColors
+import dev.mfoot.android.ui.theme.comparsa
+import dev.mfoot.android.ui.theme.lampo
+import dev.mfoot.android.ui.theme.ricordaIntro
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.core.model.Money
@@ -80,6 +83,11 @@ fun SquadreScreen(
                 )
         }
 
+    // La cascata dura il tempo della prima comparsa, poi si spegne: dentro una
+    // `LazyColumn` le righe che escono vengono buttate via e ricostruite, e con
+    // l'animazione sempre accesa scorrere all'indietro le farebbe rientrare tremolando.
+    val intro = ricordaIntro(state.lega.league.id)
+
     LazyColumn(
         Modifier.fillMaxSize().background(MFootColors.bg),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
@@ -127,12 +135,14 @@ fun SquadreScreen(
                     )
                 }
             }
-            items(club, key = { it.id }) { c ->
+            itemsIndexed(club, key = { _, c -> c.id }) { indice, c ->
                 ClubRow(
                     club = c,
                     inRosa = state.lega.squadOf(c.id).size,
                     minimo = minimo,
-                    modifier = Modifier.padding(horizontal = MFootSpacing.section),
+                    modifier = Modifier
+                        .padding(horizontal = MFootSpacing.section)
+                        .comparsa(indice, intro),
                 ) { onOpenClub(c.id) }
             }
         }
@@ -155,7 +165,9 @@ private fun ClubRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Scheda(modifier, onClick, evidenziata = club.isMine) {
+    // La lama di luce sulla propria: la barretta blu lo dice gia' da ferma, questo lo dice
+    // **all'apertura**, che e' il momento in cui si sta ancora cercando.
+    Scheda(modifier.lampo(club.isMine, club.id), onClick, evidenziata = club.isMine) {
         Row(
             Modifier.padding(
                 start = if (club.isMine) 10.dp else 14.dp,

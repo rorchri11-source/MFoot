@@ -1,5 +1,12 @@
 package dev.mfoot.android.ui.shell
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import dev.mfoot.android.ui.theme.MFootMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -176,7 +183,7 @@ fun Router(
         is Route.Squadra -> Column(Modifier.fillMaxSize()) {
             Interruttore(state, onSwitchTeam, onCreateYouth)
             Schede(TabSquadra.entries, route.tab, { it.label }) { onNavigate(Route.Squadra(it)) }
-            when (route.tab) {
+            Scorrimento(route.tab) { when (it) {
                 TabSquadra.ROSA -> state.clubMostrato
                     // Sulla propria rosa il pulsante «vedi la formazione» non serve: c'e'
                     // la scheda Campo qui accanto, che oltre a mostrarla la fa cambiare.
@@ -204,12 +211,12 @@ fun Router(
                 )
 
                 TabSquadra.INFERMERIA -> Infermeria(state)
-            }
+            } }
         }
 
         is Route.Mercato -> Column(Modifier.fillMaxSize()) {
             Schede(TabMercato.entries, route.tab, { it.label }) { onNavigate(Route.Mercato(it)) }
-            when (route.tab) {
+            Scorrimento(route.tab) { when (it) {
                 // Le prime tre sono la stessa schermata con un ambito diverso, ed e'
                 // esattamente cio' che erano gia': tre voci di menu che aprivano lo stesso
                 // composable senza dirlo. Adesso lo dicono.
@@ -247,7 +254,7 @@ fun Router(
                     onCarica = onLoadStaff,
                     onManda = onSendScout,
                 )
-            }
+            } }
         }
 
         // Due sole destinazioni, quindi un segmentato e non dei chip.
@@ -379,6 +386,37 @@ fun Router(
  * La sottolineatura lo dice, la pillola no — e nel riferimento le due cose hanno appunto
  * due forme diverse. I chip restano dove servono davvero: i ruoli, gli stati delle aste.
  */
+/**
+ * Il contenuto di una sezione, che entra da destra invece di sbattere dentro.
+ *
+ * ## Perche' serve
+ *
+ * Perche' senza, cambiare linguetta sostituisce lo schermo di colpo e **sembra di aver
+ * cambiato schermata** invece di aver cambiato scheda dentro la stessa. Il movimento dice
+ * che sei rimasto dove sei: e' la stessa stanza, e' cambiato il mobile.
+ *
+ * La direzione e' sempre da destra, non quella del gesto: seguire l'ordine delle linguette
+ * vorrebbe dire ricordarsi quale veniva prima, e per sei schede la memoria di chi guarda
+ * non ci arriva comunque.
+ */
+@Composable
+private fun <T> Scorrimento(scelta: T, contenuto: @Composable (T) -> Unit) {
+    AnimatedContent(
+        targetState = scelta,
+        transitionSpec = {
+            (
+                slideInHorizontally(
+                    animationSpec = tween(MFootMotion.fast, easing = MFootMotion.easing),
+                    initialOffsetX = { it / 7 },
+                ) + fadeIn(tween(MFootMotion.fast, easing = MFootMotion.easing))
+                ) togetherWith fadeOut(tween(180, easing = MFootMotion.easing))
+        },
+        label = "sezione",
+    ) { voce ->
+        contenuto(voce)
+    }
+}
+
 @Composable
 private fun <T> Schede(
     voci: List<T>,

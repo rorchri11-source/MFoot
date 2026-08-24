@@ -1,5 +1,17 @@
 package dev.mfoot.android.ui.kit
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
+import dev.mfoot.android.ui.theme.MFootMotion
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -7,17 +19,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -248,7 +256,57 @@ private object Cut {
  * dove il taglio e' netto: e' la differenza fra una maglia e un cartello stradale a forma
  * di maglia.
  */
-private fun shirtPath(size: Size): Path {
+/**
+ * Il riflesso che attraversa la maglia una volta sola, quando si apre la Casa.
+ *
+ * ## Perche' sta qui e non fra i pezzi del movimento
+ *
+ * Perche' il ritaglio e' [shirtPath], che vive in questo file. Metterlo altrove vorrebbe
+ * dire o esportare la sagoma per intero, o riscriverla: nel primo caso due file si
+ * legano, nel secondo esistono due maglie che al primo ritocco non combaciano piu'.
+ *
+ * Il riflesso e' **dentro la stoffa**: senza il ritaglio scorrerebbe sul rettangolo
+ * intorno, e si vedrebbe una banda bianca passare sul cielo blu.
+ */
+@Composable
+fun Modifier.luceSullaMaglia(chiave: Any? = Unit): Modifier {
+    val avanzamento = remember(chiave) { Animatable(0f) }
+    LaunchedEffect(chiave) {
+        avanzamento.snapTo(0f)
+        delay(320)
+        avanzamento.animateTo(1f, tween(1500, easing = MFootMotion.easing))
+    }
+
+    return drawWithContent {
+        drawContent()
+        val p = avanzamento.value
+        if (p <= 0f || p >= 1f) return@drawWithContent
+
+        clipPath(shirtPath(size)) {
+            // La lama e' inclinata e larga un terzo: entra da sinistra fuori sagoma ed
+            // esce a destra, quindi non compare e sparisce a meta' della maglia.
+            val larghezza = size.width * 0.34f
+            val x = -larghezza + p * (size.width + larghezza * 2f)
+            rotate(degrees = 16f, pivot = Offset(size.width / 2f, size.height / 2f)) {
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.55f),
+                            Color.Transparent,
+                        ),
+                        startX = x,
+                        endX = x + larghezza,
+                    ),
+                    topLeft = Offset(x, -size.height * 0.3f),
+                    size = Size(larghezza, size.height * 1.6f),
+                )
+            }
+        }
+    }
+}
+
+internal fun shirtPath(size: Size): Path {
     val w = size.width
     val h = size.height
     fun x(f: Float) = w * f

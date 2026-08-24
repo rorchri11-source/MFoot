@@ -1,6 +1,9 @@
 package dev.mfoot.android.ui
 
 import dev.mfoot.android.ui.icons.MFootIcons
+import dev.mfoot.android.ui.theme.comparsa
+import dev.mfoot.android.ui.theme.respiro
+import dev.mfoot.android.ui.theme.ricordaIntro
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -126,9 +129,10 @@ fun AuctionList(
             return@Column
         }
 
+        val intro = ricordaIntro(state.auctionFilter)
         LazyColumn(Modifier.fillMaxSize()) {
-            items(visibili, key = { it.auction.id }) { row ->
-                AuctionCard(row, myClubId, now) { onOpenBid(row) }
+            itemsIndexed(visibili, key = { _, r -> r.auction.id }) { indice, row ->
+                AuctionCard(row, myClubId, now, indice, intro) { onOpenBid(row) }
             }
             item { Spacer(Modifier.height(20.dp)) }
         }
@@ -167,12 +171,26 @@ private fun Filtri(state: AppState.Dentro, onFilter: (AuctionFilter) -> Unit) {
 }
 
 @Composable
-private fun AuctionCard(row: AuctionRow, myClubId: Long?, now: Instant, onClick: () -> Unit) {
+private fun AuctionCard(
+    row: AuctionRow,
+    myClubId: Long?,
+    now: Instant,
+    indice: Int,
+    intro: Boolean,
+    onClick: () -> Unit,
+) {
     val leading = row.auction.isLeading(myClubId)
     val involved = row.auction.hasMyBid
 
+    // Il respiro solo sotto i cinque minuti. Le altre restano ferme, ed e' per questo
+    // che quella si vede: se pulsassero tutte, non direbbe piu' niente.
+    val inScadenza = java.time.Duration.between(now, row.auction.endsAt).toMinutes() in 0..4
+
     Scheda(
-        Modifier.padding(horizontal = MFootSpacing.section, vertical = 5.dp),
+        Modifier
+            .padding(horizontal = MFootSpacing.section, vertical = 5.dp)
+            .comparsa(indice, intro)
+            .respiro(inScadenza),
         onClick = onClick,
     ) {
     Row(

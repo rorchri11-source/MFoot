@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -27,6 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.ui.icons.MFootIcons
+import dev.mfoot.android.ui.theme.comparsa
+import dev.mfoot.android.ui.theme.ricordaIntro
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.ListScope
 import dev.mfoot.android.app.PlayerRow
@@ -68,6 +70,9 @@ fun PlayerListScreen(
         }
 
         val visible = state.visible
+        // La cascata riparte quando cambia l'ambito o la ricerca: e' li' che l'elenco
+        // diventa davvero un altro elenco.
+        val intro = ricordaIntro(state.browse.scope to state.browse.query)
         if (visible.isEmpty()) {
             EmptyState(state)
         } else {
@@ -76,8 +81,8 @@ fun PlayerListScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
             ) {
-                items(visible, key = { it.player.id.value }) { row ->
-                    PlayerListRow(row) { onSelect(row) }
+                itemsIndexed(visible, key = { _, r -> r.player.id.value }) { indice, row ->
+                    PlayerListRow(row, indice, intro) { onSelect(row) }
                 }
             }
         }
@@ -211,10 +216,18 @@ private fun EmptyState(state: AppState.Dentro) {
  * trova un prospetto scorrendo, senza dover aprire una scheda per volta.
  */
 @Composable
-private fun PlayerListRow(row: PlayerRow, onClick: () -> Unit) {
+private fun PlayerListRow(
+    row: PlayerRow,
+    indice: Int,
+    intro: Boolean,
+    onClick: () -> Unit,
+) {
     val player = row.player
 
-    Scheda(Modifier.padding(horizontal = MFootSpacing.section), onClick) {
+    Scheda(
+        Modifier.padding(horizontal = MFootSpacing.section).comparsa(indice, intro),
+        onClick,
+    ) {
         Row(
             Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,

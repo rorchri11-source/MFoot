@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -37,6 +38,7 @@ import dev.mfoot.android.ui.pitch.pitchSlots
 import dev.mfoot.core.match.Formation
 import dev.mfoot.core.match.PitchLayout
 import dev.mfoot.android.app.FoundingStep
+import dev.mfoot.android.ui.icons.MFootIcons
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -73,16 +75,35 @@ fun FoundingScreen(
                 .padding(horizontal = MFootSpacing.section)
                 .padding(top = MFootSpacing.section, bottom = MFootSpacing.section),
         ) {
-            Text(
-                if (state.step == FoundingStep.CLUB) "‹ annulla" else "‹ il club",
-                style = MFootType.chip,
-                color = MFootColors.ink3,
-                modifier = Modifier.clickable {
-                    if (state.step == FoundingStep.CLUB) onCancel()
-                    else onChange { it.copy(step = FoundingStep.CLUB) }
-                },
-            )
-            Spacer(Modifier.height(14.dp))
+            // La freccia disegnata, non il carattere `‹`.
+            //
+            // Quel glifo ogni telefono lo disegna con un carattere suo, e accanto alle
+            // icone del resto dell'app si vedeva come un corpo estraneo. Aveva anche
+            // l'aria di un collegamento in fondo a una pagina invece che del comando per
+            // tornare indietro.
+            Row(
+                Modifier
+                    .clip(MFootShapes.pill)
+                    .clickable {
+                        if (state.step == FoundingStep.CLUB) onCancel()
+                        else onChange { it.copy(step = FoundingStep.CLUB) }
+                    }
+                    .padding(end = 12.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    MFootIcons.indietro,
+                    contentDescription = null,
+                    tint = MFootColors.ink2,
+                    modifier = Modifier.size(34.dp).padding(7.dp),
+                )
+                Text(
+                    if (state.step == FoundingStep.CLUB) "annulla" else "il club",
+                    style = MFootType.rowTitle,
+                    color = MFootColors.ink2,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
 
             when (state.step) {
                 FoundingStep.CLUB -> ClubStep(state, onChange)

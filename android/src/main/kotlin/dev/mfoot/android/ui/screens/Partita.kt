@@ -1,5 +1,13 @@
 package dev.mfoot.android.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
+import dev.mfoot.android.ui.theme.MFootMotion
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,7 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -155,10 +163,30 @@ private fun Tabellone(state: MatchState) {
                 textAlign = TextAlign.End,
             )
 
+            // Il risultato sbatte in scala quando cambia.
+            //
+            // E' il momento per cui si sta guardando la partita, e finora il numero
+            // cambiava e basta: se stavi leggendo l'elenco degli eventi, il gol te lo
+            // perdevi e lo scoprivi dal tabellino.
+            var precedente by remember { mutableStateOf(state.golCasa + state.golFuori) }
+            val segnato = remember { Animatable(1f) }
+            LaunchedEffect(state.golCasa, state.golFuori) {
+                val adesso = state.golCasa + state.golFuori
+                if (adesso > precedente) {
+                    segnato.snapTo(1.9f)
+                    segnato.animateTo(1f, tween(700, easing = MFootMotion.easing))
+                }
+                precedente = adesso
+            }
+
             Text(
                 "  ${state.golCasa} - ${state.golFuori}  ",
                 style = MFootType.overallLarge,
                 color = MFootColors.ink,
+                modifier = Modifier.graphicsLayer {
+                    scaleX = segnato.value
+                    scaleY = segnato.value
+                },
             )
 
             Text(

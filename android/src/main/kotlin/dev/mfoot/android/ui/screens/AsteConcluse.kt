@@ -1,5 +1,11 @@
 package dev.mfoot.android.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import dev.mfoot.android.ui.Coriandoli
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +59,16 @@ fun AsteConcluseScreen(
 ) {
     LaunchedEffect(state.lega.league.id) { onCarica() }
 
+    // Hai vinto qualcosa mentre non guardavi?
+    //
+    // Le aste concluse arrivano tutte insieme, e fra quelle ce ne possono essere di tue.
+    // La festa parte una volta sola per apertura della scheda — non a ogni ridisegno — e
+    // solo se c'e' davvero un acquisto tuo: `remember` sulla lega tiene il conto.
+    val mio = state.lega.myClub?.id
+    val vinte = aste.count { it.status == "AGGIUDICATA" && it.winnerClubId != null && it.winnerClubId == mio }
+    var festeggiato by remember(state.lega.league.id) { mutableStateOf(false) }
+    LaunchedEffect(vinte) { if (vinte > 0) festeggiato = true }
+
     if (aste.isEmpty()) {
         Box(
             Modifier.fillMaxSize().background(MFootColors.bg),
@@ -69,11 +85,28 @@ fun AsteConcluseScreen(
         return
     }
 
-    LazyColumn(Modifier.fillMaxSize().background(MFootColors.bg)) {
-        items(aste, key = { it.id }) { asta ->
-            Asta(state, asta, nomeStaff)
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize().background(MFootColors.bg)) {
+            items(aste, key = { it.id }) { asta ->
+                Asta(state, asta, nomeStaff)
+            }
+            item { Spacer(Modifier.height(30.dp)) }
         }
-        item { Spacer(Modifier.height(30.dp)) }
+
+        // I coriandoli nei colori della tua maglia, sopra l'elenco.
+        //
+        // Non intercettano il tocco — sono un `Canvas` senza `clickable` — quindi si puo'
+        // continuare a scorrere mentre volano.
+        val kit = state.lega.myClub?.kit
+        Coriandoli(
+            attivi = festeggiato,
+            tinte = listOfNotNull(
+                kit?.let { Color(it.primary) },
+                kit?.let { Color(it.secondary) },
+                MFootColors.elite,
+                MFootColors.gamble,
+            ),
+        )
     }
 }
 

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.DeskState
 import dev.mfoot.android.ui.Cartellino
+import dev.mfoot.android.ui.Cifra
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Notice
 import dev.mfoot.android.ui.Scheda
@@ -89,9 +90,9 @@ fun ProfiloLegaScreen(state: AppState.Dentro) {
 
             Striscia(
                 listOf(
-                    "${clubs.size}" to "Club",
-                    "${state.lega.players.size}" to "Giocatori",
-                    "${lega.currentMatchDay}" to "Giornata",
+                    Cifra(clubs.size.toLong(), "Club"),
+                    Cifra(state.lega.players.size.toLong(), "Giocatori"),
+                    Cifra(lega.currentMatchDay.toLong(), "Giornata"),
                 ),
             )
 

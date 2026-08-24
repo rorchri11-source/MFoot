@@ -1,6 +1,7 @@
 package dev.mfoot.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -25,10 +26,22 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -41,6 +54,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.ui.icons.MFootIcons
 import dev.mfoot.android.ui.theme.MFootColors
+import dev.mfoot.android.ui.theme.contaFinoA
+import dev.mfoot.android.ui.theme.premuta
+import dev.mfoot.android.ui.theme.rotazioneLenta
+import dev.mfoot.android.ui.theme.MFootMotion
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
@@ -252,21 +269,29 @@ fun Cartellino(
  * sono state misurate.
  */
 @Composable
-fun Striscia(voci: List<Pair<String, String>>, modifier: Modifier = Modifier) {
+fun Striscia(voci: List<Cifra>, modifier: Modifier = Modifier) {
     Scheda(modifier) {
         Row(
             Modifier.padding(vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            voci.forEach { (valore, etichetta) ->
+            voci.forEach { cifra ->
                 Column(
                     Modifier.weight(1f),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(valore, style = MFootType.playerName, color = MFootColors.ink)
+                    // Il numero sale da zero. E' quello che si guarda per primo tornando
+                    // sull'app, e cosi' si fa guardare da solo invece di stare li' fermo
+                    // come tutti gli altri.
+                    val corrente = contaFinoA(cifra.valore, cifra.etichetta)
+                    Text(
+                        cifra.formato(corrente),
+                        style = MFootType.playerName,
+                        color = MFootColors.ink,
+                    )
                     Spacer(Modifier.height(3.dp))
                     Text(
-                        etichetta,
+                        cifra.etichetta,
                         style = MFootType.chip,
                         color = MFootColors.ink2,
                         maxLines = 1,
@@ -277,6 +302,19 @@ fun Striscia(voci: List<Pair<String, String>>, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * Un numero della striscia.
+ *
+ * Porta il **valore**, non la stringa gia' fatta: per farlo salire da zero bisogna poterlo
+ * contare, e da «100M» non si torna indietro. Il formato resta a chi chiama, perche' i
+ * crediti si scrivono in modo diverso dalle giornate.
+ */
+data class Cifra(
+    val valore: Long,
+    val etichetta: String,
+    val formato: (Long) -> String = { it.toString() },
+)
 
 /**
  * La testata illustrata a schermo pieno, con gli archi concentrici.
@@ -368,7 +406,11 @@ fun Testata(
  */
 @Composable
 private fun Archi(modifier: Modifier = Modifier) {
-    androidx.compose.foundation.Canvas(modifier) {
+    // Un giro ogni ventisei secondi: non lo noti guardando, lo noti se torni sulla
+    // schermata e non e' piu' com'era.
+    val gradi = rotazioneLenta()
+
+    androidx.compose.foundation.Canvas(modifier.graphicsLayer { rotationZ = gradi }) {
         val centro = Offset(size.width * 1.02f, -size.height * 0.34f)
         val tinte = listOf(
             MFootColors.blueArc.copy(alpha = 0.85f),
@@ -405,12 +447,26 @@ fun PrimaryButton(
     enabled: Boolean = true,
     icona: ImageVector? = null,
 ) {
+    // La stessa sorgente va al `clickable` e alla scala: se fossero due, la scala
+    // guarderebbe una pressione che non e' quella di questo pulsante.
+    val sorgente = remember { MutableInteractionSource() }
     Row(
         modifier
+            .premuta(sorgente)
             .fillMaxWidth()
             .clip(MFootShapes.pill)
             .background(if (enabled) MFootColors.elite else MFootColors.core)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                if (enabled) {
+                    Modifier.clickable(
+                        interactionSource = sorgente,
+                        indication = LocalIndication.current,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier
+                },
+            )
             .padding(vertical = 15.dp, horizontal = 20.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
@@ -436,16 +492,22 @@ fun PrimaryButton(
  */
 @Composable
 fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val sorgente = remember { MutableInteractionSource() }
     Text(
         text = text,
         style = MFootType.rowTitle,
         color = MFootColors.elite,
         modifier = modifier
+            .premuta(sorgente)
             .fillMaxWidth()
             .clip(MFootShapes.pill)
             .background(MFootColors.core)
             .border(1.5.dp, MFootColors.elite.copy(alpha = 0.45f), MFootShapes.pill)
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = sorgente,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            )
             .padding(vertical = 15.dp),
         textAlign = TextAlign.Center,
     )
@@ -466,12 +528,18 @@ fun Tondo(
     grande: Boolean = false,
     descrizione: String? = null,
 ) {
+    val sorgente = remember { MutableInteractionSource() }
     Box(
         modifier
+            .premuta(sorgente)
             .size(if (grande) 60.dp else 46.dp)
             .clip(RoundedCornerShape(50))
             .background(fondo)
-            .clickable(onClick = onClick),
+            .clickable(
+                interactionSource = sorgente,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -574,12 +642,20 @@ fun <T> BarraSchede(
                     maxLines = 1,
                 )
                 Spacer(Modifier.height(10.dp))
+                // La sottolineatura non si accende e si spegne: **cresce e si ritira**.
+                // Con due riquadri che cambiano colore di colpo il passaggio non si vede,
+                // e la linguetta nuova sembra essersi accesa da sola in un altro punto.
+                val larghezza by animateFloatAsState(
+                    targetValue = if (acceso) 1f else 0f,
+                    animationSpec = tween(MFootMotion.fast, easing = MFootMotion.easing),
+                    label = "sottolineatura",
+                )
                 Box(
                     Modifier
-                        .fillMaxWidth()
+                        .fillMaxWidth(larghezza)
                         .height(3.dp)
                         .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                        .background(if (acceso) MFootColors.blue else Color.Transparent),
+                        .background(MFootColors.blue),
                 )
             }
         }
@@ -654,9 +730,20 @@ fun Avanzamento(
             // creata e non ancora sorteggiata — sarebbe una divisione per zero, e la
             // schermata si spegnerebbe invece di mostrare una barra vuota.
             val quota = if (totale > 0) (fatto.toFloat() / totale).coerceIn(0f, 1f) else 0f
+
+            // Parte da zero e arriva al punto giusto: la proporzione si **vede** crescere,
+            // e a che punto sia la stagione si capisce prima di aver letto i due numeri.
+            var partita by remember(fatto, totale) { mutableStateOf(false) }
+            LaunchedEffect(fatto, totale) { partita = true }
+            val riempita by animateFloatAsState(
+                targetValue = if (partita) quota else 0f,
+                animationSpec = tween(MFootMotion.normal, easing = MFootMotion.easing),
+                label = "avanzamento",
+            )
+
             Box(
                 Modifier
-                    .fillMaxWidth(quota)
+                    .fillMaxWidth(riempita)
                     .height(5.dp)
                     .clip(MFootShapes.pill)
                     .background(MFootColors.blue),
@@ -720,14 +807,20 @@ fun Selettore(
  */
 @Composable
 fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val sorgente = remember { MutableInteractionSource() }
     Text(
         text = label,
         style = MFootType.chip,
         color = if (selected) MFootColors.onAccent else MFootColors.ink2,
         modifier = Modifier
+            .premuta(sorgente)
             .clip(MFootShapes.pill)
             .background(if (selected) MFootColors.elite else MFootColors.core)
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = sorgente,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            )
             .padding(horizontal = 14.dp, vertical = 8.dp),
     )
 }
@@ -899,6 +992,79 @@ fun Vuoto(
         }
     }
 }
+
+/**
+ * I coriandoli: la festa, per le poche volte che c'e' qualcosa da festeggiare.
+ *
+ * ## Quando si accende
+ *
+ * Un'asta vinta dopo tre giorni di rilanci, un obiettivo di stagione raggiunto, una
+ * promozione. **Non** a ogni acquisto: se si festeggia anche il quarto portiere, alla
+ * terza volta la festa e' un ritardo con i colori.
+ *
+ * Le particelle sono nei colori della **tua** maglia piu' il lavanda dell'accento, cosi'
+ * quello che vola per aria e' la tua squadra e non una decorazione qualsiasi.
+ *
+ * ## Perche' un `Canvas` e non delle viste
+ *
+ * Novanta pezzi sono novanta composable che si ridisegnano sessanta volte al secondo. Su
+ * una tela sono novanta rettangoli in un ciclo solo, e la differenza si sente sul telefono
+ * che ha in mano il proprietario di questa lega.
+ */
+@Composable
+fun Coriandoli(
+    attivi: Boolean,
+    modifier: Modifier = Modifier,
+    tinte: List<Color> = listOf(MFootColors.elite, MFootColors.blue, MFootColors.gamble),
+) {
+    if (!attivi) return
+
+    val pezzi = remember(tinte) {
+        List(90) {
+            Pezzo(
+                x = 0.5f + (Math.random().toFloat() - 0.5f) * 0.25f,
+                vx = (Math.random().toFloat() - 0.5f) * 0.020f,
+                vy = -0.012f - Math.random().toFloat() * 0.020f,
+                giro = Math.random().toFloat() * 6.28f,
+                velocitaGiro = (Math.random().toFloat() - 0.5f) * 0.3f,
+                tinta = tinte[(Math.random() * tinte.size).toInt()],
+            )
+        }
+    }
+
+    val tempo = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { tempo.animateTo(1f, tween(2600, easing = LinearEasing)) }
+
+    androidx.compose.foundation.Canvas(modifier.fillMaxSize()) {
+        val t = tempo.value * 60f
+        pezzi.forEach { p ->
+            // Moto con gravita': posizione = iniziale + velocita' * t + mezzo g t quadro.
+            // Scritta cosi' non serve tenere lo stato di ogni pezzo fra un fotogramma e
+            // l'altro — basta il tempo trascorso, e la festa e' ripetibile identica.
+            val x = (p.x + p.vx * t) * size.width
+            val y = (0.42f + p.vy * t + 0.00026f * t * t) * size.height
+            if (y > size.height * 1.1f) return@forEach
+
+            rotate(degrees = (p.giro + p.velocitaGiro * t) * 57.3f, pivot = Offset(x, y)) {
+                drawRect(
+                    color = p.tinta.copy(alpha = (1f - tempo.value).coerceIn(0f, 1f)),
+                    topLeft = Offset(x - 4f, y - 6f),
+                    size = androidx.compose.ui.geometry.Size(8f, 12f),
+                )
+            }
+        }
+    }
+}
+
+/** Un coriandolo: dove parte, dove va, come gira. */
+private data class Pezzo(
+    val x: Float,
+    val vx: Float,
+    val vy: Float,
+    val giro: Float,
+    val velocitaGiro: Float,
+    val tinta: Color,
+)
 
 /** Il filo che separa senza pesare. */
 @Composable

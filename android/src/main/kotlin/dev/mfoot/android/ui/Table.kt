@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.ui.icons.MFootIcons
+import dev.mfoot.android.ui.theme.lampo
 import dev.mfoot.android.ui.kit.CrestBadge
 import androidx.compose.foundation.layout.size
 import dev.mfoot.android.app.TableState
@@ -223,7 +224,11 @@ private fun TableRow(
         Modifier
             .padding(horizontal = MFootSpacing.section)
             .fillMaxWidth()
-            .background(MFootColors.core),
+            .background(MFootColors.core)
+            // In venti righe di nomi inventati, trovare la propria senza leggerle tutte e'
+            // la differenza fra consultare e cercare. La barretta blu lo dice da ferma,
+            // la lama lo dice all'apertura.
+            .lampo(mine, name),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // La barretta blu segna la propria, come nell'elenco squadre. Prima era un fondo

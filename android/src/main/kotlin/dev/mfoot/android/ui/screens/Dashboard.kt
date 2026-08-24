@@ -39,6 +39,7 @@ import dev.mfoot.android.ui.Notice
 import dev.mfoot.android.ui.PrimaryButton
 import dev.mfoot.android.ui.Avanzamento
 import dev.mfoot.android.ui.Cartellino
+import dev.mfoot.android.ui.Cifra
 import dev.mfoot.android.ui.Scheda
 import dev.mfoot.android.ui.Spiegazione
 import dev.mfoot.android.ui.Striscia
@@ -46,6 +47,7 @@ import dev.mfoot.android.ui.Tondo
 import dev.mfoot.android.ui.Vuoto
 import dev.mfoot.android.ui.icons.MFootIcons
 import dev.mfoot.android.ui.kit.Shirt
+import dev.mfoot.android.ui.kit.luceSullaMaglia
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
@@ -162,7 +164,15 @@ fun DashboardScreen(
                 }
 
                 Spacer(Modifier.height(14.dp))
-                Shirt(club.kit, Modifier.size(140.dp, 158.dp), showNumber = false)
+                // La luce che attraversa la maglia, all'apertura.
+                //
+                // E' l'unica cosa davvero tua in tutta l'app — i colori li hai scelti alla
+                // fondazione — e finora stava ferma come un'illustrazione qualsiasi.
+                Shirt(
+                    club.kit,
+                    Modifier.size(140.dp, 158.dp).luceSullaMaglia(club.id),
+                    showNumber = false,
+                )
             }
 
             // I tre tondi: le tre cose che si fanno tornando a casa.
@@ -214,9 +224,9 @@ fun DashboardScreen(
             val minimo = state.lega.league.config.setup.minSquadSize
             Striscia(
                 listOf(
-                    Money(club.available).formatShort() to "Disponibili",
-                    rosa.size.toString() to "In rosa",
-                    state.myAuctions.size.toString() to "Tue aste",
+                    Cifra(club.available.toLong(), "Disponibili") { Money(it.toInt()).formatShort() },
+                    Cifra(rosa.size.toLong(), "In rosa"),
+                    Cifra(state.myAuctions.size.toLong(), "Tue aste"),
                 ),
             )
 
