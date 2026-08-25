@@ -34,7 +34,33 @@ sprecati a riscrivere una cache identica a quella che c'era già.
 È la spiegazione di «le AI comprano una volta al giorno»: non erano lente, due volte su tre
 il loro acquisto veniva cancellato da un numero in un file YAML.
 
-Le tre correzioni, in ordine di peso:
+### Dove finivano davvero i sei minuti e tre quarti
+
+Il conto delle andate e ritorno verso il database non torna. Partite, mercato delle AI,
+colloqui, promesse: sommati stanno intorno a **millecento** viaggi, che a cinquanta
+millisecondi l'uno fanno meno di un minuto. Mancavano cinque minuti, e li mangiava una
+cosa che con il database non c'entra niente:
+
+```kotlin
+val immediate = caricaDaConsegnare(league.id, "immediata", limite = 20)
+for (riga in immediate) {
+    if (!notifier.send(...)) break     // una richiesta HTTPS per notifica
+```
+
+**Venti richieste separate a Telegram, in fila, con quindici secondi di timeout
+ciascuna.** Telegram limita a circa venti messaggi al minuto per chat: oltre quella
+soglia risponde `429` e le richieste si trascinano. Caso peggiore: cinque minuti passati
+ad aspettare, su un giro che ne aveva dieci prima di essere ucciso. E da quando le AI si
+muovono davvero, venti notifiche in un giro non sono un caso limite — sono il normale.
+
+Adesso è **un messaggio solo** con dentro tutte le notizie del giro. Resta immediato — è
+lo stesso giro — e il gruppo smette di ricevere venti messaggi di fila, che era l'altro
+motivo per cui non andava bene.
+
+Le correzioni, in ordine di peso:
+
+0. **Le notifiche immediate partono insieme**, non una per una. È la voce che da sola
+   spiega i minuti mancanti.
 
 1. **`timeout-minutes: 20`**, e un budget di quindici minuti dentro il tick
    ([`TickBudget`](tick/src/main/kotlin/dev/mfoot/tick/TickBudget.kt)): il giro si ferma da
@@ -44,9 +70,30 @@ Le tre correzioni, in ordine di peso:
    dentro un ciclo, più le stelle dell'allenatore per ognuno: una cinquantina di andate e
    ritorni per partita. Adesso è una query sola, e i due valori che non cambiano dentro un
    giro si ricordano.
-3. **Sette indici nuovi**, e un cronometro che stampa dove sono finiti i secondi — perché
-   il registro diceva solo «terminato in 405000 ms», e senza sapere di cosa l'unica strada
-   è indovinare quale pezzo sia lento.
+3. **Sette indici nuovi**, e un cronometro che misura ogni fase — perché il registro
+   diceva solo «terminato in 405000 ms», e senza sapere di cosa l'unica strada è
+   indovinare quale pezzo sia lento.
+4. **Il listino si legge una volta per giro, non ottanta.** `compraDalListino` chiamava
+   `loadListings` a ogni mossa: due query di cui una riporta un migliaio di righe. Andava
+   bene con una mossa per risveglio; con otto mosse e dieci club diventavano ottanta
+   letture dello stesso elenco. Era una regressione introdotta insieme alla correzione
+   delle AI ferme — il genere di costo che non si vede scrivendo il codice, perché la
+   funzione era già lì e sembrava gratis. Adesso listino, aste aperte e acquisti
+   contestabili restano in memoria finché qualcuno non scrive.
+
+### Come si leggono i tempi, senza scaricare i registri di GitHub
+
+Il riepilogo per fase finisce in **`tick_state.last_run_notes`**, che si apre dal Table
+Editor di Supabase in due tocchi:
+
+```
+tempi: partite 41200ms, mercato AI 12800ms, notifiche 900ms, scouting 400ms
+```
+
+Il registro di un'esecuzione di GitHub Actions si scarica solo con un token, e chi
+gestisce la lega guarda il database. È la differenza fra sapere che un giro dura sette
+minuti e sapere **di cosa** sono fatti: senza il secondo dato, ottimizzare significa
+indovinare.
 
 ---
 

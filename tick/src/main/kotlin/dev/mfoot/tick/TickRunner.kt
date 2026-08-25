@@ -174,6 +174,49 @@ class TickRunner(
     private val nomiDeiClub = HashMap<Long, String>()
     private val stelleAllenatore = HashMap<Long, Int>()
 
+    /*
+     * IL MERCATO, LETTO UNA VOLTA INVECE CHE OTTANTA
+     *
+     * `compraDalListino` chiamava `loadListings` a ogni mossa: due query, di cui una che
+     * riporta indietro **tutti** gli svincolati della lega — un migliaio di righe — e
+     * un'altra che ricarica altrettanti giocatori. Andava bene finche' un'AI faceva una
+     * mossa per risveglio. Da quando ne fa fino a otto, e con dieci club, sono ottanta
+     * letture dello stesso identico elenco dentro lo stesso giro.
+     *
+     * E' una regressione introdotta insieme alla correzione delle AI ferme, ed e' il
+     * genere di costo che non si vede scrivendo il codice: la funzione era gia' li' e
+     * sembrava gratis.
+     *
+     * Qui il listino, le aste e gli acquisti contestabili si leggono **una volta** e
+     * restano finche' qualcuno non li tocca. `mercatoCambiato()` li butta via, e lo chiama
+     * ogni scrittura: e' volutamente grossolano — invalida tutti e tre anche quando ne
+     * cambia uno — perche' un'invalidazione fine sbagliata farebbe comprare due volte lo
+     * stesso giocatore, e il costo di sbagliare e' incomparabilmente piu' alto del costo
+     * di una rilettura.
+     */
+    private var listinoInCache: List<Pair<Listing, Player>>? = null
+    private var asteInCache: List<Auction>? = null
+    private var acquistiInCache: List<Purchase>? = null
+
+    /** I club della lega e chi di loro e' del computer: dentro un giro non cambiano mai. */
+    private var clubInCache: List<ClubId>? = null
+    private val eDelComputer = HashMap<Long, Boolean>()
+
+    /** Qualcuno ha scritto sul mercato: le liste in memoria non valgono piu'. */
+    private fun mercatoCambiato() {
+        listinoInCache = null
+        asteInCache = null
+        acquistiInCache = null
+    }
+
+    private fun svuotaLaCache() {
+        nomiDeiClub.clear()
+        stelleAllenatore.clear()
+        clubInCache = null
+        eDelComputer.clear()
+        mercatoCambiato()
+    }
+
     fun runAllLeagues(now: Instant): TickSummary {
         val summaries = mutableListOf<LeagueSummary>()
         val failures = mutableListOf<String>()
@@ -189,8 +232,7 @@ class TickRunner(
                 break
             }
 
-            nomiDeiClub.clear()
-            stelleAllenatore.clear()
+            svuotaLaCache()
 
             try {
                 summaries += runLeague(league, now)
@@ -205,6 +247,20 @@ class TickRunner(
         log("Tempi: ${cronometro.riepilogo()} (${budget.descrivi()})")
         return TickSummary(summaries, failures)
     }
+
+    /**
+     * I tempi del giro, dove si possono leggere senza scaricare i registri di GitHub.
+     *
+     * ## Perche' non basta stamparli
+     *
+     * Perche' il registro di un'esecuzione di GitHub Actions si scarica solo con un token,
+     * e chi gestisce la lega guarda il database. Scritti in `tick_state.last_run_notes` si
+     * leggono dal Table Editor di Supabase in due tocchi, e restano li' fino al giro dopo.
+     *
+     * E' la differenza fra sapere che un giro dura sette minuti e sapere **di cosa** sono
+     * fatti: senza il secondo dato, ottimizzare significa indovinare.
+     */
+    private fun tempiDelGiro(): String = "tempi: ${cronometro.riepilogo()}"
 
     // ------------------------------------------------------------------- una lega
 
@@ -389,7 +445,14 @@ class TickRunner(
         // annullera' un attimo dopo.
         notes += cronometro.fase("notifiche") { consegnaLeNotifiche(league, riepilogo) }
 
-        saveTickState(league.id, plan.processedUpTo, notes.joinToString(" | "), settled)
+        // I tempi in coda alle note: `last_run_notes` e' troncato a duemila caratteri e
+        // quello che conta di piu' non deve essere la prima cosa a cadere.
+        saveTickState(
+            league.id,
+            plan.processedUpTo,
+            (notes + tempiDelGiro()).joinToString(" | "),
+            settled,
+        )
 
         return LeagueSummary(league.id, league.name, plan.effects.size, applied, pending, notes)
     }
@@ -1146,12 +1209,42 @@ class TickRunner(
 
         val note = mutableListOf<String>()
 
+        /*
+         * LE IMMEDIATE PARTONO INSIEME, NON UNA PER UNA
+         *
+         * Erano fino a venti richieste HTTPS separate verso Telegram, in fila, ognuna con
+         * quindici secondi di timeout. Due costi, e il secondo e' peggiore del primo:
+         *
+         * - il tempo. Telegram limita a circa venti messaggi al minuto **per chat**:
+         *   superata la soglia risponde 429 e le richieste rallentano fino a fermarsi. Un
+         *   giro con venti notifiche poteva passare piu' tempo ad aspettare Telegram che a
+         *   far girare il mondo — e da quando le AI si muovono davvero, venti notifiche in
+         *   un giro non sono un caso limite.
+         * - il gruppo. Venti messaggi di fila su una chat dove leggono dodici amici e'
+         *   esattamente il rumore che il sistema a due canali esiste per evitare.
+         *
+         * Un messaggio solo con dentro tutte le notizie del giro resta **immediato** — e'
+         * lo stesso giro, la stessa manciata di secondi — e si legge meglio.
+         *
+         * Si segna consegnato solo se il messaggio e' partito: se Telegram non risponde le
+         * righe restano li' e ci riprova il giro dopo.
+         */
         if (league.config.notifications.immediateEnabled) {
             val immediate = caricaDaConsegnare(league.id, "immediata", limite = 20)
-            for (riga in immediate) {
-                if (!notifier.send("<b>${escapeHtml(league.name)}</b>\n${riga.perIlGruppo()}")) break
-                segnaConsegnata(riga.id)
-                note += "notifica mandata"
+            if (immediate.isNotEmpty()) {
+                val testo = if (immediate.size == 1) {
+                    "<b>${escapeHtml(league.name)}</b>\n${immediate.first().perIlGruppo()}"
+                } else {
+                    buildString {
+                        append("<b>${escapeHtml(league.name)}</b>\n")
+                        immediate.forEach { append("\n• ").append(it.perIlGruppo()) }
+                    }
+                }
+
+                if (notifier.send(testo)) {
+                    immediate.forEach { segnaConsegnata(it.id) }
+                    note += "${immediate.size} notifiche mandate in un messaggio"
+                }
             }
         }
 
@@ -1894,6 +1987,10 @@ class TickRunner(
      * bloccati per sempre senza capire perche'.
      */
     private fun closeAuction(league: LeagueRow, auctionId: Long) {
+        // Chiudere un.asta tocca aste, acquisti e a volte il listino: quello che sta in
+        // memoria non vale piu..
+        mercatoCambiato()
+
         val auction = loadAuction(auctionId) ?: return
         if (!auction.isOpen) return
 
@@ -2113,6 +2210,7 @@ class TickRunner(
      * si puo' piu' contestare.
      */
     private fun confermaAcquistiScaduti(league: LeagueRow) {
+        mercatoCambiato()
         connection.prepareStatement(
             "update purchases set status = 'CONFERMATO' " +
                 "where league_id = ? and status = 'IN_FINESTRA' and contestable_until <= now()",
@@ -2231,7 +2329,11 @@ class TickRunner(
      * un secondo interlocutore con lo stesso proprietario — cioe' il modo piu' semplice di
      * spostarsi un giocatore da una tasca all'altra fingendo che sia un mercato.
      */
-    private fun loadClubIds(leagueId: Long): List<ClubId> {
+    /** I club della lega. Dentro un giro non ne nascono e non ne muoiono. */
+    private fun loadClubIds(leagueId: Long): List<ClubId> =
+        clubInCache ?: leggiClubIds(leagueId).also { clubInCache = it }
+
+    private fun leggiClubIds(leagueId: Long): List<ClubId> {
         val out = mutableListOf<ClubId>()
         connection.prepareStatement(
             "select id from clubs where league_id = ? and parent_club_id is null order by id",
@@ -2831,6 +2933,12 @@ class TickRunner(
 
             if (!fatto) break
 
+            // Ha scritto qualcosa: listino, aste e acquisti in memoria non valgono piu'.
+            // Si arriva qui **solo** dopo una mossa riuscita, ed e' cio' che rende il
+            // risparmio possibile: fra un tentativo fallito e il successivo il mercato non
+            // e' cambiato, quindi rileggerlo sarebbe lavoro buttato.
+            mercatoCambiato()
+
             stato = AiScheduler.recordAction(stato, now)
             azioni++
 
@@ -3056,8 +3164,16 @@ class TickRunner(
         return out
     }
 
-    /** Il listino aperto della lega, con i giocatori gia' agganciati. */
-    private fun loadListings(leagueId: Long): List<Pair<Listing, Player>> {
+    /**
+     * Il listino aperto della lega, con i giocatori gia. agganciati.
+     *
+     * Due query di cui una riporta un migliaio di righe: e. la lettura piu. cara del giro,
+     * ed era ripetuta a ogni mossa di ogni AI. Adesso vale finche. nessuno tocca il mercato.
+     */
+    private fun loadListings(leagueId: Long): List<Pair<Listing, Player>> =
+        listinoInCache ?: leggiListino(leagueId).also { listinoInCache = it }
+
+    private fun leggiListino(leagueId: Long): List<Pair<Listing, Player>> {
         val righe = mutableListOf<Triple<Long, Long?, Pair<Long, Int>>>()
         connection.prepareStatement(
             // Solo i giocatori: lo staff sta nella stessa tabella con un target_type suo,
@@ -3121,6 +3237,7 @@ class TickRunner(
      */
     private fun aggiornaListinoSvincolati(league: LeagueRow) {
         if (!league.config.market.instantBuyEnabled) return
+        mercatoCambiato()
 
         // Chi e' a listino come svincolato ma nel frattempo ha trovato squadra esce: la
         // riga resterebbe comprabile, e due club si contenderebbero un giocatore che ha
@@ -3212,7 +3329,13 @@ class TickRunner(
             st.setLong(1, listing.id)
             st.executeUpdate() > 0
         }
-        if (!preso) return false
+        if (!preso) {
+            // Zero righe toccate vuol dire che quella riga non e' piu' aperta: qualcun
+            // altro l'ha presa. E' l'unico caso in cui una mossa **fallita** dimostra che
+            // il listino in memoria e' vecchio, quindi va buttato anche qui.
+            mercatoCambiato()
+            return false
+        }
 
         addebita(club.id, listing.price)
         listing.seller?.let { accredita(it, listing.price) }
@@ -3295,7 +3418,11 @@ class TickRunner(
         return false
     }
 
-    private fun loadOpenPurchases(leagueId: Long): List<Purchase> {
+    /** Gli acquisti ancora contestabili. Riletti solo dopo una scrittura sul mercato. */
+    private fun loadOpenPurchases(leagueId: Long): List<Purchase> =
+        acquistiInCache ?: leggiAcquistiAperti(leagueId).also { acquistiInCache = it }
+
+    private fun leggiAcquistiAperti(leagueId: Long): List<Purchase> {
         val out = mutableListOf<Purchase>()
         connection.prepareStatement(
             "select id, player_id, buyer_club_id, seller_club_id, price, bought_at, " +
@@ -3747,9 +3874,15 @@ class TickRunner(
             if (ok) return true
         }
 
+        // I giocatori all'asta, tutti in una query. Era `loadPlayerRow` dentro il ciclo:
+        // un'andata e ritorno per asta, moltiplicata per ogni AI e per ogni mossa.
+        val allAsta = loadPlayerRows(
+            auctions.mapNotNull { (it.target as? AuctionTarget.ForPlayer)?.playerId?.value },
+        )
+
         val candidates = auctions.mapNotNull { auction ->
             val target = (auction.target as? AuctionTarget.ForPlayer) ?: return@mapNotNull null
-            val player = loadPlayerRow(target.playerId)?.player ?: return@mapNotNull null
+            val player = allAsta[target.playerId.value]?.player ?: return@mapNotNull null
 
             // Quante altre AI sono gia' impegnate qui: e' il numero che spegne lo sciame.
             val competing = auction.bids.map { it.club }.distinct().count { it != club.id && isAi(it) }
@@ -4088,11 +4221,13 @@ class TickRunner(
         return out.take(limit)
     }
 
-    private fun isAi(clubId: ClubId): Boolean =
+    /** Se questo club e' del computer. Chiesto una volta per club dentro `tryBid`. */
+    private fun isAi(clubId: ClubId): Boolean = eDelComputer.getOrPut(clubId.value) {
         connection.prepareStatement("select is_ai from clubs where id = ?").use { st ->
             st.setLong(1, clubId.value)
             st.executeQuery().use { rs -> rs.next() && rs.getBoolean(1) }
         }
+    }
 
     private fun loadAiStates(leagueId: Long): List<AiState> {
         val out = mutableListOf<AiState>()
@@ -5045,7 +5180,11 @@ class TickRunner(
         return out
     }
 
-    private fun loadOpenAuctions(leagueId: Long): List<Auction> {
+    /** Le aste aperte. Rilette solo dopo che qualcuno ha scritto sul mercato. */
+    private fun loadOpenAuctions(leagueId: Long): List<Auction> =
+        asteInCache ?: leggiAsteAperte(leagueId).also { asteInCache = it }
+
+    private fun leggiAsteAperte(leagueId: Long): List<Auction> {
         val auctions = mutableListOf<Auction>()
         connection.prepareStatement(
             """
