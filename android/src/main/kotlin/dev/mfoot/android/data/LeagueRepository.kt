@@ -76,6 +76,27 @@ data class ClubInfo(
     val available: Int get() = credits - committedCredits
 }
 
+/**
+ * Il contratto di un giocatore, per quel poco che serve all'interfaccia.
+ *
+ * Non e' [dev.mfoot.core.model.Contract]: quello e' il modello di gioco, con `signedOn`,
+ * `pricePaid` e la clausola, e vive in `core` dove servono per le regole. Qui bastano le
+ * due cose che cambiano una decisione mentre si guarda una scheda — **quando scade** e
+ * **quanto costa a giornata** — e portarsi dietro il resto significherebbe leggere colonne
+ * che nessuna schermata mostra.
+ */
+data class ContractInfo(
+    val clubId: Long,
+    val squad: String,
+    /** Giornata in cui scade. Si confronta con `league.currentMatchDay`. */
+    val expiresOn: Int,
+    val wagePerMatchDay: Int,
+) {
+    val isYouth: Boolean get() = squad == "primavera"
+
+    fun matchDaysLeft(today: Int): Int = (expiresOn - today).coerceAtLeast(0)
+}
+
 /** Tutto quello che serve per disegnare l'app, letto in un colpo solo. */
 data class LeagueSnapshot(
     val league: LeagueInfo,
@@ -85,6 +106,14 @@ data class LeagueSnapshot(
     val clubOfPlayer: Map<Long, Long>,
     /** Chi sta in Primavera: si allena, non gioca, e non conta per la prima squadra. */
     val youth: Set<Long> = emptySet(),
+    /**
+     * Scadenza e stipendio, per giocatore.
+     *
+     * In coda e con un default perche' e' arrivata dopo: uno snapshot costruito senza
+     * questa mappa resta valido e mostra semplicemente una scheda senza contratto,
+     * invece di non compilare.
+     */
+    val contracts: Map<Long, ContractInfo> = emptyMap(),
 ) {
     /**
      * La propria prima squadra.
@@ -147,8 +176,17 @@ object LeagueRepository {
         readLeague(leagueId).then { info ->
             readClubs(leagueId).then { clubs ->
                 readPlayers(leagueId).then { players ->
-                    readContracts(leagueId).then { (contratti, giovani) ->
-                        ApiResult.Ok(LeagueSnapshot(info, clubs, players, contratti, giovani))
+                    readContracts(leagueId).then { contratti ->
+                        ApiResult.Ok(
+                            LeagueSnapshot(
+                                league = info,
+                                clubs = clubs,
+                                players = players,
+                                clubOfPlayer = contratti.mapValues { it.value.clubId },
+                                youth = contratti.filterValues { it.isYouth }.keys,
+                                contracts = contratti,
+                            ),
+                        )
                     }
                 }
             }
@@ -228,7 +266,7 @@ object LeagueRepository {
      * altrui senza rileggere i giocatori. Un'asta chiusa o uno scambio accettato cambiano
      * **questa** tabella, non gli attributi di nessuno.
      */
-    suspend fun contracts(leagueId: Long): ApiResult<Pair<Map<Long, Long>, Set<Long>>> =
+    suspend fun contracts(leagueId: Long): ApiResult<Map<Long, ContractInfo>> =
         readContracts(leagueId)
 
     /**
@@ -370,16 +408,34 @@ object LeagueRepository {
      * nessun database: e la colonna che dice se un giocatore fa parte della prima squadra
      * o del settore giovanile, e senza di essa la Primavera resta invisibile all app.
      */
-    private suspend fun readContracts(leagueId: Long): ApiResult<Pair<Map<Long, Long>, Set<Long>>> {
-        val path = "/rest/v1/contracts?select=player_id,club_id,squad&league_id=eq.$leagueId"
+    /**
+     * I contratti, con scadenza e stipendio.
+     *
+     * ## Perche' queste due colonne si possono chiedere qui dentro
+     *
+     * La regola del progetto e' che una colonna **aggiunta da una migrazione** non entra
+     * mai in una SELECT condivisa: PostgREST rifiuta l'intera query su un database che non
+     * ce l'ha ancora, e a quel punto non si legge piu' la lega — non una schermata, tutto.
+     * E' gia' costato due volte, con `clubs.division_level` e `clubs.parent_club_id`.
+     *
+     * `expires_on` e `wage_per_match_day` non sono in quel caso: stanno nella `create table`
+     * di [`0001_schema.sql`], cioe' esistono in ogni database che ha la tabella `contracts`.
+     * Un database senza di loro sarebbe un database senza contratti.
+     */
+    private suspend fun readContracts(leagueId: Long): ApiResult<Map<Long, ContractInfo>> {
+        val path = "/rest/v1/contracts?select=player_id,club_id,squad,expires_on," +
+            "wage_per_match_day&league_id=eq.$leagueId"
 
         return SupabaseApi.get(path).then { body ->
-            val righe = JsonNode.parse(body).asList()
             ApiResult.Ok(
-                righe.associate { it["player_id"].long(0) to it["club_id"].long(0) } to
-                    righe.filter { it["squad"].str("prima") == "primavera" }
-                        .map { it["player_id"].long(0) }
-                        .toSet(),
+                JsonNode.parse(body).asList().associate { riga ->
+                    riga["player_id"].long(0) to ContractInfo(
+                        clubId = riga["club_id"].long(0),
+                        squad = riga["squad"].str("prima"),
+                        expiresOn = riga["expires_on"].int(0),
+                        wagePerMatchDay = riga["wage_per_match_day"].int(0),
+                    )
+                },
             )
         }
     }

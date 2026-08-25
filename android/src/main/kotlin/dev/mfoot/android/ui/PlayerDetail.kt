@@ -1,5 +1,6 @@
 package dev.mfoot.android.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,13 +20,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.mfoot.core.model.Money
 import dev.mfoot.android.ui.theme.MFootColors
@@ -34,13 +41,6 @@ import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.android.app.PlayerRow
 import dev.mfoot.core.model.Attr
-
-/** Estremi della scala su cui si legge la fascia di crescita. */
-private const val SCALE_MIN = 40f
-private const val SCALE_MAX = 99f
-
-private fun Int.onScale(): Float =
-    ((this - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)).coerceIn(0f, 1f)
 
 /**
  * La scheda giocatore — **registro alto**.
@@ -55,17 +55,46 @@ fun PlayerDetailScreen(
     carriera: dev.mfoot.android.data.Carriera = dev.mfoot.android.data.Carriera.NESSUNA,
     /** La giornata di lega corrente: serve a dire *quando torna* un infortunato. */
     giornata: Int = 0,
+    /** Gli incarichi che questo giocatore ha nella formazione: fascia, rigori, angoli. */
+    incarichi: List<dev.mfoot.core.match.MatchDuty> = emptyList(),
     canAuction: Boolean = false,
     /** Vero quando il giocatore e mio: cambia solo la parola sul pulsante, ma cambiarla
      * conta — "metti all asta" e "vendi" sono due gesti diversi. */
     isSelling: Boolean = false,
     /** Il testo del pulsante Primavera, o null se non si puo spostare questo giocatore. */
     youthAction: String? = null,
+    /** Quanto puo' spendere il proprio club, gia' al netto dei crediti impegnati. */
+    creditiDisponibili: Int = 0,
+    /** Il rilancio minimo della lega: serve a contestare, non a comprare. */
+    rilancioMinimo: Int = 1,
     onYouth: () -> Unit = {},
     onAuction: () -> Unit = {},
+    onCompra: () -> Unit = {},
+    onVendi: (Int) -> Unit = {},
+    onRitira: () -> Unit = {},
+    onSvincola: () -> Unit = {},
+    onContesta: (Int) -> Unit = {},
+    /**
+     * I club fra cui l'amministratore puo' spostare questo giocatore.
+     *
+     * Vuota per tutti gli altri, ed e' il modo giusto di dirlo: chi non e' admin non
+     * riceve dei comandi spenti, non riceve proprio la sezione. Un pulsante che si puo'
+     * premere e che da' sempre errore insegna a non fidarsi di nessun pulsante.
+     */
+    adminClubs: List<Pair<Long, String>> = emptyList(),
+    onAdminAssegna: (Long) -> Unit = {},
+    onAdminSvincola: () -> Unit = {},
     onClose: () -> Unit,
 ) {
     val player = row.player
+
+    // I tre fogli che si aprono sopra la scheda. Stato locale e non nel ViewModel: sono
+    // domande che nascono e muoiono dentro questa schermata, e portarle nello stato
+    // globale vorrebbe dire ricordarsi di azzerarle da ogni strada che porta via di qui.
+    var chiedeIlPrezzo by remember(row.player.id) { mutableStateOf(false) }
+    var chiedeSvincolo by remember(row.player.id) { mutableStateOf(false) }
+    var contesta by remember(row.player.id) { mutableStateOf(false) }
+    var scegliClub by remember(row.player.id) { mutableStateOf(false) }
 
     // La scheda riempie lo schermo e il piede resta ancorato in basso: lasciarla
     // galleggiare su un fondo vuoto la faceva sembrare incompiuta.
@@ -94,208 +123,504 @@ fun PlayerDetailScreen(
                         .weight(1f)
                         .verticalScroll(rememberScrollState()),
                 ) {
-                    Header(row)
-                    GrowthBand(row)
+                    Figurina(row, giornata, incarichi)
                     Condizione(row, giornata)
                     Carriera(carriera)
                     Attributes(row)
                     Stars(row)
                     Traits(row)
+                    if (adminClubs.isNotEmpty()) {
+                        SezioneAdmin(
+                            row = row,
+                            onAssegna = { scegliClub = true },
+                            onSvincola = onAdminSvincola,
+                        )
+                    }
                 }
-                Footer(row, canAuction, isSelling, youthAction, onYouth, onAuction, onClose)
-            }
-        }
-    }
-}
-
-@Composable
-private fun Header(row: PlayerRow) {
-    val player = row.player
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(MFootSpacing.gutter, MFootSpacing.gutter, MFootSpacing.gutter, 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // La bandiera al posto del pallino grigio. Con lo scouting che manda gli
-                // osservatori in un paese preciso, la nazionalita' smette di essere un
-                // dettaglio anagrafico e diventa il posto da cui uno viene.
-                Text(bandiera(player.nationality), style = MFootType.chip)
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    "${player.nationality.uppercase()} · ${player.age} ANNI",
-                    style = MFootType.label,
-                    color = MFootColors.ink3,
+                Footer(
+                    row = row,
+                    canAuction = canAuction,
+                    isSelling = isSelling,
+                    youthAction = youthAction,
+                    onYouth = onYouth,
+                    onAuction = onAuction,
+                    onClose = onClose,
+                    onCompra = onCompra,
+                    onVendi = { chiedeIlPrezzo = true },
+                    onRitira = onRitira,
+                    onSvincola = { chiedeSvincolo = true },
+                    onContesta = { contesta = true },
                 )
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Text(player.firstName, style = MFootType.givenName, color = MFootColors.ink2)
-            Text(player.lastName, style = MFootType.playerName, color = MFootColors.ink)
-
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                Chip(
-                    "${player.primaryPosition.short} · ${player.primaryPosition.label}",
-                    strong = true,
-                )
-                player.secondaryPositions.firstOrNull()?.let { Chip("anche ${it.short}") }
             }
         }
 
-        Box(
-            Modifier
-                .size(72.dp)
-                .background(MFootColors.bg, RoundedCornerShape(20.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    player.overall.toString(),
-                    style = MFootType.overallLarge,
-                    color = MFootColors.rating(player.overall),
-                )
-                Spacer(Modifier.height(4.dp))
-                Text("OVR", style = MFootType.label, color = MFootColors.ink3)
-            }
-        }
-    }
-}
-
-@Composable
-private fun Chip(text: String, strong: Boolean = false) {
-    Text(
-        text = text,
-        style = MFootType.chip,
-        color = if (strong) MFootColors.ink else MFootColors.ink2,
-        modifier = Modifier
-            .background(
-                if (strong) MFootColors.raised else MFootColors.bg,
-                MFootShapes.pill,
+        if (chiedeIlPrezzo) {
+            FoglioPrezzo(
+                titolo = "A quanto lo vendi?",
+                spiegazione = "Il prezzo lo decidi tu. Chi lo compra se lo porta via subito, " +
+                    "ma per dodici ore chiunque può contestare l'acquisto e aprire un'asta.",
+                iniziale = row.value,
+                passo = 1.coerceAtLeast(row.value / 20),
+                minimo = 1,
+                massimo = Int.MAX_VALUE / 2,
+                conferma = { "Metti in vendita a $it" },
+                onConferma = { chiedeIlPrezzo = false; onVendi(it) },
+                onClose = { chiedeIlPrezzo = false },
             )
-            .padding(horizontal = 9.dp, vertical = 4.dp),
-    )
+        }
+
+        if (contesta) {
+            val prezzo = row.acquisto?.price ?: 0
+            FoglioPrezzo(
+                titolo = "Contesta l'acquisto",
+                spiegazione = "Dichiari il tuo massimo, e resta segreto: il prezzo sale solo " +
+                    "quanto serve. I crediti si impegnano adesso — contestare è già " +
+                    "un'offerta, e se vinci paghi.",
+                iniziale = prezzo + rilancioMinimo,
+                passo = rilancioMinimo,
+                minimo = prezzo + rilancioMinimo,
+                massimo = creditiDisponibili.coerceAtLeast(prezzo + rilancioMinimo),
+                conferma = { "Contesta a $it" },
+                onConferma = { contesta = false; onContesta(it) },
+                onClose = { contesta = false },
+            )
+        }
+
+        if (scegliClub) {
+            SceltaClub(
+                club = adminClubs,
+                onPick = { id -> scegliClub = false; onAdminAssegna(id) },
+                onClose = { scegliClub = false },
+            )
+        }
+
+        if (chiedeSvincolo) {
+            Conferma(
+                titolo = "Svincolare ${player.shortName}?",
+                spiegazione = "Non costa niente, ma torna svincolato e può prenderlo " +
+                    "chiunque — anche chi ti sta davanti in classifica. Lo saprà tutta la lega.",
+                azione = "Svincola",
+                onConferma = { chiedeSvincolo = false; onSvincola() },
+                onClose = { chiedeSvincolo = false },
+            )
+        }
+    }
 }
 
 /**
- * L'elemento firma.
+ * Il foglio che chiede un numero: il prezzo di vendita, o il massimo per contestare.
  *
- * Due stati, e la differenza e' concettuale prima che grafica: chi e' arrivato ha una
- * barra **piena e verde**, non una scheggia. La maturita' e' un traguardo, non una
- * mancanza — una barra quasi vuota comunicherebbe il contrario.
+ * Uno solo per tutti e due i casi perche' la domanda e' la stessa — quanti crediti — e la
+ * differenza sta nelle parole, non nel meccanismo. Il passo si adatta alla cifra: alzare
+ * di uno un prezzo da trecento sarebbe un pomeriggio di tocchi.
  */
 @Composable
-private fun GrowthBand(row: PlayerRow) {
-    val player = row.player
-    val upside = row.hasUpside
-    val accent = if (upside) MFootColors.gamble else MFootColors.elite
+private fun FoglioPrezzo(
+    titolo: String,
+    spiegazione: String,
+    iniziale: Int,
+    passo: Int,
+    minimo: Int,
+    massimo: Int,
+    conferma: (Int) -> String,
+    onConferma: (Int) -> Unit,
+    onClose: () -> Unit,
+) {
+    var valore by remember { mutableStateOf(iniziale.coerceIn(minimo, massimo)) }
 
-    Column(
-        Modifier
-            .padding(horizontal = MFootSpacing.gutter)
-            .fillMaxWidth()
-            .background(
-                if (upside) MFootColors.bg else MFootColors.elite.copy(alpha = 0.10f),
-                MFootShapes.band,
-            )
-            .border(
-                1.dp,
-                if (upside) MFootColors.line else MFootColors.elite.copy(alpha = 0.18f),
-                MFootShapes.band,
-            )
-            .padding(16.dp, 14.dp, 16.dp, 13.dp),
-    ) {
+    Sipario(onClose) {
+        Text(titolo, style = MFootType.playerName, color = MFootColors.ink)
+        Spacer(Modifier.height(6.dp))
+        Text(spiegazione, style = MFootType.chip, color = MFootColors.ink2)
+        Spacer(Modifier.height(16.dp))
+
         Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom,
+            Modifier
+                .fillMaxWidth()
+                .background(MFootColors.bg, MFootShapes.pill)
+                .padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            Tondo("−") { valore = (valore - passo).coerceAtLeast(minimo) }
             Text(
-                if (upside) "MARGINE DI CRESCITA" else "MATURITÀ",
-                style = MFootType.label,
-                color = MFootColors.ink3,
+                "$valore",
+                style = MFootType.overallLarge,
+                color = MFootColors.ink,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                growthHeadline(row),
-                style = MFootType.value,
-                color = accent,
-            )
+            Tondo("+") { valore = (valore + passo).coerceAtMost(massimo) }
         }
 
+        Spacer(Modifier.height(16.dp))
+        Text(
+            conferma(valore),
+            style = MFootType.value,
+            color = MFootColors.onAccent,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MFootColors.elite, MFootShapes.pill)
+                .clickable { onConferma(valore) }
+                .padding(vertical = 13.dp),
+        )
+    }
+}
+
+@Composable
+private fun Conferma(
+    titolo: String,
+    spiegazione: String,
+    azione: String,
+    onConferma: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Sipario(onClose) {
+        Text(titolo, style = MFootType.playerName, color = MFootColors.ink)
+        Spacer(Modifier.height(6.dp))
+        Text(spiegazione, style = MFootType.chip, color = MFootColors.ink2)
+        Spacer(Modifier.height(18.dp))
+        Text(
+            azione,
+            style = MFootType.value,
+            color = MFootColors.onAlarm,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MFootColors.alarm, MFootShapes.pill)
+                .clickable(onClick = onConferma)
+                .padding(vertical = 13.dp),
+        )
+    }
+}
+
+/**
+ * Gli interventi dell'amministratore, in fondo alla scheda.
+ *
+ * ## Perche' in fondo, e perche' con un colore diverso
+ *
+ * Perche' non sono mosse di gioco: sono riparazioni. Metterle accanto a «Compra» le
+ * renderebbe una scorciatoia — e chi amministra e' anche uno dei concorrenti, quindi il
+ * confine fra le due cose deve vedersi anche guardando lo schermo di sfuggita.
+ */
+@Composable
+private fun SezioneAdmin(row: PlayerRow, onAssegna: () -> Unit, onSvincola: () -> Unit) {
+    Column(Modifier.padding(horizontal = MFootSpacing.gutter)) {
+        SectionLabel("AMMINISTRAZIONE")
+        Spacer(Modifier.height(MFootSpacing.related))
+        Text(
+            "Strumenti da amministratore: servono a riparare, non a giocare. " +
+                "Nessuno riceve un avviso quando li usi.",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
         Spacer(Modifier.height(12.dp))
 
-        val now = player.overall.onScale()
-        val top = row.estimate.last.onScale()
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text(
+                "Assegna a un club",
+                style = MFootType.value,
+                color = MFootColors.ink,
+                modifier = Modifier
+                    .weight(1f)
+                    .background(MFootColors.bg, MFootShapes.pill)
+                    .clickable(onClick = onAssegna)
+                    .padding(vertical = 11.dp),
+                textAlign = TextAlign.Center,
+            )
+            if (row.club != null) {
+                Text(
+                    "Togli dal club",
+                    style = MFootType.value,
+                    color = MFootColors.onAlarm,
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(MFootColors.alarm, MFootShapes.pill)
+                        .clickable(onClick = onSvincola)
+                        .padding(vertical = 11.dp),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(MFootSpacing.section))
+}
 
+@Composable
+private fun SceltaClub(
+    club: List<Pair<Long, String>>,
+    onPick: (Long) -> Unit,
+    onClose: () -> Unit,
+) {
+    Sipario(onClose) {
+        Text("A quale club?", style = MFootType.playerName, color = MFootColors.ink)
+        Spacer(Modifier.height(12.dp))
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            club.forEach { (id, nome) ->
+                Text(
+                    nome,
+                    style = MFootType.rowTitle,
+                    color = MFootColors.ink,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(id) }
+                        .padding(vertical = 13.dp),
+                )
+                Box(Modifier.fillMaxWidth().height(1.dp).background(MFootColors.line))
+            }
+        }
+    }
+}
+
+/** Il fondo scuro con il foglio in basso, comune ai tre. */
+@Composable
+private fun Sipario(onClose: () -> Unit, contenuto: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.66f))
+            .clickable(onClick = onClose),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(MFootColors.coreTop, MFootShapes.shell)
+                // Un tocco dentro al foglio non deve chiuderlo: il click del fondo
+                // arriverebbe comunque, ed e' il modo piu' rapido per perdere un numero
+                // appena composto.
+                .clickable(enabled = false) {}
+                .padding(MFootSpacing.gutter, 20.dp, MFootSpacing.gutter, 26.dp),
+        ) {
+            contenuto()
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Lascia perdere",
+                style = MFootType.value,
+                color = MFootColors.ink3,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClose)
+                    .padding(vertical = 10.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun Tondo(segno: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(46.dp)
+            .background(MFootColors.raised, MFootShapes.pill)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(segno, style = MFootType.playerName, color = MFootColors.ink)
+    }
+}
+
+/**
+ * La testata: **la figurina**.
+ *
+ * ## Cosa ha preso il posto della barra
+ *
+ * Fino al 2026-08-24 qui sotto c'era una barra alta centoventi pixel che diceva una cosa
+ * sola — quanto puo' ancora crescere — e per meta' dei giocatori quella cosa era «niente».
+ * Su un maturo si riempiva tutta e non informava; su un giovane mostrava un vuoto che
+ * sembra un difetto invece di una promessa.
+ *
+ * Adesso il margine e' **un gradino sotto l'overall**: «71», e sotto «+13». Quarantacinque
+ * pixel invece di centoventi, e si legge nello stesso colpo d'occhio del numero grande,
+ * che e' proprio il punto — sono la stessa informazione, non due.
+ *
+ * ## Le due cose che non potevano perdersi
+ *
+ * **Quanto lo conosci**, perche' una forbice larga vuol dire due cose opposte (giocatore
+ * imprevedibile, oppure mai visto giocare) e senza dirlo la scommessa resta muta. E il
+ * **contratto**, che cambia una decisione d'acquisto: sei giornate alla scadenza non sono
+ * trentadue.
+ */
+@Composable
+private fun Figurina(
+    row: PlayerRow,
+    giornata: Int,
+    incarichi: List<dev.mfoot.core.match.MatchDuty>,
+) {
+    val player = row.player
+
+    Column(Modifier.padding(horizontal = MFootSpacing.related)) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(7.dp)
-                .background(MFootColors.bg, RoundedCornerShape(4.dp)),
-        ) {
-            // Il tratto gia' percorso. Deve staccarsi nettamente dal fondo, altrimenti
-            // si legge grigio su grigio e sparisce.
-            Box(
-                Modifier
-                    .fillMaxWidth(now)
-                    .height(7.dp)
-                    .background(
-                        if (upside) MFootColors.ink2 else MFootColors.elite,
-                        RoundedCornerShape(4.dp),
+                .clip(MFootShapes.band)
+                .background(
+                    Brush.linearGradient(
+                        listOf(MFootColors.blueDeep, Color(0xFF16307E), MFootColors.core),
                     ),
-            )
-            // Il margine ancora da conquistare: e' questo il motivo per cui lo compri.
-            if (upside && top > now) {
-                SegmentFrom(fraction = now, width = top - now, color = accent)
+                ),
+        ) {
+            // Gli archi concentrici del riferimento, gli stessi delle testate: e' cio' che
+            // fa entrare la scheda nell'app invece di farla sembrare un'altra app.
+            Archi(Modifier.align(Alignment.BottomEnd))
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Column(
+                    Modifier.width(78.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        player.overall.toString(),
+                        style = MFootType.overallHero,
+                        color = Color.White,
+                    )
+                    Text("OVR", style = MFootType.label, color = Color.White.copy(alpha = 0.62f))
+                    Spacer(Modifier.height(8.dp))
+                    Targhetta(
+                        player.primaryPosition.short,
+                        Color.White.copy(alpha = 0.13f),
+                        Color.White,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Gradino(row)
+                }
+
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        player.firstName,
+                        style = MFootType.givenName,
+                        color = Color.White.copy(alpha = 0.72f),
+                    )
+                    Text(player.lastName, style = MFootType.playerName, color = Color.White)
+
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ChipChiaro("${bandiera(player.nationality)} ${player.age} anni")
+                        player.secondaryPositions.firstOrNull()?.let { ChipChiaro("anche ${it.short}") }
+                    }
+
+                    // Gli incarichi che ha in questa formazione. Stanno qui perche' la
+                    // scheda e' dove si decide: si guarda il tiro di uno e si capisce che
+                    // i rigori dovrebbe calciarli lui.
+                    if (incarichi.isNotEmpty()) {
+                        Spacer(Modifier.height(7.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            incarichi.take(2).forEach { duty ->
+                                Text(
+                                    duty.label,
+                                    style = MFootType.chip,
+                                    color = MFootColors.onAccent,
+                                    modifier = Modifier
+                                        .background(MFootColors.elite, MFootShapes.pill)
+                                        .padding(horizontal = 9.dp, vertical = 4.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    row.contratto?.let { contratto ->
+                        val restano = contratto.matchDaysLeft(giornata)
+                        // Sotto le otto giornate cambia il colore, non solo il numero: e'
+                        // la soglia oltre la quale il contratto smette di essere un
+                        // dettaglio anagrafico e diventa la cosa che decide l'acquisto.
+                        val inScadenza = restano <= SCADENZA_VICINA
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            if (inScadenza) "Contratto in scadenza: $restano giornate"
+                            else "Contratto: $restano giornate",
+                            style = MFootType.chip,
+                            color = if (inScadenza) MFootColors.gamble else Color.White.copy(alpha = 0.62f),
+                        )
+                    }
+                }
             }
         }
 
+        // Quanto puo' arrivare e quanto ne sai, in una riga: e' la stessa frase che stava
+        // sotto la barra, e non ha mai avuto bisogno della barra per essere letta.
         Spacer(Modifier.height(9.dp))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Oggi ${player.overall}", style = MFootType.chip, color = MFootColors.ink3)
-            Text(growthDetail(row), style = MFootType.chip, color = MFootColors.ink3)
-        }
+        Text(
+            growthDetail(row),
+            style = MFootType.chip,
+            color = MFootColors.ink2,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
     }
 
     Spacer(Modifier.height(MFootSpacing.section))
 }
 
-/** Un tratto di barra che parte da una frazione data della larghezza disponibile. */
+/** Giornate sotto le quali un contratto si segnala da solo. */
+private const val SCADENZA_VICINA = 8
+
+/**
+ * Il gradino della crescita: il margine, sotto l'overall invece che accanto.
+ *
+ * Chi e' arrivato non legge una barra piena ne' una vuota, legge **AL MAX**: la maturita'
+ * e' un traguardo, e una barra — comunque la si riempia — dice sempre il contrario.
+ */
 @Composable
-private fun SegmentFrom(fraction: Float, width: Float, color: Color) {
-    Layout(
-        content = {
-            Box(
-                Modifier
-                    .height(7.dp)
-                    .background(color, RoundedCornerShape(4.dp)),
-            )
-        },
-        modifier = Modifier.fillMaxWidth().height(7.dp),
-    ) { measurables, constraints ->
-        val total = constraints.maxWidth
-        val start = (total * fraction).toInt()
-        val span = (total * width).toInt().coerceAtLeast(1)
-        val placeable = measurables.first().measure(
-            constraints.copy(minWidth = span, maxWidth = span),
-        )
-        layout(total, placeable.height) { placeable.place(start, 0) }
+private fun Gradino(row: PlayerRow) {
+    val margine = row.estimate.last - row.player.overall
+
+    when {
+        row.hasUpside && margine > 0 ->
+            Targhetta("+$margine", MFootColors.gamble.copy(alpha = 0.20f), MFootColors.gamble)
+
+        row.player.age >= 30 ->
+            Targhetta("IN CALO", Color.White.copy(alpha = 0.10f), Color.White.copy(alpha = 0.70f))
+
+        else ->
+            Targhetta("AL MAX", MFootColors.elite.copy(alpha = 0.18f), MFootColors.elite)
     }
 }
 
-private fun growthHeadline(row: PlayerRow): String {
-    if (!row.hasUpside) {
-        return if (row.player.age >= 30) "◆ In parabola discendente" else "◆ Giocatore completo"
-    }
-    val gain = row.estimate.last - row.player.overall
-    return when {
-        gain >= 20 -> "Può diventare tutt'altro"
-        gain >= 10 -> "Può crescere molto"
-        else -> "Ha ancora margine"
+/** Il rettangolino sotto l'overall: ruolo e margine hanno la stessa forma di proposito. */
+@Composable
+private fun Targhetta(testo: String, fondo: Color, inchiostro: Color) {
+    Text(
+        testo,
+        style = MFootType.value,
+        color = inchiostro,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(fondo, RoundedCornerShape(9.dp))
+            .padding(vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun ChipChiaro(text: String) {
+    Text(
+        text = text,
+        style = MFootType.chip,
+        color = Color.White.copy(alpha = 0.86f),
+        modifier = Modifier
+            .background(Color.White.copy(alpha = 0.12f), MFootShapes.pill)
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+    )
+}
+
+/** I quattro archi concentrici, disegnati e non ritagliati da un'immagine. */
+@Composable
+private fun Archi(modifier: Modifier = Modifier) {
+    Canvas(modifier.size(190.dp)) {
+        val centro = Offset(size.width * 0.86f, size.height * 0.94f)
+        repeat(4) { index ->
+            drawCircle(
+                color = MFootColors.blueArc.copy(alpha = 0.16f),
+                radius = size.minDimension * (0.28f + index * 0.17f),
+                center = centro,
+                style = Stroke(width = 1.4.dp.toPx()),
+            )
+        }
     }
 }
 
@@ -335,45 +660,116 @@ private fun growthDetail(row: PlayerRow): String {
  * Gli attributi fuori ruolo restano **visibili ma spenti**: cosi' tutte le schede hanno
  * la stessa altezza e si vede comunque che un difensore ha 41 di tiro.
  */
+/**
+ * Gli attributi che il ruolo pesa davvero, **sei in tre colonne**.
+ *
+ * ## Perche' sei e non dodici
+ *
+ * Perche' dodici attributi in due colonne sono sei righe di lettura per rispondere a una
+ * domanda — quanto e' forte in cio' che fara' in campo — a cui i primi sei rispondono da
+ * soli: sono quelli con cui `Position.ovrWeights` calcola l'overall, cioe' esattamente
+ * quelli che contano per quel ruolo.
+ *
+ * Gli altri restano raggiungibili sotto, **visibili ma spenti**: si vede comunque che un
+ * difensore ha 41 di tiro, e nessuna scheda cambia altezza a seconda del ruolo.
+ */
 @Composable
 private fun Attributes(row: PlayerRow) {
     val player = row.player
-    val relevant = player.primaryPosition.relevantAttributes.toSet()
-    val attrs = player.primaryPosition.displayAttributes()
+    val chiave = player.primaryPosition.relevantAttributes.take(ATTRIBUTI_IN_VISTA)
+    val altri = player.primaryPosition.displayAttributes().filterNot { it in chiave }
 
     Column(Modifier.padding(horizontal = MFootSpacing.gutter)) {
+        // Il respiro sopra il titolo. Senza, "Pronto a giocare" della sezione precedente
+        // finisce appiccicato a "ATTRIBUTI" e le due sezioni si leggono come una sola —
+        // visto sull'emulatore, non dedotto dal codice.
+        Spacer(Modifier.height(MFootSpacing.section))
         SectionLabel("ATTRIBUTI")
         Spacer(Modifier.height(MFootSpacing.related))
 
-        attrs.chunked(2).forEach { pair ->
+        chiave.chunked(3).forEach { terna ->
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(MFootSpacing.gridHorizontal),
             ) {
-                pair.forEach { attr ->
+                terna.forEach { attr ->
                     Box(Modifier.weight(1f)) {
-                        AttributeCell(attr, player.attributes[attr], attr in relevant)
+                        AttributeCell(attr, player.attributes[attr], key = true)
                     }
                 }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                repeat(3 - terna.size) { Spacer(Modifier.weight(1f)) }
             }
             Spacer(Modifier.height(MFootSpacing.gridVertical))
+        }
+
+        if (altri.isNotEmpty()) {
+            Spacer(Modifier.height(2.dp))
+            altri.chunked(3).forEach { terna ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(MFootSpacing.gridHorizontal),
+                ) {
+                    terna.forEach { attr ->
+                        Box(Modifier.weight(1f)) {
+                            AttributeCell(attr, player.attributes[attr], key = false)
+                        }
+                    }
+                    repeat(3 - terna.size) { Spacer(Modifier.weight(1f)) }
+                }
+                Spacer(Modifier.height(MFootSpacing.gridVertical))
+            }
         }
     }
 
     Spacer(Modifier.height(MFootSpacing.related))
 }
 
+/** Quanti attributi stanno nella fascia in evidenza. */
+private const val ATTRIBUTI_IN_VISTA = 6
+
+/**
+ * Le etichette accorciate per la griglia a tre colonne.
+ *
+ * ## Perche' non basta `Attr.label`
+ *
+ * Perche' in tre colonne una cella e' larga un terzo di schermo, e «Intercettazione»
+ * accanto al suo numero non ci sta: sull'emulatore il numero **si spezzava a meta'** e si
+ * leggeva «Intercettazione 7 / 3». Con due colonne non succedeva, ed e' esattamente il
+ * tipo di difetto che non si vede leggendo il codice.
+ *
+ * L'accorciamento sta qui e non in `core`: `Attr.label` e' il nome del dato, e serve
+ * intero dove c'e' spazio.
+ */
+private fun etichettaCorta(attr: Attr): String = when (attr) {
+    Attr.INTERCETTAZIONE -> "Intercett."
+    Attr.POSIZIONAMENTO -> "Posizione"
+    Attr.VELOCITA -> "Velocità"
+    else -> attr.label
+}
+
 @Composable
 private fun AttributeCell(attr: Attr, value: Int, key: Boolean) {
     Column(Modifier.alpha(if (key) 1f else 0.42f)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+        ) {
             Text(
-                attr.label,
+                etichettaCorta(attr),
                 style = MFootType.secondary,
                 color = if (key) MFootColors.ink else MFootColors.ink2,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
-            Text(value.toString(), style = MFootType.value, color = MFootColors.rating(value))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                value.toString(),
+                style = MFootType.value,
+                color = MFootColors.rating(value),
+                maxLines = 1,
+            )
         }
         Spacer(Modifier.height(5.dp))
         Box(
@@ -628,7 +1024,10 @@ private fun Traits(row: PlayerRow) {
                 Text(
                     trait.label,
                     style = MFootType.chip,
-                    color = Color(0xFFA7F3C0),
+                    // Era un verde scritto a mano, sopravvissuto al cambio di pelle del
+                    // 2026-08-23 perche' stava fuori dal tema: uno dei quattro colori che
+                    // riscrivere `Theme.kt` non aveva potuto raggiungere.
+                    color = MFootColors.elite,
                     modifier = Modifier
                         .background(MFootColors.elite.copy(alpha = 0.09f), MFootShapes.pill)
                         .border(1.dp, MFootColors.elite.copy(alpha = 0.22f), MFootShapes.pill)
@@ -649,67 +1048,122 @@ private fun Footer(
     onYouth: () -> Unit,
     onAuction: () -> Unit,
     onClose: () -> Unit,
+    onCompra: () -> Unit,
+    onVendi: () -> Unit,
+    onRitira: () -> Unit,
+    onSvincola: () -> Unit,
+    onContesta: () -> Unit,
 ) {
+    val mio = row.club?.isMine == true
+    val inVendita = row.inVendita
+    val acquisto = row.acquisto?.takeIf { it.aperto() }
+
     Box(
         Modifier
             .fillMaxWidth()
             .height(1.dp)
             .background(MFootColors.line),
     )
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .background(Color.Black.copy(alpha = 0.22f))
-            .padding(MFootSpacing.gutter, 15.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(MFootSpacing.gutter, 13.dp),
     ) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(Money(row.value).format(), style = MFootType.price, color = MFootColors.ink)
-            Spacer(Modifier.width(6.dp))
-            Text("valore stimato", style = MFootType.chip, color = MFootColors.ink3)
+        // L'azione grossa, quella per cui si e' aperta la scheda. Ce n'e' **una sola**:
+        // due pulsanti pieni fianco a fianco costringono a leggerli entrambi ogni volta.
+        when {
+            inVendita != null && !mio -> Azione(
+                testo = "Compra · ${inVendita.price}",
+                fondo = MFootColors.elite,
+                inchiostro = MFootColors.onAccent,
+                onClick = onCompra,
+            )
+
+            // Contestare vale solo sugli acquisti altrui: sul proprio si e' gia' in testa.
+            acquisto != null && acquisto.buyer != (row.club?.id ?: -1L) && !mio -> Azione(
+                testo = "Contesta · restano ${acquisto.tempoRimasto()}",
+                fondo = MFootColors.gamble,
+                inchiostro = MFootColors.bg,
+                onClick = onContesta,
+            )
+
+            mio && inVendita != null -> Azione(
+                testo = "In vendita a ${inVendita.price} · ritira",
+                fondo = MFootColors.raised,
+                inchiostro = MFootColors.ink,
+                onClick = onRitira,
+            )
+
+            mio -> Azione(
+                testo = "Metti in vendita",
+                fondo = MFootColors.elite,
+                inchiostro = MFootColors.onAccent,
+                onClick = onVendi,
+            )
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Anche la Primavera si decide guardando la scheda: e' li' che si vede l'eta'
-            // accanto alla forbice di crescita, cioe' esattamente i due numeri che dicono
-            // se conviene farlo maturare o farlo giocare.
-            youthAction?.let { testo ->
-                Text(
-                    testo,
-                    style = MFootType.value,
-                    color = MFootColors.ink2,
-                    modifier = Modifier
-                        .clickable(onClick = onYouth)
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                )
-                Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.height(10.dp))
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(Money(row.value).format(), style = MFootType.price, color = MFootColors.ink)
+                Spacer(Modifier.width(6.dp))
+                Text("valore stimato", style = MFootType.chip, color = MFootColors.ink3)
             }
 
-            // L'asta si apre da qui e non da un menu: e' la decisione che si prende
-            // guardando la scheda, e farla cercare altrove significa non farla prendere.
-            if (canAuction) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Anche la Primavera si decide guardando la scheda: e' li' che si vede
+                // l'eta' accanto alla forbice di crescita.
+                youthAction?.let { testo -> Secondaria(testo, onYouth) }
+
+                // Svincolare e' gratis e definitivo, quindi non e' un pulsante pieno:
+                // sta fra le azioni di servizio, dove non lo si preme per sbaglio.
+                if (mio && !row.player.isCustom) Secondaria("Svincola", onSvincola)
+
+                if (canAuction) Secondaria(if (isSelling) "All'asta" else "Metti all'asta", onAuction)
+
                 Text(
-                    if (isSelling) "Vendi all'asta" else "Metti all'asta",
+                    "Chiudi",
                     style = MFootType.value,
                     color = MFootColors.bg,
                     modifier = Modifier
-                        .background(MFootColors.elite, MFootShapes.pill)
-                        .clickable(onClick = onAuction)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .background(MFootColors.ink, MFootShapes.pill)
+                        .clickable(onClick = onClose)
+                        .padding(horizontal = 18.dp, vertical = 9.dp),
                 )
-                Spacer(Modifier.width(8.dp))
             }
-
-            Text(
-                "Chiudi",
-                style = MFootType.value,
-                color = MFootColors.bg,
-                modifier = Modifier
-                    .background(MFootColors.ink, MFootShapes.pill)
-                    .clickable(onClick = onClose)
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
-            )
         }
     }
+}
+
+@Composable
+private fun Azione(testo: String, fondo: Color, inchiostro: Color, onClick: () -> Unit) {
+    Text(
+        testo,
+        style = MFootType.value,
+        color = inchiostro,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(fondo, MFootShapes.pill)
+            .clickable(onClick = onClick)
+            .padding(vertical = 13.dp),
+    )
+}
+
+@Composable
+private fun Secondaria(testo: String, onClick: () -> Unit) {
+    Text(
+        testo,
+        style = MFootType.value,
+        color = MFootColors.ink2,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+    )
 }

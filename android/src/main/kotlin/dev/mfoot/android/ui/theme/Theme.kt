@@ -255,6 +255,18 @@ object MFootType {
         fontSize = 29.sp, fontWeight = FontWeight.Normal, letterSpacing = (-0.02).em,
     )
 
+    /**
+     * L'overall della scheda giocatore, che e' il numero piu' grande dell'app.
+     *
+     * Esiste separato da [overallLarge] perche' sulla figurina non e' «un numero grande»:
+     * e' il soggetto. Sotto ci sta il gradino della crescita, e i due insieme devono
+     * leggersi in un colpo d'occhio solo — che e' il mestiere che prima faceva una barra
+     * alta centoventi pixel.
+     */
+    val overallHero = tabular.copy(
+        fontSize = 46.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.04).em,
+    )
+
     val overallLarge = tabular.copy(
         fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.03).em,
     )
