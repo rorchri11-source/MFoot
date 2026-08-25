@@ -1302,12 +1302,16 @@ class AppViewModel : ViewModel() {
      */
     fun compra(row: PlayerRow) {
         val dentro = statoCorrente() ?: return
-        val prezzo = row.inVendita?.price ?: return
         if (dentro.lega.myClub == null) {
             _state.value = dentro.copy(errore = "Prima devi fondare il tuo club.")
             return
         }
 
+        // Nessun prezzo richiesto qui dentro, ed e' la correzione del difetto piu' grosso
+        // della consegna del 2026-08-25: prima questa funzione usciva subito se il
+        // giocatore non aveva una riga di listino — cioe' su **tutti** gli svincolati, che
+        // sono la parte piu' numerosa del mercato. Il prezzo lo dice il server, che e'
+        // l'unico che puo' dirlo senza farsi ingannare.
         viewModelScope.launch {
             when (val esito = MarketRepository.buy(row.player.id.value)) {
                 is ApiResult.Error ->
@@ -1317,7 +1321,7 @@ class AppViewModel : ViewModel() {
                     val corrente = statoCorrente() ?: return@launch
                     _state.value = corrente.copy(browse = corrente.browse.copy(selected = null))
                     ricaricaMercato(
-                        "${row.player.fullName} è tuo per $prezzo crediti. " +
+                        "${row.player.fullName} è tuo per ${esito.value.prezzo} crediti. " +
                             "Per dodici ore chiunque può contestare l'acquisto.",
                     )
                 }
@@ -3140,6 +3144,7 @@ class AppViewModel : ViewModel() {
     fun select(row: PlayerRow?) {
         aggiornaBrowse { it.copy(selected = row) }
         _carriera.value = dev.mfoot.android.data.Carriera.NESSUNA
+        _prezzoSvincolato.value = null
         if (row == null) return
 
         viewModelScope.launch {
@@ -3151,7 +3156,32 @@ class AppViewModel : ViewModel() {
                 _carriera.value = storia
             }
         }
+
+        // Il prezzo di uno svincolato lo dice il server, e si chiede aprendo la scheda.
+        //
+        // E' la correzione del difetto piu' grosso della consegna del 2026-08-25: il
+        // pulsante «Compra» compariva solo su chi aveva una riga di listino, e quella riga
+        // la scriveva il tick. Dal telefono il mercato a prezzo fisso semplicemente non
+        // esisteva — c'era «Metti all'asta» e basta, come prima.
+        if (row.isFreeAgent && row.inVendita == null) {
+            viewModelScope.launch {
+                val prezzo = MarketRepository.freeAgentPrice(row.player.id.value)
+                if (statoCorrente()?.browse?.selected?.player?.id == row.player.id) {
+                    _prezzoSvincolato.value = prezzo
+                }
+            }
+        }
     }
+
+    /**
+     * Quanto costa lo svincolato aperto adesso, o null.
+     *
+     * Fuori da `AppState` di proposito: arriva dopo la scheda, e infilarlo nello stato
+     * generale vorrebbe dire ridisegnare tutta la schermata per un numero che riguarda
+     * una riga sola.
+     */
+    private val _prezzoSvincolato = MutableStateFlow<Int?>(null)
+    val prezzoSvincolato: StateFlow<Int?> = _prezzoSvincolato
 
     fun chiudiAvviso() {
         val dentro = _state.value as? AppState.Dentro ?: return

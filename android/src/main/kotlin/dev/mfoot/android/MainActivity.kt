@@ -120,6 +120,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val tabella by viewModel.tabella.collectAsStateWithLifecycle()
     val staff by viewModel.staff.collectAsStateWithLifecycle()
     val carriera by viewModel.carriera.collectAsStateWithLifecycle()
+    val prezzoSvincolato by viewModel.prezzoSvincolato.collectAsStateWithLifecycle()
     val concluse by viewModel.asteConcluse.collectAsStateWithLifecycle()
     val conclusePronte by viewModel.asteConclusePronte.collectAsStateWithLifecycle()
 
@@ -394,6 +395,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                             },
                             creditiDisponibili = current.lega.myClub?.available ?: 0,
                             rilancioMinimo = current.lega.league.config.market.minimumRaise,
+                            prezzoSvincolato = prezzoSvincolato,
                             onYouth = { viewModel.spostaSquadra(row) },
                             onAuction = { viewModel.mettiAllAsta(row) },
                             onCompra = { viewModel.compra(row) },

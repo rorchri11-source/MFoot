@@ -182,6 +182,9 @@ private fun ListHeader(
         val presi = state.rows.count { !it.isFreeAgent }
         Label(
             when (browse.scope) {
+                ListScope.LISTINO ->
+                    "${state.visible.size} si comprano subito · nessuna attesa, nessuna asta"
+
                 ListScope.ASTE ->
                     "${state.auctions.size} aste aperte · ${state.myAuctions.size} con una tua offerta"
 
@@ -207,6 +210,18 @@ private fun EmptyState(state: AppState.Dentro) {
         state.browse.scope == ListScope.MIA_ROSA && state.lega.myClub == null ->
             "Non hai ancora un club in questa lega."
         state.browse.scope == ListScope.MIA_ROSA -> "La tua rosa è ancora vuota."
+
+        // Il listino vuoto ha **due** cause diverse, e dirle e' l'unica cosa che
+        // distingue «non c'e' niente in vendita» da «questa parte del gioco non
+        // funziona». La seconda e' la conclusione a cui si arriva da soli, ed e' quella
+        // che va evitata.
+        state.browse.scope == ListScope.LISTINO ->
+            "Nessuno in vendita, per adesso.\n\n" +
+                "Ci finiscono due categorie: chi un proprietario mette in vendita — " +
+                "apri la scheda di un tuo giocatore e tocca «Metti in vendita» — e tutti " +
+                "gli svincolati, che ci mette il server al suo primo giro dopo un " +
+                "aggiornamento."
+
         else -> "Nessun giocatore in questa selezione."
     }
 

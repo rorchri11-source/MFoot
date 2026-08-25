@@ -68,6 +68,9 @@ data class PurchaseView(
  * che nasce solo quando qualcuno contesta, e in quel caso torna a passare da
  * `AuctionRepository` — anti-snipe, massimi segreti e blocco fondi sono gia' li'.
  */
+/** Cosa e' successo comprando: quanto e' costato, e fino a quando si puo' contestare. */
+data class Acquisto(val prezzo: Int, val contestabileFino: Instant?)
+
 object MarketRepository {
 
     /**
@@ -168,7 +171,7 @@ object MarketRepository {
      * Il server risponde con `ok` e l'ora in cui l'acquisto diventa definitivo: e' la
      * stessa informazione che il conto alla rovescia mostrera' per dodici ore.
      */
-    suspend fun buy(playerId: Long): ApiResult<Instant?> {
+    suspend fun buy(playerId: Long): ApiResult<Acquisto> {
         val w = JsonWriter(64)
         w.beginObject()
         w.field("p_player_id", playerId)
@@ -178,8 +181,14 @@ object MarketRepository {
             val row = JsonNode.parse(body)
             if (row["ok"].bool(false)) {
                 ApiResult.Ok(
-                    row["contestable_until"].strOrNull()
-                        ?.let { runCatching { Instant.parse(normalizza(it)) }.getOrNull() },
+                    Acquisto(
+                        // Il prezzo **pagato**, non quello previsto: su uno svincolato lo
+                        // calcola il server, e dirlo com'e' stato e' l'unico modo perche'
+                        // il numero sullo schermo resti credibile.
+                        prezzo = row["price"].int(0),
+                        contestabileFino = row["contestable_until"].strOrNull()
+                            ?.let { runCatching { Instant.parse(normalizza(it)) }.getOrNull() },
+                    ),
                 )
             } else {
                 ApiResult.Error(row["reason"].str("Acquisto rifiutato."))
@@ -198,6 +207,30 @@ object MarketRepository {
             val row = JsonNode.parse(body)
             if (row["ok"].bool(false)) ApiResult.Ok(Unit)
             else ApiResult.Error(row["reason"].str("Non si può svincolare."))
+        }
+    }
+
+    /**
+     * Quanto costa uno svincolato, chiesto al server.
+     *
+     * ## Perche' non lo calcola il telefono, che saprebbe farlo
+     *
+     * Perche' il valore che l'app calcola da sola usa la **stima** del potenziale — la
+     * forbice larga, diversa per ogni club — mentre il prezzo vero nasce dal potenziale
+     * reale, che non esce mai dal server. Scrivere sul pulsante un numero e addebitarne un
+     * altro e' il modo piu' rapido di far smettere di fidarsi dei numeri.
+     *
+     * Una chiamata, e solo quando si apre una scheda: non mille per disegnare una lista.
+     */
+    suspend fun freeAgentPrice(playerId: Long): Int? {
+        val w = JsonWriter(64)
+        w.beginObject()
+        w.field("p_player_id", playerId)
+        w.endObject()
+
+        return when (val esito = SupabaseApi.rpc("free_agent_price", w.toString())) {
+            is ApiResult.Error -> null
+            is ApiResult.Ok -> esito.value.trim().trim('"').toIntOrNull()
         }
     }
 

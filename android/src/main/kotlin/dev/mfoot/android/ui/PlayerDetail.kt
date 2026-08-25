@@ -67,6 +67,14 @@ fun PlayerDetailScreen(
     creditiDisponibili: Int = 0,
     /** Il rilancio minimo della lega: serve a contestare, non a comprare. */
     rilancioMinimo: Int = 1,
+    /**
+     * Quanto costa questo svincolato, se lo e' e se il server ha risposto.
+     *
+     * Distinto dal prezzo di listino: uno svincolato **non ha bisogno** che qualcuno lo
+     * metta in vendita per essere comprabile. Legare il pulsante alla riga di listino e'
+     * stato l'errore che ha reso invisibile tutto il mercato nuovo.
+     */
+    prezzoSvincolato: Int? = null,
     onYouth: () -> Unit = {},
     onAuction: () -> Unit = {},
     onCompra: () -> Unit = {},
@@ -139,6 +147,7 @@ fun PlayerDetailScreen(
                 }
                 Footer(
                     row = row,
+                    prezzoSvincolato = prezzoSvincolato,
                     canAuction = canAuction,
                     isSelling = isSelling,
                     youthAction = youthAction,
@@ -1042,6 +1051,7 @@ private fun Traits(row: PlayerRow) {
 @Composable
 private fun Footer(
     row: PlayerRow,
+    prezzoSvincolato: Int?,
     canAuction: Boolean,
     isSelling: Boolean,
     youthAction: String?,
@@ -1075,6 +1085,16 @@ private fun Footer(
         when {
             inVendita != null && !mio -> Azione(
                 testo = "Compra · ${inVendita.price}",
+                fondo = MFootColors.elite,
+                inchiostro = MFootColors.onAccent,
+                onClick = onCompra,
+            )
+
+            // Uno svincolato si compra sempre, senza che nessuno lo abbia messo in
+            // vendita: e' meta' della regola del 2026-08-24, ed e' la meta' che alla
+            // prima consegna non esisteva.
+            prezzoSvincolato != null && !mio -> Azione(
+                testo = "Compra · $prezzoSvincolato",
                 fondo = MFootColors.elite,
                 inchiostro = MFootColors.onAccent,
                 onClick = onCompra,

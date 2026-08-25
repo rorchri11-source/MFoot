@@ -226,6 +226,7 @@ fun Router(
                 // Le prime tre sono la stessa schermata con un ambito diverso, ed e'
                 // esattamente cio' che erano gia': tre voci di menu che aprivano lo stesso
                 // composable senza dirlo. Adesso lo dicono.
+                TabMercato.LISTINO -> Lista(state, ListScope.LISTINO, onQuery, onFilter, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
                 TabMercato.ASTE -> Lista(state, ListScope.ASTE, onQuery, onFilter, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
                 TabMercato.SVINCOLATI -> Lista(state, ListScope.SVINCOLATI, onQuery, onFilter, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)
                 TabMercato.LISTONE -> Lista(state, ListScope.TUTTI, onQuery, onFilter, onSelect, onOpenBid, onRefreshAuctions, onAuctionFilter, onDismissNotice)

@@ -29,6 +29,15 @@ enum class TabSquadra(val label: String) {
 
 /** Cosa si guarda del mercato. */
 enum class TabMercato(val label: String) {
+    /**
+     * Il listino, **per primo**.
+     *
+     * Dal 2026-08-24 il modo normale di comprare e' il prezzo fisso, e l'asta e'
+     * l'eccezione che nasce solo da una contestazione. L'ordine delle schede deve dirlo:
+     * la prima e' quella che si apre, e aprire «Aste» in un gioco dove le aste sono
+     * diventate rare significa mostrare per primo un elenco quasi sempre vuoto.
+     */
+    LISTINO("Listino"),
     ASTE("Aste"),
     SVINCOLATI("Svincolati"),
     LISTONE("Listone"),
@@ -154,7 +163,7 @@ sealed interface Route {
      */
     data class Squadra(val tab: TabSquadra = TabSquadra.ROSA) : Route
 
-    data class Mercato(val tab: TabMercato = TabMercato.ASTE) : Route
+    data class Mercato(val tab: TabMercato = TabMercato.LISTINO) : Route
 
     data object Calendario : Route
 

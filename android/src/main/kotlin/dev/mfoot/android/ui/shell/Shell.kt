@@ -549,6 +549,15 @@ private fun Menu(
         }
 
         Gruppo("Gioca")
+        // Il listino prima degli svincolati: dal 2026-08-24 e' il modo normale di
+        // comprare, e una voce di menu che non c'e' e' una funzionalita' che non c'e'.
+        Voce(
+            "Listino",
+            MFootIcons.carrello,
+            Route.Mercato(TabMercato.LISTINO),
+            route,
+            onNavigate,
+        )
         Voce(
             "Svincolati",
             MFootIcons.cartellino,

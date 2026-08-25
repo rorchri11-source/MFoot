@@ -137,11 +137,33 @@ enum class AuctionFilter(val label: String) {
 
 /** Cosa si sta guardando della lista: il mercato o una rosa. */
 enum class ListScope(val label: String) {
+    /**
+     * Chi si compra **adesso**, al prezzo scritto.
+     *
+     * Ha un posto suo e non e' un filtro degli svincolati, ed e' una correzione a un
+     * errore vero: alla prima consegna il mercato a prezzo fisso viveva **dentro** le
+     * liste esistenti — un prezzo che prendeva il posto del valore in una riga — e senza
+     * un elenco tutto suo non si vedeva. Il proprietario l'ha detto con la frase che
+     * chiude ogni discussione: «non esiste nel gioco».
+     *
+     * Una cosa che non ha un posto dove guardarla non e' una funzionalita' discreta: e'
+     * una funzionalita' che non c'e'.
+     */
+    LISTINO("Listino"),
     SVINCOLATI("Svincolati"),
     ASTE("Aste"),
     TUTTI("Tutto il mondo"),
     MIA_ROSA("La mia rosa"),
 }
+
+/**
+ * Sotto questa eta' uno svincolato non si compra: si trova mandandoci un osservatore.
+ *
+ * E' la regola di `0019` — un fuoriclasse di diciotto anni non deve poter essere preso da
+ * chi ha solo piu' soldi — e vale a maggior ragione a prezzo fisso. Il server la applica
+ * comunque; qui serve a non mostrare un pulsante che verrebbe rifiutato.
+ */
+const val ETA_MINIMA_LISTINO = 20
 
 /** Lo stato della schermata di lista, separato dai dati che mostra. */
 data class BrowseState(
@@ -372,6 +394,10 @@ sealed interface AppState {
             get() = rows
                 .filter {
                     when (browse.scope) {
+                        // Chi ha un prezzo e non e' gia' tuo: comprarlo e' un tocco.
+                        ListScope.LISTINO ->
+                            (it.inVendita != null || (it.isFreeAgent && it.player.age >= ETA_MINIMA_LISTINO)) &&
+                                it.club?.isMine != true
                         ListScope.SVINCOLATI -> it.isFreeAgent
                         ListScope.TUTTI -> true
                         ListScope.MIA_ROSA -> it.club != null && it.club.isMine
