@@ -422,21 +422,53 @@ object LeagueRepository {
      * di [`0001_schema.sql`], cioe' esistono in ogni database che ha la tabella `contracts`.
      * Un database senza di loro sarebbe un database senza contratti.
      */
+    /**
+     * Chi appartiene a chi, **a pagine**.
+     *
+     * ## La stessa trappola dei giocatori, su una tabella diversa
+     *
+     * PostgREST tronca ogni risposta a mille righe e restituisce comunque un 200. Per i
+     * giocatori il problema era gia' noto e risolto (vedi [readPlayers]); qui no, e la
+     * conseguenza sarebbe peggiore: un contratto che non arriva non e' un giocatore che
+     * manca dall'elenco, e' un giocatore che **risulta svincolato**. Comparirebbe fra
+     * quelli da prendere, con un pulsante «Compra» che il server rifiuta.
+     *
+     * Con sedici club a ventotto giocatori piu' le Primavere si superano le mille righe
+     * prima della fine del primo mercato, quindi non e' un caso di scuola: e' il giorno
+     * in cui la lega si riempie.
+     */
     private suspend fun readContracts(leagueId: Long): ApiResult<Map<Long, ContractInfo>> {
-        val path = "/rest/v1/contracts?select=player_id,club_id,squad,expires_on," +
-            "wage_per_match_day&league_id=eq.$leagueId"
+        val tutti = HashMap<Long, ContractInfo>(1200)
+        var from = 0
 
-        return SupabaseApi.get(path).then { body ->
-            ApiResult.Ok(
-                JsonNode.parse(body).asList().associate { riga ->
-                    riga["player_id"].long(0) to ContractInfo(
-                        clubId = riga["club_id"].long(0),
-                        squad = riga["squad"].str("prima"),
-                        expiresOn = riga["expires_on"].int(0),
-                        wagePerMatchDay = riga["wage_per_match_day"].int(0),
-                    )
-                },
-            )
+        while (true) {
+            val path = "/rest/v1/contracts?select=player_id,club_id,squad,expires_on," +
+                "wage_per_match_day&league_id=eq.$leagueId&order=player_id.asc"
+
+            val pagina = SupabaseApi.get(
+                path = path,
+                extraHeaders = mapOf("Range" to "$from-${from + PAGE_SIZE - 1}"),
+            ).then { body ->
+                ApiResult.Ok(
+                    JsonNode.parse(body).asList().associate { riga ->
+                        riga["player_id"].long(0) to ContractInfo(
+                            clubId = riga["club_id"].long(0),
+                            squad = riga["squad"].str("prima"),
+                            expiresOn = riga["expires_on"].int(0),
+                            wagePerMatchDay = riga["wage_per_match_day"].int(0),
+                        )
+                    },
+                )
+            }
+
+            when (pagina) {
+                is ApiResult.Error -> return if (from == 0) pagina else ApiResult.Ok(tutti)
+                is ApiResult.Ok -> {
+                    tutti += pagina.value
+                    if (pagina.value.size < PAGE_SIZE) return ApiResult.Ok(tutti)
+                    from += PAGE_SIZE
+                }
+            }
         }
     }
 

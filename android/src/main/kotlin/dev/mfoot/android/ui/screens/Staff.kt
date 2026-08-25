@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.StaffState
 import dev.mfoot.android.data.StaffMember
+import dev.mfoot.core.market.Valuation
+import dev.mfoot.core.world.Scouting
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Notice
@@ -61,7 +63,6 @@ fun StaffScreen(
     staff: StaffState,
     onCarica: () -> Unit,
     onSposta: (Long, Long) -> Unit,
-    onAsta: (Long) -> Unit,
     /** Assume subito chi e' sul listino, al prezzo scritto. */
     onCompra: (Long, Int) -> Unit = { _, _ -> },
     /** Mette in vendita un proprio membro dello staff. */
@@ -79,7 +80,6 @@ fun StaffScreen(
 
     val miei = staff.di(club.id)
     val altroClub = if (state.guardoLaPrimavera) state.lega.myClub else state.lega.myYouthClub
-    val budgetIniziale = state.lega.league.config.economy.startingCredits
 
     Column(
         Modifier.fillMaxSize().background(MFootColors.bg).verticalScroll(rememberScrollState()),
@@ -110,14 +110,14 @@ fun StaffScreen(
 
                 // Dal 2026-08-24 lo staff si puo' anche cedere: sta sul listino come i
                 // giocatori, con la stessa regola. Prima l'unica azione era spostarlo fra
-                // le proprie due squadre, e un allenatore preso all'asta restava tuo per
-                // sempre anche quando ne trovavi uno migliore.
+                // le proprie due squadre, e un allenatore preso restava tuo per sempre
+                // anche quando ne trovavi uno migliore.
                 //
-                // Il prezzo e' proporzionale alle stelle sul budget della lega: lo staff
-                // non ha un valore di mercato come i giocatori, e chiedere un numero a
-                // mano su una schermata che si scorre sarebbe un modulo in piu' per una
-                // decisione che quasi nessuno vuole rifinire.
-                val prezzo = (budgetIniziale / 40) * membro.stars
+                // Si vende allo stesso prezzo a cui si compra, e non e' pigrizia: e' la
+                // regola [Valuation.staffPrice] applicata in tutte e due le direzioni.
+                // Chiedere un numero a mano su una schermata che si scorre sarebbe un
+                // modulo in piu' per una decisione che quasi nessuno vuole rifinire.
+                val prezzo = Valuation.staffPrice(membro.stars, state.lega.league.config)
                 if (staff.prezzoDi(membro.id) == null) {
                     Azione("Vendi · $prezzo") { onVendi(membro.id, prezzo.coerceAtLeast(1)) }
                 } else {
@@ -130,27 +130,27 @@ fun StaffScreen(
             Spacer(Modifier.height(MFootSpacing.section))
             Column(Modifier.padding(MFootSpacing.section, 0.dp, MFootSpacing.section, 8.dp)) {
                 Label("Liberi · ${staff.liberi.size}")
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Si prendono all'asta, come i giocatori. Chi apre l'asta non ha nessun " +
-                        "vantaggio: paga come tutti gli altri.",
-                    style = MFootType.chip,
-                    color = MFootColors.ink3,
-                )
             }
 
             staff.liberi.take(40).forEach { membro ->
+                // Il prezzo di chi e' libero lo sa gia' l'app: e' una regola di `core`,
+                // [Valuation.staffPrice], la stessa che il server rifa' per addebitarlo.
+                //
+                // Prima qui si chiedeva a `staff.prezzoDi`, cioe' a una riga di listino
+                // che scriveva soltanto il tick. Quando il tick non aveva ancora girato
+                // — cioe' quasi sempre — restava «All'asta» e basta, ed e' la
+                // segnalazione arrivata: «per prendere lo staff si e' ancora obbligati
+                // a farlo tramite asta». Un prezzo che esiste solo dopo che un processo
+                // esterno ha girato, per chi gioca non esiste.
                 val prezzo = staff.prezzoDi(membro.id)
+                    ?: Valuation.staffPrice(membro.stars, state.lega.league.config)
+
                 Riga(membro) {
-                    if (prezzo != null) {
-                        // Sul listino si assume subito, come per i giocatori. Senza la
-                        // finestra di contestazione: un preparatore in piu' non ribalta
-                        // una stagione, e dodici ore d'attesa su ogni assunzione
-                        // renderebbero lo staff piu' faticoso dei giocatori.
-                        Azione("Assumi · $prezzo") { onCompra(membro.id, prezzo) }
-                    } else {
-                        Azione("All'asta") { onAsta(membro.id) }
-                    }
+                    // Si assume subito, come i giocatori. Senza la finestra di
+                    // contestazione: un preparatore in piu' non ribalta una stagione, e
+                    // dodici ore d'attesa su ogni assunzione renderebbero lo staff piu'
+                    // faticoso dei giocatori.
+                    Azione("Assumi · $prezzo") { onCompra(membro.id, prezzo) }
                 }
             }
         }
@@ -276,7 +276,7 @@ fun OsservatoriScreen(
         }
 
         if (osservatori.isEmpty()) {
-            Vuoto("Nessun osservatore. Prendine uno all'asta dalla scheda Staff.")
+            Vuoto("Nessun osservatore. Assumine uno dalla scheda Staff.")
             Spacer(Modifier.height(30.dp))
             return@Column
         }
@@ -310,6 +310,20 @@ fun OsservatoriScreen(
                         color = MFootColors.gamble,
                     )
                 } else {
+                    // Quanto starebbe via, prima di mandarlo.
+                    //
+                    // Il numero cambia con le stelle, e senza vederlo la scelta fra due
+                    // osservatori e' meta' informata. Il conto e' [Scouting.missionMinutes],
+                    // in `core`, lo stesso che il server usa per fissare il rientro.
+                    val minuti = Scouting.missionMinutes(scout.stars, state.lega.league.config.rules)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (minuti < 60) "Sta via $minuti minuti"
+                        else "Sta via ${minuti / 60}h${(minuti % 60).toString().padStart(2, '0')}",
+                        style = MFootType.chip,
+                        color = MFootColors.ink3,
+                    )
+
                     Spacer(Modifier.height(8.dp))
                     Missione(paesi, ruoli.map { it.short to it.name }) { paese, ruolo ->
                         onManda(scout.id, paese, ruolo)

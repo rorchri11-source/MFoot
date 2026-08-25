@@ -1,7 +1,9 @@
 package dev.mfoot.tick
 
 import dev.mfoot.core.json.JsonNode
+import dev.mfoot.core.json.JsonWriter
 import dev.mfoot.core.match.Formation
+import dev.mfoot.core.match.Lineup
 import dev.mfoot.core.match.TacticalPressing
 import dev.mfoot.core.match.TacticalStance
 import dev.mfoot.core.match.TacticalTempo
@@ -85,6 +87,43 @@ object LineupJson {
             tempo = root["tempo"].enum(TacticalTempo.NORMALE),
             pressing = root["pressing"].enum(TacticalPressing.MEDIO),
         )
+    }
+
+    /**
+     * I titolari, nel formato che legge [slots].
+     *
+     * Serve ai club del computer, che dalla loro prima riga di codice non avevano mai
+     * scritto una formazione: il tick gliene costruiva una al volo per giocare e la
+     * buttava. Chi apriva il campo di un'AI non trovava niente, e la segnalazione
+     * «non schierano, non fanno nessuna scelta tecnica» era la descrizione esatta.
+     *
+     * Si scrive `player_id`, la forma dichiarata dallo schema, non la variante camelCase
+     * che [slots] tollera in lettura: tollerare in entrata e' prudenza, scrivere due
+     * dialetti sarebbe crearne uno nuovo.
+     */
+    fun writeSlots(lineup: Lineup): String {
+        val w = JsonWriter(1024)
+        w.beginArray()
+        lineup.slots.forEach { slot ->
+            w.beginObject()
+            w.field("player_id", slot.player.id.value)
+            w.field("position", slot.position.name)
+            w.endObject()
+        }
+        w.endArray()
+        return w.toString()
+    }
+
+    /** L'assetto, nel formato che legge [tactics]. */
+    fun writeTactics(tactics: Tactics): String {
+        val w = JsonWriter(256)
+        w.beginObject()
+        w.field("stance", tactics.stance.name)
+        w.field("width", tactics.width.name)
+        w.field("tempo", tactics.tempo.name)
+        w.field("pressing", tactics.pressing.name)
+        w.endObject()
+        return w.toString()
     }
 
     /** Null anche quando il testo non e' JSON valido: vedi il commento in testa. */

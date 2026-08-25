@@ -47,12 +47,27 @@ che si separano al primo ritocco.
 deciso dall'admin. Vale anche per i premi: si esprimono in percentuale del budget, così
 seguono l'economia della lega da soli.
 
-## Una trappola già pagata due volte
+## Il database è un file solo
 
-Aggiungere una **colonna** nuova a una SELECT condivisa rende l'app inservibile su ogni
-database che non ha ancora la migrazione: PostgREST rifiuta l'intera query per una colonna
-che non esiste, quindi non si legge più la lega — non una schermata, tutto. Le colonne
-aggiunte da una migrazione si chiedono **in una lettura a parte**, che al peggio fallisce
-da sola. È già successo con `clubs.division_level` e con `clubs.parent_club_id`.
+[`supabase/schema.sql`](supabase/schema.sql): tabelle, indici, permessi, funzioni. Si
+incolla nell'SQL Editor di Supabase e si esegue, ed è rieseguibile senza danni.
 
-Le migrazioni SQL vanno applicate **prima** di installare l'APK, per lo stesso motivo.
+Erano trentuno migrazioni numerate fino al 2026-08-25. Unificate su decisione del
+proprietario, perché contenevano quattro versioni di `start_auction` e tre di `place_bid`:
+per sapere cosa faceva una funzione bisognava leggerle tutte in ordine.
+
+**Va eseguito prima di installare un APK che si aspetta qualcosa di nuovo.** Il motivo è la
+trappola qui sotto.
+
+## Due trappole già pagate
+
+**PostgREST rifiuta l'intera query per una colonna che non esiste.** Non la riga, non il
+campo: tutta la SELECT. Quindi una colonna nuova infilata in una lettura condivisa rende
+l'app inservibile ovunque lo schema sia indietro — non una schermata, tutto. Le colonne
+nuove si chiedono **in una lettura a parte**, che al peggio fallisce da sola. È già
+successo con `clubs.division_level` e con `clubs.parent_club_id`.
+
+**PostgREST tronca ogni risposta a mille righe e restituisce comunque un 200.** Chi legge
+una tabella che può superarle deve chiederla a pagine con l'intestazione `Range`, o perde
+dati in silenzio. È già successo con `players` (giovani che sparivano) e con `contracts`
+(giocatori che risultavano svincolati pur avendo un club).

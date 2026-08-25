@@ -133,4 +133,43 @@ object Valuation {
         }
         return 1.0 + (margin / 25.0) * credibility
     }
+
+    /**
+     * Quanto costa un membro dello staff, in crediti.
+     *
+     * ## Perche' questa funzione e' nata il 2026-08-25
+     *
+     * Perche' lo stesso prezzo era scritto dentro la schermata dello staff dell'app —
+     * `(budgetIniziale / 40) * stelle` — e da nessun'altra parte. Il server non lo
+     * conosceva, quindi non poteva metterlo su un pulsante «Assumi», quindi l'unico modo
+     * di prendere un allenatore restava l'asta. La segnalazione del proprietario era
+     * esattamente questa: «per prendere lo staff si e' ancora obbligati all'asta».
+     *
+     * Adesso vive qui, come tutte le regole di gioco, e la usano l'app, il tick e — nella
+     * sua copia SQL, per la stessa ragione per cui `mfoot_market_value` esiste — il
+     * database, che sui soldi non puo' fidarsi di quello che gli manda un telefono.
+     *
+     * ## Perche' la curva e' quadratica
+     *
+     * Perche' le stelle non sono lineari e il prezzo deve dirlo. Un allenatore da cinque
+     * fa crescere i giocatori **tre volte** piu' di uno da una (0,60 contro 1,80), e la
+     * differenza fra il quarto e il quinto e' molto piu' grande di quella fra il primo e il
+     * secondo. Un prezzo lineare renderebbe il cinque stelle un affare ovvio per chiunque
+     * apra l'app per primo, che e' precisamente il motivo per cui lo staff era finito
+     * all'asta.
+     *
+     * Il tetto e' [dev.mfoot.core.config.EconomyConfig.staffBudgetShare] — quanto costa un
+     * cinque stelle — e le stelle sotto scendono con il quadrato: 5★ paga il tetto pieno,
+     * 1★ un venticinquesimo. Con i valori predefiniti sono il 4% del budget contro lo
+     * 0,16%. Resta un affare prenderne uno bravo — deve esserlo, o non lo comprerebbe
+     * nessuno — ma costa abbastanza da essere una decisione.
+     *
+     * `StaffPriceTest` stampa il listino e fallisce se il migliore esce dalla sua fascia.
+     */
+    fun staffPrice(stars: Int, config: LeagueConfig): Int {
+        val stelle = stars.coerceIn(1, 5)
+        val tetto = config.economy.startingCredits * config.economy.staffBudgetShare
+        val frazione = (stelle * stelle) / 25.0
+        return StrictMath.round(tetto * frazione).toInt().coerceAtLeast(1)
+    }
 }

@@ -1,10 +1,52 @@
 # MFoot — stato del progetto
 
 **Aggiornato:** 2026-08-25
-**Test:** 716 verdi, 0 falliti
-**Verificato:** `core:test` completo e `android:assembleDebug`. **Il blocco del 2026-08-25
-— mercato, incarichi, AI, intervallo — non è ancora girato su un database vero**: le
-migrazioni `0027`-`0030` vanno applicate prima di installare l'APK
+**Test:** 773 verdi, 0 falliti (745 in `core`, 28 in `tick`)
+**Verificato:** `core:test`, `tick:test` e la build di rilascio firmata. **Da eseguire
+[`supabase/schema.sql`](supabase/schema.sql) prima di installare l'APK**
+
+---
+
+## Il difetto più costoso, misurato il 2026-08-25
+
+Il lavoro di GitHub Actions aveva `timeout-minutes: 10`. Sulle venti esecuzioni
+consecutive prima della correzione, **tredici** finivano `cancelled` a dieci minuti e venti
+secondi esatti dall'avvio: non era GitHub che annullava per concorrenza, era quel
+cronometro che uccideva il processo.
+
+E il processo ucciso non lasciava niente. Il tick elabora **una lega per transazione** e fa
+`commit` solo alla fine di `runLeague`: staccare la spina a metà significa che Postgres
+annulla tutto. Partite simulate, acquisti delle AI, stipendi, colloqui — tutto indietro, e
+`last_processed_at` fermo.
+
+| Esecuzione | Durata | Esito |
+|---|---|---|
+| 391 | 8m 04s | riuscita |
+| 390 | 8m 56s | riuscita |
+| 389 | 8m 55s | riuscita |
+| 388 | **10m 23s** | annullata dal timeout |
+| 387 | **10m 20s** | annullata dal timeout |
+| 386 | **10m 26s** | annullata dal timeout |
+
+Di quei quasi nove minuti: 43 secondi di build, **6m 45s di elaborazione**, 26 secondi
+sprecati a riscrivere una cache identica a quella che c'era già.
+
+È la spiegazione di «le AI comprano una volta al giorno»: non erano lente, due volte su tre
+il loro acquisto veniva cancellato da un numero in un file YAML.
+
+Le tre correzioni, in ordine di peso:
+
+1. **`timeout-minutes: 20`**, e un budget di quindici minuti dentro il tick
+   ([`TickBudget`](tick/src/main/kotlin/dev/mfoot/tick/TickBudget.kt)): il giro si ferma da
+   solo, chiude la transazione e salva, invece di essere ammazzato a metà. Quello che non
+   ha fatto lo fa il giro dopo — il tick è costruito per recuperare gli intervalli persi.
+2. **Meno viaggi verso il database**. `applyMatchAftermath` chiedeva un giocatore per volta
+   dentro un ciclo, più le stelle dell'allenatore per ognuno: una cinquantina di andate e
+   ritorni per partita. Adesso è una query sola, e i due valori che non cambiano dentro un
+   giro si ricordano.
+3. **Sette indici nuovi**, e un cronometro che stampa dove sono finiti i secondi — perché
+   il registro diceva solo «terminato in 405000 ms», e senza sapere di cosa l'unica strada
+   è indovinare quale pezzo sia lento.
 
 ---
 
@@ -274,62 +316,52 @@ senza sapere da dove è arrivato.
 | Stime di scouting, dai minuti visti | ✅ |
 | Allenamento della Primavera, una volta per giornata | ✅ |
 
-### Migrazioni SQL da eseguire
 
-Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
+### Il database: un file solo
 
-| File | Contenuto |
+Nell'SQL Editor di Supabase si incolla [`supabase/schema.sql`](supabase/schema.sql) e si
+esegue. È tutto lì: tabelle, indici, permessi, funzioni.
+
+Fino al 2026-08-25 erano **trentuno migrazioni numerate**, da `0001` a `0031`. Le ho
+unificate su richiesta del proprietario — «basta che non siano 30 separate inutilmente» —
+e il motivo per cui aveva ragione è che la storia che raccontavano non serviva a nessuno:
+quattro versioni di `start_auction`, tre di `place_bid`, due di `buy_player`. Per sapere
+cosa faceva davvero una funzione bisognava leggere trentuno file in ordine e ricordare
+quale vincesse.
+
+Il file è **rieseguibile**: `if not exists`, `create or replace`, `drop policy if exists`.
+Rilanciarlo su un database già a posto aggiorna le funzioni e non cancella niente.
+
+**Su un database che ha già le migrazioni `0001`-`0031` applicate, `schema.sql` basta e
+non serve svuotare nulla:** le colonne sono le stesse una per una (verificato
+meccanicamente, confrontando le colonne del vecchio schema con quelle del nuovo), quindi
+l'unico effetto è sostituire le funzioni e aggiungere i sette indici nuovi.
+
+Su un progetto Supabase vuoto, `schema.sql` costruisce tutto da zero.
+
+**Quello che il file non fa** è aggiungere colonne a tabelle che esistono già con meno
+colonne: `create table if not exists` su una tabella esistente non fa niente. Chi arriva
+da uno schema più vecchio del `0031` deve svuotare e ripartire.
+
+#### Cosa è cambiato nello schema il 2026-08-25
+
+| Novità | Perché |
 |---|---|
-| `supabase/migrations/0001_schema.sql` | Tabelle, vista pubblica, `place_bid`, RLS |
-| `supabase/migrations/0002_create_league.sql` | `create_league`, `join_league` |
-| `supabase/migrations/0003_club.sql` | `create_club` e il conto del budget lato server |
-| `supabase/migrations/0004_auctions.sql` | `start_auction`, prezzo pubblico sulle aste |
-| `supabase/migrations/0005_competitions.sql` | `create_competition`, `delete_competition` |
-| `supabase/migrations/0006_config.sql` | `update_league_config` |
-| `supabase/migrations/0007_tick_state_read.sql` | La policy che rendeva `tick_state` leggibile |
-| `supabase/migrations/0008_trades.sql` | Gli scambi |
-| `supabase/migrations/0009_divisions.sql` | Le divisioni |
-| `supabase/migrations/0010_conversations.sql` | Il morale dai colloqui |
-| `supabase/migrations/0011_promises.sql` | Le promesse |
-| `supabase/migrations/0012_partite_giocate.sql` | `appearances`: chi ha giocato, partita per partita |
-| `supabase/migrations/0013_colloqui.sql` | `conversations` e le funzioni per aprirla e chiuderla |
-| `supabase/migrations/0014_trattative.sql` | Prestiti e amichevoli, `competitions.kind` |
-| `supabase/migrations/0015_vendite.sql` | Vendere i propri giocatori all'asta |
-| `supabase/migrations/0016_scouting.sql` | Le stime che si stringono |
-| `supabase/migrations/0017_primavera.sql` | Spostare un giovane, e la traccia dell'allenamento |
-| `supabase/migrations/0018_seconda_squadra.sql` | La Primavera diventa un club vero |
-| `supabase/migrations/0019_staff_e_scouting.sql` | Staff assegnabile, missioni, under 20 fuori dalle aste |
-| `supabase/migrations/0020_aste_trasparenti.sql` | A fine asta si vede chi ha offerto quanto |
-| `supabase/migrations/0021_controproposte.sql` | Le trattative diventano un botta e risposta |
-| `supabase/migrations/0022_una_lega_sola.sql` | Codice d'accesso univoco, rileggibile e cambiabile |
-| `supabase/migrations/0023_chi_ha_offerto.sql` | La cronologia pubblica delle aste aperte |
-| `supabase/migrations/0024_obiettivi.sql` | Gli obiettivi di stagione e i premi |
-| `supabase/migrations/0025_entrare_sapendo_dove.sql` | `peek_league`: che lega apre un codice, prima di entrarci |
-| `supabase/migrations/0026_chi_apre_ha_offerto.sql` | Chi apre un'asta per comprare parte in testa |
-| `supabase/migrations/0027_incarichi_e_ordini.sql` | Le tre colonne degli incarichi da palla ferma |
-| `supabase/migrations/0028_listino_e_contestazione.sql` | `listings`, `purchases`, e le funzioni del mercato immediato |
-| `supabase/migrations/0029_finestra_intervallo.sql` | `resume_at` e `first_half`: la partita si ferma al 45' |
-| `supabase/migrations/0030_admin_svincoli_staff.sql` | Svincolo annunciato, staff sul listino, gli strumenti dell'admin |
+| `staff_price(bigint)` | Il prezzo dello staff viveva solo dentro una schermata dell'app, quindi il server non poteva addebitarlo e l'unica strada restava l'asta |
+| `buy_staff` senza riga di listino | Chi è libero si assume sempre: la riga la scriveva solo il tick, e il tick quasi non girava |
+| `send_scout` con i minuti in configurazione | Erano 8-48 **ore** scritte in SQL. Adesso sono `rules.scoutMinutesBest/Worst`, e il massimo è due ore |
+| Sette indici nuovi | `players(league_id, age)`, `staff(club_id, role)`, `contracts(club_id, squad)`, `auctions(target_type, target_id, status)`, `appearances(club_id, player_id)`, `listings(league_id, target_type, status)`, `fixtures(competition_id, match_day)` |
 
-**`0028` e `0030` vanno applicate insieme, e prima dell'APK.** Non per abitudine: l'app
-chiede `listings.target_type` — senza, PostgREST rifiuta l'intera query e il listino resta
-vuoto per sempre. La colonna nasce dentro `0028` proprio perché `players` e `staff` hanno
-sequenze di id separate, e un listino che non distingue i due vende un allenatore a chi
-crede di prendere un centrocampista.
+#### Cose che restano vere sui dati vecchi
 
-**`0014` va applicata prima di installare l'APK.** Aggiunge una colonna a `competitions`,
-e una colonna nuova dentro una SELECT condivisa non è un'aggiunta: PostgREST rifiuta
-l'intera query per una colonna che non esiste. È già successo con `clubs.division_level`,
-e aveva rotto tutta l'app.
+Le leghe create prima della vecchia migrazione `0003` non hanno i pesi dei ruoli in
+configurazione e **non possono accettare nuovi club**: per provare la fondazione va creata
+una lega nuova.
 
-Le leghe create prima della migrazione `0003` non hanno i pesi dei ruoli in
-configurazione e **non possono accettare nuovi club**: per provare la fondazione va
-creata una lega nuova.
-
-**Se due leghe hanno lo stesso codice**, `0022` non le separa da sola — non c'è modo di
-sapere in quale volevano entrare. Da lì in poi `join_league` rifiuta il codice ambiguo
-invece di sceglierne una a caso, e l'admin ne cambia uno da «Le mie leghe». Il codice
-delle leghe create prima non compare finché non lo si cambia una volta: dell'originale
+**Se due leghe hanno lo stesso codice**, lo schema non le separa da solo — non c'è modo di
+sapere in quale volevano entrare. `join_league` rifiuta il codice ambiguo invece di
+sceglierne una a caso, e l'admin ne cambia uno da «Le mie leghe». Il codice delle leghe
+create prima del `0022` non compare finché non lo si cambia una volta: dell'originale
 esiste solo l'impronta cifrata.
 
 ---

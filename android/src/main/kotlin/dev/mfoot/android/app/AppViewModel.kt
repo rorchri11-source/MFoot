@@ -1319,7 +1319,36 @@ class AppViewModel : ViewModel() {
 
                 is ApiResult.Ok -> {
                     val corrente = statoCorrente() ?: return@launch
-                    _state.value = corrente.copy(browse = corrente.browse.copy(selected = null))
+                    val mio = corrente.lega.myClub
+
+                    /*
+                     * Il giocatore passa alla tua squadra **adesso**, prima di rileggere
+                     * qualunque cosa dal server.
+                     *
+                     * Chiesto il 2026-08-25: «quando si prende un giocatore svincolato si
+                     * tolga dalla lista svincolati». Chiuso il foglio, l'elenco sotto e'
+                     * quello di prima, e per il tempo che ci mette la rilettura — che su
+                     * una rete lenta e' qualche secondo — lo si vede ancora fra chi si
+                     * puo' prendere. Da li' a toccarlo di nuovo il passo e' corto, e il
+                     * secondo tocco riceve un rifiuto che sembra un guasto.
+                     *
+                     * Non e' un trucco visivo: il server ha gia' risposto ok, quindi il
+                     * contratto **esiste**. Questa riga scrive in locale un fatto vero, e
+                     * la rilettura subito dopo lo conferma. Se la rilettura fallisce il
+                     * valore ottimista resta, che e' il comportamento giusto: e' piu'
+                     * vicino alla realta' della mappa vecchia.
+                     */
+                    val aggiornata = if (mio == null) corrente.lega else corrente.lega.copy(
+                        clubOfPlayer = corrente.lega.clubOfPlayer + (row.player.id.value to mio.id),
+                    )
+                    ultimaLega = aggiornata
+
+                    _state.value = corrente.copy(
+                        lega = aggiornata,
+                        rows = righe(aggiornata, corrente.rows.mapNotNull { it.inVendita }, corrente.acquisti),
+                        browse = corrente.browse.copy(selected = null),
+                    )
+
                     ricaricaMercato(
                         "${row.player.fullName} è tuo per ${esito.value.prezzo} crediti. " +
                             "Per dodici ore chiunque può contestare l'acquisto.",
@@ -2297,39 +2326,6 @@ class AppViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Apre l'asta per un membro dello staff libero.
-     *
-     * Passa dalla stessa funzione dei giocatori, che accetta `target_type = 'staff'` dal
-     * primo giorno e non l'aveva mai chiamata nessuno.
-     */
-    fun mettiStaffAllAsta(staffId: Long) {
-        val dentro = statoCorrente() ?: return
-        val membro = _staff.value.tutti.firstOrNull { it.id == staffId } ?: return
-
-        viewModelScope.launch {
-            // Base bassa come per i giocatori: il prezzo lo deve fare l'asta, non chi la
-            // apre. Le stelle contano molto piu' che linearmente, quindi anche la base.
-            val base = 1.coerceAtLeast(membro.stars * membro.stars * 200)
-            val esito = AuctionRepository.startAuction(
-                leagueId = dentro.lega.league.id,
-                targetId = staffId,
-                startingPrice = base,
-                targetType = "staff",
-            )
-
-            when (esito) {
-                is ApiResult.Error -> _staff.value = _staff.value.copy(errore = esito.message)
-                is ApiResult.Ok -> {
-                    _staff.value = _staff.value.copy(
-                        errore = null,
-                        avviso = "${membro.shortName} è all'asta, base $base.",
-                    )
-                    aggiornaAste()
-                }
-            }
-        }
-    }
 
     /** Manda un osservatore a cercare in un paese, per un ruolo. */
     fun mandaOsservatore(staffId: Long, paese: String, ruolo: String) {

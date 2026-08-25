@@ -11,18 +11,11 @@ name: World Tick
 
 on:
   schedule:
-    # Ogni 10 minuti, non ogni 5.
+    # Ogni 10 minuti.
     #
-    # Cinque e' il minimo che GitHub consente, ed era la scelta ovvia. Misurato pero' sul
-    # registro delle esecuzioni: un giro dura circa **otto minuti** — un minuto di build e
-    # sette di elaborazione — quindi con il cron a cinque i giri si accavallano sempre.
-    # Con `concurrency` il secondo si mette in coda e il terzo lo annulla: un terzo delle
-    # esecuzioni risultava "cancelled" senza che nessuno ne capisse il motivo.
-    #
-    # Dieci non rallenta il gioco: GitHub ritarda comunque i lavori pianificati, e la
-    # cadenza vera misurata era gia' fra i trenta e i cinquanta minuti. Dieci descrive la
-    # realta' invece di fingere una precisione che non c'e', e smette di produrre
-    # annullamenti che sembrano guasti.
+    # GitHub ritarda comunque i lavori pianificati sul piano gratuito: la cadenza vera
+    # misurata sul registro delle esecuzioni sta fra i trenta e i cinquanta minuti. Dieci
+    # descrive l'intenzione senza fingere una precisione che non c'e'.
     - cron: '*/10 * * * *'
   # Permette di lanciarlo a mano dalla tab Actions, utile per provare.
   workflow_dispatch:
@@ -41,7 +34,24 @@ concurrency:
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+
+    # VENTI MINUTI, E IL MOTIVO PER CUI DIECI ERANO UN DIFETTO GRAVE
+    #
+    # Misurato il 2026-08-25 sulle ultime venti esecuzioni: **tredici** finivano
+    # `cancelled` a dieci minuti e venti secondi esatti dall'avvio. Non era GitHub che
+    # annullava per concorrenza — era questo cronometro che uccideva il processo.
+    #
+    # E il processo ucciso non lasciava niente. Il tick elabora una lega per transazione e
+    # fa `commit` solo alla fine: staccare la spina a meta' significa che Postgres annulla
+    # tutto. Partite simulate, acquisti delle AI, stipendi, colloqui — tutto indietro.
+    #
+    # E' la spiegazione di «le AI comprano una volta al giorno»: non erano lente, due volte
+    # su tre il loro acquisto veniva cancellato da questo numero.
+    #
+    # Venti minuti e' il tetto duro. Il tetto vero e' MFOOT_BUDGET_SECONDS qui sotto, che
+    # e' piu' basso: il tick si ferma da solo **prima**, chiude la transazione e salva.
+    # I due numeri vanno tenuti insieme, e per questo stanno nello stesso file.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +64,14 @@ jobs:
 
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # Il tick non cambia a ogni giro, quindi non c'e' niente di nuovo da salvare in
+          # cache: il passo "Post Gradle" ci metteva ventisei secondi a riscrivere quello
+          # che c'era gia'. In sola lettura la cache si usa e non si riscrive.
+          #
+          # Quando il codice del tick cambia davvero, il primo giro dopo il push ricostruisce
+          # da capo e ci mette qualche secondo in piu': una volta, non a ogni giro.
+          cache-read-only: true
 
       # Rete di sicurezza: il repository viene aggiornato da Windows, dove il permesso
       # di esecuzione non esiste. Se si perde di nuovo, qui non se ne accorge nessuno.
@@ -71,4 +89,8 @@ jobs:
           MFOOT_TELEGRAM_TOKEN: ${{ secrets.MFOOT_TELEGRAM_TOKEN }}
           MFOOT_TELEGRAM_CHAT: ${{ secrets.MFOOT_TELEGRAM_CHAT }}
           MFOOT_DRY_RUN: ${{ inputs.dry_run }}
+          # Quindici minuti contro i venti di timeout-minutes. Nei cinque di scarto ci
+          # stanno la costruzione del jar (che avviene prima che il cronometro parta) e il
+          # margine perche' il tick decida di fermarsi invece di essere ammazzato.
+          MFOOT_BUDGET_SECONDS: '900'
         run: java -jar tick/build/dist/world-tick.jar

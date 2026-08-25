@@ -191,9 +191,18 @@ object SupabaseApi {
         val spent: Int,
     )
 
-    /** Una GET su PostgREST: percorso e filtri gia' pronti, risposta grezza. */
-    suspend fun get(path: String): ApiResult<String> = withContext(Dispatchers.IO) {
-        request(path, "GET")
+    /**
+     * Una GET su PostgREST: percorso e filtri gia' pronti, risposta grezza.
+     *
+     * [extraHeaders] serve soprattutto per `Range`, cioe' per leggere a pagine: PostgREST
+     * tronca a mille righe **restituendo un 200**, quindi chi legge una tabella che puo'
+     * superarle deve chiederla a fette o perdere dati in silenzio.
+     */
+    suspend fun get(
+        path: String,
+        extraHeaders: Map<String, String> = emptyMap(),
+    ): ApiResult<String> = withContext(Dispatchers.IO) {
+        request(path, "GET", extraHeaders = extraHeaders)
     }
 
     /**

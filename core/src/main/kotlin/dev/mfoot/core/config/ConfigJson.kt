@@ -137,6 +137,8 @@ object ConfigJson {
         w.field("drawPrize", c.drawPrize)
         w.field("wagesEnabled", c.wagesEnabled)
         w.field("wageFactor", c.wageFactor)
+        w.field("topPlayerBudgetShare", c.topPlayerBudgetShare)
+        w.field("staffBudgetShare", c.staffBudgetShare)
         w.field("renewalCostFraction", c.renewalCostFraction)
         w.field("negativeBalanceAllowed", c.negativeBalanceAllowed)
         w.endObject()
@@ -208,6 +210,8 @@ object ConfigJson {
         w.field("suspensionsEnabled", c.suspensionsEnabled)
         w.field("yellowCardsForSuspension", c.yellowCardsForSuspension)
         w.field("youthTeamEnabled", c.youthTeamEnabled)
+        w.field("scoutMinutesBest", c.scoutMinutesBest)
+        w.field("scoutMinutesWorst", c.scoutMinutesWorst)
         w.field("youthMaxAge", c.youthMaxAge)
         w.field("youthMatchGrowthFactor", c.youthMatchGrowthFactor)
         w.field("moraleEnabled", c.moraleEnabled)
@@ -382,6 +386,8 @@ object ConfigJson {
         drawPrize = n["drawPrize"].int(d.drawPrize),
         wagesEnabled = n["wagesEnabled"].bool(d.wagesEnabled),
         wageFactor = n["wageFactor"].double(d.wageFactor),
+        topPlayerBudgetShare = n["topPlayerBudgetShare"].double(d.topPlayerBudgetShare),
+        staffBudgetShare = n["staffBudgetShare"].double(d.staffBudgetShare),
         renewalCostFraction = n["renewalCostFraction"].double(d.renewalCostFraction),
         negativeBalanceAllowed = n["negativeBalanceAllowed"].bool(d.negativeBalanceAllowed),
     )
@@ -447,6 +453,8 @@ object ConfigJson {
         suspensionsEnabled = n["suspensionsEnabled"].bool(d.suspensionsEnabled),
         yellowCardsForSuspension = n["yellowCardsForSuspension"].int(d.yellowCardsForSuspension),
         youthTeamEnabled = n["youthTeamEnabled"].bool(d.youthTeamEnabled),
+        scoutMinutesBest = n["scoutMinutesBest"].int(d.scoutMinutesBest),
+        scoutMinutesWorst = n["scoutMinutesWorst"].int(d.scoutMinutesWorst),
         youthMaxAge = n["youthMaxAge"].int(d.youthMaxAge),
         youthMatchGrowthFactor = n["youthMatchGrowthFactor"].double(d.youthMatchGrowthFactor),
         moraleEnabled = n["moraleEnabled"].bool(d.moraleEnabled),

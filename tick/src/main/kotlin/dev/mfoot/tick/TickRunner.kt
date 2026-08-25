@@ -10,6 +10,7 @@ import dev.mfoot.core.ai.AiObsession
 import dev.mfoot.core.ai.AiPersonality
 import dev.mfoot.core.ai.AiScheduler
 import dev.mfoot.core.ai.AiState
+import dev.mfoot.core.ai.AiTactics
 import dev.mfoot.core.calendar.CalendarSolver
 import dev.mfoot.core.calendar.Competition
 import dev.mfoot.core.calendar.CompetitionType
@@ -147,13 +148,49 @@ class TickRunner(
     private val connection: Connection,
     private val env: TickEnvironment,
     private val notifier: Notifier = Notifier(env),
+    /**
+     * Il tempo che questo giro ha prima di essere ucciso da fuori. Vedi [TickBudget]:
+     * senza, il tick veniva interrotto a transazione aperta e perdeva tutto.
+     */
+    private val budget: TickBudget = TickBudget(Instant.now(), java.time.Duration.ofSeconds(900)),
 ) {
+
+    /** Dove sono finiti i secondi di questo giro. Si stampa alla fine. */
+    private val cronometro = Cronometro()
+
+    /*
+     * Le due domande che si ripetevano centinaia di volte per giro.
+     *
+     * Il nome del club e le stelle dell'allenatore non cambiano **dentro** un giro, ma
+     * venivano richiesti al database una volta per giocatore: `applyMatchAftermath` ne
+     * faceva due per ogni giocatore sceso in campo, cioe' una cinquantina per partita.
+     * Ognuna e' un'andata e ritorno verso Supabase — decine di millisecondi da un runner
+     * di GitHub — e sono i millisecondi che facevano superare il timeout.
+     *
+     * Si svuotano a ogni lega: dentro una lega niente li invalida, fra due leghe non c'e'
+     * niente da conservare.
+     */
+    private val nomiDeiClub = HashMap<Long, String>()
+    private val stelleAllenatore = HashMap<Long, Int>()
 
     fun runAllLeagues(now: Instant): TickSummary {
         val summaries = mutableListOf<LeagueSummary>()
         val failures = mutableListOf<String>()
 
         for (league in loadActiveLeagues()) {
+            // Il budget si controlla **fra** una lega e l'altra, mai dentro: una lega
+            // lasciata a meta' e' una transazione annullata, cioe' esattamente il danno
+            // che il budget esiste per evitare.
+            if (budget.scaduto) {
+                failures += "lega ${league.id} '${league.name}': saltata, tempo esaurito " +
+                    "(${budget.descrivi()}). Riprende al giro prossimo."
+                log("Tempo esaurito prima della lega ${league.id}: ${budget.descrivi()}")
+                break
+            }
+
+            nomiDeiClub.clear()
+            stelleAllenatore.clear()
+
             try {
                 summaries += runLeague(league, now)
                 if (env.dryRun) connection.rollback() else connection.commit()
@@ -163,6 +200,8 @@ class TickRunner(
                 log("Lega ${league.id} annullata e riportata indietro: ${e.message}")
             }
         }
+
+        log("Tempi: ${cronometro.riepilogo()} (${budget.descrivi()})")
         return TickSummary(summaries, failures)
     }
 
@@ -174,11 +213,11 @@ class TickRunner(
         // Le finestre di contestazione scadute senza opposizioni si chiudono da sole,
         // prima di ogni altra cosa: da quel momento quei giocatori sono definitivi, e
         // tutto quello che viene dopo — mercato delle AI compreso — deve saperlo.
-        confermaAcquistiScaduti(league)
+        cronometro.fase("contestazioni") { confermaAcquistiScaduti(league) }
 
         // E il listino degli svincolati si allinea prima che chiunque compri: le AI di
         // questo giro devono vedere lo stesso mercato che vede l'app.
-        aggiornaListinoSvincolati(league)
+        cronometro.fase("listino") { aggiornaListinoSvincolati(league) }
 
         val today = MatchDay(league.currentMatchDay)
         val input = TickInput(
@@ -200,12 +239,23 @@ class TickRunner(
             lastDigestAt = state.lastDigestAt,
         )
 
-        val plan = WorldTick.run(input)
+        val plan = cronometro.fase("pianificazione") { WorldTick.run(input) }
         var applied = 0
         var pending = 0
         val notes = plan.notes.toMutableList()
 
         var settled: MatchDay? = null
+
+        /*
+         * Quanto costa una partita, per decidere se c'e' tempo di cominciarla.
+         *
+         * Non e' una stima a occhio: una partita simulata scrive il risultato, le presenze
+         * di tutti e ventidue piu' le panchine, la crescita di chi ha giocato e i premi.
+         * Trenta secondi e' la fascia alta misurata, e la fascia alta e' il numero giusto:
+         * sbagliare per eccesso rimanda una partita di un giro, sbagliare per difetto
+         * annulla tutto il giro.
+         */
+        val costoPartita = java.time.Duration.ofSeconds(30)
 
         for (effect in plan.effects) {
             when (effect) {
@@ -215,7 +265,10 @@ class TickRunner(
                 }
 
                 is TickEffect.RiprendiPartita -> {
-                    if (resumeMatch(league, effect.fixture, notes)) {
+                    if (!budget.consentito(costoPartita)) {
+                        pending++
+                        notes += "Partita ${effect.fixture.id}: ripresa rinviata, tempo esaurito."
+                    } else if (cronometro.fase("partite") { resumeMatch(league, effect.fixture, notes) }) {
                         applied++
                     } else {
                         pending++
@@ -224,7 +277,14 @@ class TickRunner(
                 }
 
                 is TickEffect.SimulaPartita -> {
-                    if (playMatch(league, effect.fixture, notes)) {
+                    // Il rinvio per mancanza di tempo e' identico al rinvio per rosa
+                    // insufficiente, e non e' un caso: il tick e' costruito per riprendere
+                    // dall'ultimo punto elaborato, quindi una partita non cominciata e'
+                    // semplicemente una partita che si gioca al giro dopo.
+                    if (!budget.consentito(costoPartita)) {
+                        pending++
+                        notes += "Partita ${effect.fixture.id} rinviata: tempo del giro esaurito."
+                    } else if (cronometro.fase("partite") { playMatch(league, effect.fixture, notes) }) {
                         applied++
                     } else {
                         // La partita resta da giocare: al prossimo giro ci si riprova.
@@ -250,7 +310,7 @@ class TickRunner(
                 }
 
                 is TickEffect.SvegliaAi -> {
-                    wakeAi(league, effect.clubId, now, today)
+                    cronometro.fase("mercato AI") { wakeAi(league, effect.clubId, now, today) }
                     applied++
                 }
 
@@ -292,41 +352,41 @@ class TickRunner(
         // e' l'opposto — arriva **da una persona, a un club solo** — e farla aspettare fino
         // a domani mattina perche' quel club dorme non protegge nessuno: fa solo credere
         // che l'avversario ti stia ignorando.
-        notes += rispondiAgliScambi(league)
+        notes += cronometro.fase("scambi") { rispondiAgliScambi(league) }
 
         // Le promesse si controllano dopo aver giocato, non prima: e' l'ultima partita del
         // giro a poter completare un "titolare per tre partite", e rimandare al giro
         // successivo vorrebbe dire dichiarare tradita una promessa appena mantenuta.
-        notes += verificaLePromesse(league)
+        notes += cronometro.fase("promesse") { verificaLePromesse(league) }
 
         // I colloqui si aprono per ultimi, dopo le partite e dopo le promesse: e' l'unico
         // momento in cui i fatti della giornata sono tutti scritti. Aprirli prima
         // significherebbe dire a un giocatore "hai giocato male" prima di sapere come ha
         // giocato, e non dirgli niente della promessa che gli hai appena tradito.
-        notes += apriIColloqui(league)
+        notes += cronometro.fase("colloqui") { apriIColloqui(league) }
 
         // I club del computer rispondono subito ai propri: aspettare non avrebbe senso,
         // e un colloquio aperto blocca quello successivo.
-        notes += rispondiAiColloqui(league)
+        notes += cronometro.fase("colloqui AI") { rispondiAiColloqui(league) }
 
         // La Primavera si allena una volta per giornata: la colonna `trained_on` sul
         // contratto e cio che impedisce dodici allenamenti l ora.
-        notes += allenaLaPrimavera(league, MatchDay(league.currentMatchDay))
+        notes += cronometro.fase("primavera") { allenaLaPrimavera(league, MatchDay(league.currentMatchDay)) }
 
         // E chi ha compiuto gli anni sale: e la scadenza che rende la Primavera una
         // scelta invece di un deposito.
-        notes += promuoviChiEFuoriEta(league)
+        notes += cronometro.fase("promozioni") { promuoviChiEFuoriEta(league) }
 
         // Gli osservatori tornati dal viaggio.
-        notes += risolviLeMissioni(league, now)
+        notes += cronometro.fase("osservatori") { risolviLeMissioni(league, now) }
 
         // Lo scouting dopo le partite: i minuti visti sono appena cambiati.
-        notes += aggiornaLoScouting(league, dopoUnaPartita = settled != null)
+        notes += cronometro.fase("scouting") { aggiornaLoScouting(league, dopoUnaPartita = settled != null) }
 
         // La consegna per ultima, quando tutto quello che e' successo in questo giro e'
         // gia' scritto: cosi' una notifica non puo' raccontare un fatto che la transazione
         // annullera' un attimo dopo.
-        notes += consegnaLeNotifiche(league, riepilogo)
+        notes += cronometro.fase("notifiche") { consegnaLeNotifiche(league, riepilogo) }
 
         saveTickState(league.id, plan.processedUpTo, notes.joinToString(" | "), settled)
 
@@ -963,8 +1023,12 @@ class TickRunner(
         // Ogni cinque minuti sarebbe lavoro sprecato: la conoscenza non cambia da sola.
         if (!dopoUnaPartita && !mancanoStimeDaCalcolare(league.id)) return emptyList()
 
-        val inAsta = loadOpenAuctions(league.id)
-            .mapNotNull { (it.target as? AuctionTarget.ForPlayer)?.playerId }
+        // I giocatori all'asta si leggono **una volta**, non una per club umano: era una
+        // query per ogni asta moltiplicata per ogni club, dentro due cicli annidati.
+        val inAsta = loadPlayerRows(
+            loadOpenAuctions(league.id)
+                .mapNotNull { (it.target as? AuctionTarget.ForPlayer)?.playerId?.value },
+        ).values.map { it.player }
         var scritte = 0
 
         connection.prepareStatement(
@@ -984,8 +1048,8 @@ class TickRunner(
                 val minutiVisti = minutiVistiDa(clubId)
 
                 val squad = loadSquad(league.id, clubId)
-                val altri = inAsta.mapNotNull { loadPlayerRow(it)?.player }
-                    .filterNot { p -> squad.any { it.id == p.id } }
+                val suoi = squad.mapTo(HashSet()) { it.id }
+                val altri = inAsta.filterNot { it.id in suoi }
 
                 for (player in squad + altri) {
                     val minuti = minutiVisti[player.id.value] ?: 0
@@ -2601,10 +2665,22 @@ class TickRunner(
             """.trimIndent(),
         )
 
+        /*
+         * Chi ha giocato, letto in **una** query invece di una per giocatore.
+         *
+         * Prima qui dentro c'era `loadPlayerRow(playerId)` dentro il ciclo: una andata e
+         * ritorno verso il database per ognuno dei ventidue in campo, piu' una seconda per
+         * le stelle dell'allenatore. Una cinquantina di viaggi per partita, ognuno con la
+         * latenza fra un runner di GitHub e Supabase. Su un calendario da otto partite
+         * erano minuti interi, ed erano i minuti che facevano superare il timeout.
+         */
+        val inCampo = result.stats.filterValues { it.minutesPlayed > 0 }.keys.map { it.value }
+        val righe = loadPlayerRows(inCampo)
+
         update.use { st ->
             result.stats.forEach { (playerId, stats) ->
                 if (stats.minutesPlayed <= 0) return@forEach
-                val row = loadPlayerRow(playerId) ?: return@forEach
+                val row = righe[playerId.value] ?: return@forEach
 
                 // La stamina l'ha gia' consumata il motore durante la partita: qui si
                 // salva quello che ne resta, non si sottrae una seconda volta.
@@ -2673,11 +2749,30 @@ class TickRunner(
      *
      * 1. Si sveglia solo chi ha l'orario arrivato. Un'AI che dorme non sa nemmeno che
      *    l'asta esiste — non e' che decide di non partecipare, proprio non la vede.
-     * 2. Un'azione per risveglio, con un tetto giornaliero. Anche trovando dieci
-     *    occasioni, ne coglie una.
+     * 2. Un'azione per risveglio **a rosa completa**, con un tetto giornaliero. Anche
+     *    trovando dieci occasioni, ne coglie una.
      * 3. Piu' AI sono gia' su un obiettivo, meno appetibile diventa: la seconda ci pensa,
      *    la terza quasi mai, la quarta mai.
      * 4. Il prossimo risveglio e' scaglionato a caso, quindi non si riallineano mai.
+     *
+     * ## Perche' a rosa incompleta la difesa numero 2 si toglie
+     *
+     * Misurato il 2026-08-25: dopo mezza giornata reale, cinque club su dieci avevano
+     * qualche giocatore e **nessuno** ne aveva piu' di tre.
+     *
+     * Il conto lo spiega senza bisogno di ipotesi. Un'azione per risveglio, un risveglio
+     * per giro di tick, e un giro di tick ogni cinquanta minuti veri: sono dodici acquisti
+     * al giorno nel caso perfetto. Ma i giri non erano perfetti — due su tre venivano
+     * uccisi dal timeout e annullati per intero (vedi [TickBudget]) — quindi restavano
+     * quattro acquisti al giorno, e non tutti andavano a buon fine. Sedici giocatori a
+     * quel ritmo sono quattro giorni per club.
+     *
+     * La difesa numero 2 era pensata per il mercato a regime, dove ogni mossa di un'AI
+     * arriva sul telefono di qualcuno. Un club che sta ancora riempiendo caselle vuote non
+     * disturba nessuno: compra svincolati a prezzo di listino, che e' una transazione fra
+     * lui e il nulla. Qui quindi si continua finche' la rosa non e' legale, con tre freni
+     * che restano: il tetto giornaliero di [AiScheduler], i crediti, e il budget di tempo
+     * del giro.
      */
     private fun wakeAi(league: LeagueRow, clubId: ClubId, now: Instant, today: MatchDay) {
         val state = loadAiState(clubId) ?: return
@@ -2729,27 +2824,68 @@ class TickRunner(
         //
         // Nessun test lo prendeva perche' viveva dentro questa funzione, che ha bisogno di
         // una connessione al database.
-        var acted = false
-        for (mossa in AiTurn.order(squad.size, league.config)) {
-            acted = when (mossa) {
-                AiMove.APRI_ASTA -> tryOpenAuction(league, state, club, squad)
-                AiMove.OFFRI -> tryBid(league, state, club, squad, today)
-                AiMove.METTI_IN_VENDITA -> mettiInVendita(league, state, club, squad)
-                AiMove.GESTISCI_ROSA -> tieniInOrdineLaRosa(league, state, club, squad, today)
-                AiMove.PROPONI_SCAMBIO -> proponiUnoScambio(league, state, club, squad, today)
-                AiMove.COMPRA_A_LISTINO -> compraDalListino(league, state, club, squad)
-                AiMove.CONTESTA -> contestaUnAcquisto(league, state, club, squad)
-                AiMove.METTI_A_LISTINO -> mettiSulListino(league, state, club, squad)
-                AiMove.OFFRI_CREDITI -> offriCreditiPerUnGiocatore(league, state, club, squad, today)
-                AiMove.PROPONI_PRESTITO -> proponiUnPrestito(league, state, club, squad, today)
-                AiMove.CHIEDI_AMICHEVOLE -> chiediUnAmichevole(league, state, club, squad) ||
-                    staffEMissioniDellAi(league, club)
+        var stato = state
+        var rosa = squad
+        var azioni = 0
+
+        // Quante mosse si concedono in questo risveglio: lo decide [AiTurn], in `core`,
+        // dove c'e' una prova che il conto regge.
+        val consentite = AiTurn.movesPerWake(squad.size, league.config)
+
+        while (azioni < consentite) {
+            if (!AiScheduler.hasActionsLeft(stato, now, league.config.ai, sprint = allestimento)) break
+
+            // Il budget del giro vale anche qui: meglio due acquisti scritti che cinque
+            // annullati insieme a tutto il resto della lega.
+            if (!budget.consentito(java.time.Duration.ofSeconds(10))) break
+
+            var fatto = false
+            for (mossa in AiTurn.order(rosa.size, league.config)) {
+                fatto = when (mossa) {
+                    AiMove.APRI_ASTA -> tryOpenAuction(league, stato, club, rosa)
+                    AiMove.OFFRI -> tryBid(league, stato, club, rosa, today)
+                    AiMove.METTI_IN_VENDITA -> mettiInVendita(league, stato, club, rosa)
+                    AiMove.GESTISCI_ROSA -> tieniInOrdineLaRosa(league, stato, club, rosa, today)
+                    AiMove.PROPONI_SCAMBIO -> proponiUnoScambio(league, stato, club, rosa, today)
+                    AiMove.COMPRA_A_LISTINO -> compraDalListino(league, stato, club, rosa)
+                    AiMove.CONTESTA -> contestaUnAcquisto(league, stato, club, rosa)
+                    AiMove.METTI_A_LISTINO -> mettiSulListino(league, stato, club, rosa)
+                    AiMove.OFFRI_CREDITI -> offriCreditiPerUnGiocatore(league, stato, club, rosa, today)
+                    AiMove.PROPONI_PRESTITO -> proponiUnPrestito(league, stato, club, rosa, today)
+                    AiMove.CHIEDI_AMICHEVOLE -> chiediUnAmichevole(league, stato, club, rosa) ||
+                        staffEMissioniDellAi(league, club)
+                }
+                if (fatto) break
             }
-            if (acted) break
+
+            if (!fatto) break
+
+            stato = AiScheduler.recordAction(stato, now)
+            azioni++
+
+            // La rosa e' cambiata: la mossa successiva deve vedere il giocatore appena
+            // preso, o l'AI comprerebbe cinque portieri di fila senza accorgersene.
+            rosa = loadSquad(league.id, clubId)
+            if (rosa.size >= league.config.setup.minSquadSize) break
         }
 
-        val after = if (acted) AiScheduler.recordAction(state, now) else state
-        val next = AiScheduler.scheduleNext(after, now, league.config.setup.worldSeed)
+        /*
+         * Chi scende in campo, e come.
+         *
+         * Prima nessun club del computer scriveva una formazione: il tick gliene costruiva
+         * una al volo per giocare e la buttava. Da fuori la conseguenza era quella
+         * segnalata — «non schierano, non fanno nessuna scelta tecnica» — ed era letterale:
+         * aprendo il campo di un'AI non c'era niente da vedere, perche' non c'era niente.
+         *
+         * Adesso la formazione **si salva**, con modulo, tattica e i cinque incarichi. Non
+         * e' cosmetica: e' l'unico modo perche' quelle scelte esistano fuori dal minuto in
+         * cui si gioca, e perche' chi affronta quel club possa studiarlo.
+         */
+        if (rosa.size >= Formation.PLAYERS_ON_PITCH) {
+            schieraLAi(league, stato, club, rosa, today)
+        }
+
+        val next = AiScheduler.scheduleNext(stato, now, league.config.setup.worldSeed, sprint = allestimento)
 
         saveAiState(
             clubId,
@@ -2763,6 +2899,95 @@ class TickRunner(
                 next
             },
         )
+    }
+
+    /**
+     * Il club del computer sceglie modulo, undici, panchina, assetto e incarichi — e li
+     * **scrive**.
+     *
+     * ## Perche' scriverli cambia qualcosa
+     *
+     * Prima la formazione di un'AI nasceva dentro `buildTeam` un istante prima del fischio
+     * d'inizio e moriva un istante dopo. Funzionava — le partite si giocavano — ma
+     * significava tre cose, tutte segnalate dal proprietario come «le AI sono rotte»:
+     *
+     * - aprendo il campo di un club avversario non c'era **niente** da vedere, perche' non
+     *   c'era niente di salvato;
+     * - l'assetto era [Tactics.DEFAULT] per tutti e dieci, cioe' nessuna scelta tecnica;
+     * - gli incarichi da palla ferma non esistevano fuori dai novanta minuti, quindi
+     *   «chi tira i rigori del Mangao» era una domanda senza risposta.
+     *
+     * ## Perche' si riscrive a ogni risveglio e non una volta sola
+     *
+     * Perche' la rosa cambia: chi ha appena comprato tre giocatori deve schierarli, e chi
+     * si e' infortunato non puo' restare titolare. Costa una `insert ... on conflict` per
+     * club per risveglio, che rispetto a una partita simulata e' nulla.
+     *
+     * ## Perche' non tocca mai la formazione di una persona
+     *
+     * Perche' viene chiamata solo da [wakeAi], e [wakeAi] gira solo sui club che hanno una
+     * riga in `ai_states`. Un club umano non ne ha una, quindi non passa mai di qui.
+     */
+    private fun schieraLAi(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+        today: MatchDay,
+    ) {
+        val tattica = AiTactics.choose(state.personality, squad, today)
+        val modulo = AutoLineup.bestFormation(squad, today)
+
+        // Gli incarichi li mette dentro [AutoLineup.build] chiamando [SetPieces]: sono gli
+        // stessi criteri che l'app mostra a chi sceglie a mano, quindi il capitano di
+        // un'AI e' scelto come lo sceglierebbe una persona informata.
+        val lineup = AutoLineup.build(squad, modulo, today) ?: return
+
+        connection.prepareStatement(
+            """
+            insert into lineups (club_id, league_id, formation, slots, bench, tactics,
+                                 captain_id, penalty_taker_id, corner_taker_id,
+                                 free_kick_taker_id, long_ball_taker_id, updated_at)
+            values (?, ?, ?, ?::jsonb, ?, ?::jsonb, ?, ?, ?, ?, ?, now())
+            on conflict (club_id) do update
+              set formation = excluded.formation,
+                  slots = excluded.slots,
+                  bench = excluded.bench,
+                  tactics = excluded.tactics,
+                  captain_id = excluded.captain_id,
+                  penalty_taker_id = excluded.penalty_taker_id,
+                  corner_taker_id = excluded.corner_taker_id,
+                  free_kick_taker_id = excluded.free_kick_taker_id,
+                  long_ball_taker_id = excluded.long_ball_taker_id,
+                  updated_at = now()
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, club.id.value)
+            st.setLong(2, league.id)
+            st.setString(3, modulo.name)
+            st.setString(4, LineupJson.writeSlots(lineup))
+            st.setArray(
+                5,
+                connection.createArrayOf("bigint", lineup.bench.map { it.id.value }.toTypedArray()),
+            )
+            st.setString(6, LineupJson.writeTactics(tattica))
+
+            // L'accoppiamento incarico-colonna e' scritto per esteso, non dedotto
+            // dall'ordine di dichiarazione dell'enum: aggiungere un incarico in mezzo a
+            // [MatchDuty] scambierebbe in silenzio il capitano con il rigorista.
+            listOf(
+                MatchDuty.CAPITANO,
+                MatchDuty.RIGORISTA,
+                MatchDuty.ANGOLI,
+                MatchDuty.PUNIZIONI,
+                MatchDuty.LANCI_LUNGHI,
+            ).forEachIndexed { indice, duty ->
+                val id = SetPieces.idFor(lineup, duty)?.value
+                if (id == null) st.setNull(7 + indice, java.sql.Types.BIGINT)
+                else st.setLong(7 + indice, id)
+            }
+            st.executeUpdate()
+        }
     }
 
     // ------------------------------------------------------- l'AI fa il primo passo
@@ -4573,6 +4798,32 @@ class TickRunner(
         }
     }
 
+    /**
+     * Gli stessi dati di [loadPlayerRow] per molti giocatori, in una query sola.
+     *
+     * Esiste perche' la versione a uno per volta, chiamata dentro un ciclo, era la spesa
+     * piu' grande dell'intero giro: non per quanto lavora il database — quasi niente — ma
+     * per quante volte ci si va.
+     */
+    private fun loadPlayerRows(ids: List<Long>): Map<Long, PlayerRow> {
+        if (ids.isEmpty()) return emptyMap()
+        val out = HashMap<Long, PlayerRow>(ids.size)
+
+        connection.prepareStatement(
+            "select p.*, c.club_id from players p " +
+                "left join contracts c on c.player_id = p.id where p.id = any(?)",
+        ).use { st ->
+            st.setArray(1, connection.createArrayOf("bigint", ids.toTypedArray()))
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val player = readPlayer(rs)
+                    out[player.id.value] = PlayerRow(player, ClubId(rs.getLong("club_id")))
+                }
+            }
+        }
+        return out
+    }
+
     private fun readPlayer(rs: java.sql.ResultSet): Player {
         val attributes = JsonNode.parse(rs.getString("attributes"))
         val values = Attr.entries.associateWith { attributes[it.name].int(40) }
@@ -4611,19 +4862,25 @@ class TickRunner(
      * stelle, cioe' la media — assumerne uno migliora, non avere nessuno non affonda.
      */
     private fun coachStarsOf(clubId: ClubId): Int =
-        connection.prepareStatement(
-            "select max(stars) from staff where club_id = ? and role = 'ALLENATORE'",
-        ).use { st ->
-            st.setLong(1, clubId.value)
-            st.executeQuery().use { rs ->
-                if (rs.next()) rs.getInt(1).takeIf { !rs.wasNull() && it > 0 } ?: 3 else 3
+        stelleAllenatore.getOrPut(clubId.value) {
+            connection.prepareStatement(
+                "select max(stars) from staff where club_id = ? and role = 'ALLENATORE'",
+            ).use { st ->
+                st.setLong(1, clubId.value)
+                st.executeQuery().use { rs ->
+                    if (rs.next()) rs.getInt(1).takeIf { !rs.wasNull() && it > 0 } ?: 3 else 3
+                }
             }
         }
 
     private fun clubNameOf(clubId: ClubId): String =
-        connection.prepareStatement("select name from clubs where id = ?").use { st ->
-            st.setLong(1, clubId.value)
-            st.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else "Club ${clubId.value}" }
+        nomiDeiClub.getOrPut(clubId.value) {
+            connection.prepareStatement("select name from clubs where id = ?").use { st ->
+                st.setLong(1, clubId.value)
+                st.executeQuery().use { rs ->
+                    if (rs.next()) rs.getString(1) else "Club ${clubId.value}"
+                }
+            }
         }
 
     /**

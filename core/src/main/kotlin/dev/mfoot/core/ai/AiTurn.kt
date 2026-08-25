@@ -127,6 +127,42 @@ object AiTurn {
     }
 
     /**
+     * Quante mosse puo' fare in un solo risveglio.
+     *
+     * ## Il conto che rendeva le AI ferme, fatto per intero
+     *
+     * Una mossa per risveglio era la regola, e a rosa completa e' quella giusta: ogni
+     * mossa di un'AI e' un'asta che si apre, un'offerta che arriva, una notifica sul
+     * telefono di qualcuno. Dieci club che ne fanno cinque a testa sono cinquanta eventi
+     * in un pomeriggio, ed e' il rumore che fa disinstallare l'applicazione.
+     *
+     * A rosa incompleta invece quella stessa regola produceva questo, misurato il
+     * 2026-08-25 dopo mezza giornata reale: cinque club su dieci con qualche giocatore,
+     * nessuno sopra i tre.
+     *
+     * ```
+     * 1 mossa x 1 risveglio per giro x 1 giro ogni 50 minuti = 12 acquisti al giorno
+     *   ...di cui due terzi annullati dal timeout del server = 4 al giorno
+     *   16 giocatori / 4 al giorno = 4 giorni per club, con dieci club in parallelo
+     * ```
+     *
+     * Comprare uno svincolato a prezzo di listino pero' **non e' un evento per nessuno**:
+     * non c'e' un venditore da avvisare, non c'e' un'asta da seguire, non c'e' nessuno che
+     * viene superato. E' una transazione fra il club e il nulla. La protezione dal rumore
+     * qui non protegge niente: rallenta soltanto l'unica cosa che deve essere veloce.
+     *
+     * Otto e' il numero: mezza rosa in un risveglio nel caso migliore, quindi due o tre
+     * risvegli per essere schierabili invece di quattro giorni. Non di piu', perche' i
+     * freni veri restano tre e devono poter intervenire — il tetto giornaliero, i crediti,
+     * e il tempo del giro — e un club che svuota il listino in un colpo solo lascerebbe
+     * gli altri nove senza mercato.
+     */
+    fun movesPerWake(squadSize: Int, config: LeagueConfig): Int =
+        if (squadSize < config.setup.minSquadSize) MOSSE_IN_ALLESTIMENTO else 1
+
+    const val MOSSE_IN_ALLESTIMENTO = 8
+
+    /**
      * Quante aste puo' aprire con i soldi che ha.
      *
      * ## Perche' non basta contare gli slot liberi

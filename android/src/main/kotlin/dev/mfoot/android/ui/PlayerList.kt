@@ -171,33 +171,23 @@ private fun ListHeader(
             }
         }
 
-        Spacer(Modifier.height(MFootSpacing.related))
-
-        // L'intestazione dice **cosa distingue questo elenco dagli altri**.
-        //
-        // Prima diceva "N giocatori · ordinati per overall" per ogni ambito, e con il mercato
-        // appena aperto — quando quasi nessuno ha ancora un club — "Svincolati" e "Tutto il
-        // mondo" mostravano gli stessi identici nomi con la stessa identica scritta sopra.
-        // Sembravano due voci di menu per la stessa schermata, e a ragione.
-        val presi = state.rows.count { !it.isFreeAgent }
-        Label(
-            when (browse.scope) {
-                ListScope.LISTINO ->
-                    "${state.visible.size} si comprano subito · nessuna attesa, nessuna asta"
-
-                ListScope.ASTE ->
-                    "${state.auctions.size} aste aperte · ${state.myAuctions.size} con una tua offerta"
-
-                ListScope.SVINCOLATI ->
-                    "${state.visible.size} da prendere · $presi hanno già un club"
-
-                ListScope.TUTTI ->
-                    "${state.visible.size} in tutto il mondo · $presi con un club"
-
-                ListScope.MIA_ROSA ->
-                    "${state.visible.size} nella tua rosa"
-            },
-        )
+        /*
+         * L'intestazione resta solo dove dice qualcosa che non si vede scorrendo.
+         *
+         * Le altre — «991 si comprano subito · nessuna attesa, nessuna asta», «1115 da
+         * prendere · 14 hanno gia' un club» — sono state tolte il 2026-08-25 su richiesta
+         * del proprietario. Erano nate per distinguere fra loro tre elenchi che a mercato
+         * appena aperto mostravano gli stessi nomi, e quel problema non c'e' piu': adesso
+         * ogni riga dice se il giocatore e' libero o di chi e'.
+         *
+         * Sulle aste il conto sopravvive perche' «quante hanno una tua offerta» non e'
+         * deducibile guardando: e' l'unica di quelle righe che aggiungeva un fatto invece
+         * di ripetere quello che c'era sotto.
+         */
+        if (browse.scope == ListScope.ASTE) {
+            Spacer(Modifier.height(MFootSpacing.related))
+            Label("${state.auctions.size} aste aperte · ${state.myAuctions.size} con una tua offerta")
+        }
     }
 
     if (browse.scope != ListScope.ASTE) Colonne()
@@ -299,16 +289,29 @@ private fun PlayerListRow(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    buildString {
-                        append(bandiera(player.nationality)).append(" ")
-                            .append(player.age).append(" anni")
-                        row.club?.let { append(" · ").append(it.shortName) }
-                    },
+                    "${bandiera(player.nationality)} ${player.age} anni",
                     style = MFootType.secondary,
                     color = MFootColors.ink2,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+
+                // Di chi e', **su una riga sua e col nome per intero**.
+                //
+                // Prima era in coda ai dati anagrafici — «🇮🇹 24 anni · Mangao» — e in
+                // forma abbreviata: appiccicato dopo l'eta' si legge come un altro dato
+                // del giocatore invece che come il suo proprietario, ed e' la prima cosa
+                // che si cerca scorrendo il listone. Chiesto esplicitamente il 2026-08-25.
+                row.club?.let { proprietario ->
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "di ${proprietario.name}",
+                        style = MFootType.chip,
+                        color = if (proprietario.isMine) MFootColors.elite else MFootColors.ink3,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
             Text(

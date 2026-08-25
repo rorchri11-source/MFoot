@@ -87,19 +87,22 @@ Verifica in **Settings → Secrets and variables → Actions** che siano definit
 
 ---
 
-## 3. Come gestire le Migrazioni Supabase / SQL
+## 3. Come gestire lo schema SQL
 
-Tutte le migrazioni si trovano in `supabase/migrations/` numerate da `0001` a `0025`.
+Il database è **un file solo**: `supabase/schema.sql`. Contiene tabelle, indici, permessi e
+funzioni. Erano trentuno migrazioni numerate fino al 2026-08-25.
 
 ### Regole di Sicurezza:
-1. **Idempotenza**: Le migrazioni sono scritte con `CREATE OR REPLACE FUNCTION` o `ADD COLUMN IF NOT EXISTS`, quindi possono essere rieseguite in sicurezza nell'SQL Editor di Supabase.
-2. **Come annullare una funzione specifica**:
-   Se una funzione SQL creata di recente (es. `peek_league` dalla migrazione `0025`) causa problemi:
+1. **Idempotenza**: è scritto con `create table if not exists`, `create or replace function`
+   e `drop policy if exists`, quindi si può rieseguire in sicurezza nell'SQL Editor di
+   Supabase. Rilanciarlo aggiorna le funzioni e non tocca i dati.
+2. **Quello che non fa**: `create table if not exists` su una tabella che esiste già non
+   aggiunge colonne. Chi arriva da uno schema più vecchio deve svuotare e ripartire.
+3. **Come annullare una funzione specifica**:
    ```sql
-   -- Esempio di rollback della migrazione 0025:
    DROP FUNCTION IF EXISTS peek_league(text);
    ```
-3. **Se una tabella o colonna è bloccata**:
+4. **Se una tabella o colonna è bloccata**:
    Puoi ispezionare lo stato dei dati e dei vincoli direttamente dal **Table Editor** di Supabase.
 
 ---

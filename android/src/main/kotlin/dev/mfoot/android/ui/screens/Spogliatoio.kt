@@ -73,7 +73,20 @@ fun SpogliatoioScreen(
     onParla: (Long, ConversationOption) -> Unit,
     onChiudi: () -> Unit,
 ) {
-    val club = state.lega.myClub
+    /*
+     * La squadra **mostrata**, non la prima squadra.
+     *
+     * Qui c'era `state.lega.myClub`, che e' sempre e comunque la prima squadra: con
+     * l'interruttore su «Primavera» lo spogliatoio continuava a elencare i titolari, e i
+     * ragazzi non comparivano da nessuna parte. Segnalato il 2026-08-25 — «se seleziono
+     * squadra primavera e vado su spogliatoio non devi vedere i giocatori dalla prima
+     * squadra» — insieme allo stesso difetto in infermeria.
+     *
+     * L'interruttore in cima e' l'unico comando che vale su tutta la sezione Squadra: una
+     * scheda che lo ignora non e' una scheda con un'eccezione, e' un comando che smette di
+     * funzionare a meta' strada.
+     */
+    val club = state.clubMostrato
     if (club == null) {
         Box(
             Modifier.fillMaxSize().background(MFootColors.bg),

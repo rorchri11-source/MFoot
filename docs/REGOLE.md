@@ -33,7 +33,7 @@ programma non deve farlo di nascosto.
 È un club vero, gioca un campionato suo, e non ha portafoglio: stipendi e acquisti passano
 dalla prima squadra. Due bilanci sarebbero due volte il lavoro e una porta aperta al
 riciclaggio.
-*`supabase/migrations/0018_seconda_squadra.sql`*
+*`create_youth_club` in `schema.sql`*
 
 ---
 
@@ -48,7 +48,7 @@ riciclaggio.
 Niente asta, niente attesa, niente tick. L'asta come rito obbligatorio costava un giorno
 reale per ogni gregario: una rosa da diciotto uomini erano tre settimane. Peggiorato dal
 fatto che il tick passa ogni venti-quaranta minuti, non ogni dieci.
-*Detta il 2026-08-24 · `core/market/Listing.kt`, `0028_listino_e_contestazione.sql`, `MarketRepository`*
+*Detta il 2026-08-24 · `core/market/Listing.kt`, `listings` e `buy_player` in `schema.sql`, `MarketRepository`*
 
 **L'asta esiste solo se qualcuno contesta, entro dodici ore.**
 Per dodici ore dall'acquisto chiunque può opporsi, e solo allora nasce un'asta; passate
@@ -81,7 +81,7 @@ Non si paga nessuna buonuscita: il giocatore torna svincolato e chiunque può pr
 listino il minuto dopo, compreso il rivale diretto. Ogni svincolo è annunciato a tutta la
 lega. *Scartato nella stessa sessione* il divieto di ricomprare chi si è svincolato: resta
 quindi possibile riscrivere un contratto svincolando e ricomprando.
-*Detta il 2026-08-24 · `release_player` in `0030_admin_svincoli_staff.sql`*
+*Detta il 2026-08-24 · `release_player` in `schema.sql`*
 
 **L'admin può aggiungere e togliere giocatori a qualsiasi club, senza registro pubblico.**
 Serve a riparare le leghe rotte. Il registro visibile a tutti è stato proposto e scartato:
@@ -91,14 +91,27 @@ in `core` e non lui: questo strumento è l'unico punto del gioco dove quella sep
 non c'è, e va tenuto stretto.
 *Detta il 2026-08-24 · `admin_assign_player`, `admin_release_player`, `admin_adjust_credits`*
 
-**Lo staff si compra come i giocatori.**
-Allenatori, preparatori e osservatori non si assegnano solo alla generazione del mondo:
-stanno sul listino a prezzo fisso e si contestano nelle stesse dodici ore. `start_auction`
-accetta `target_type = 'staff'` da `0019` e nessuna schermata lo usa ancora.
-*Chiesta all'inizio del progetto — è la richiesta che ha fatto nascere questo file — e
-implementata all'asta con `0019_staff_e_scouting.sql`. Il 2026-08-24 la regola è passata
-dall'asta al listino insieme a quella dei giocatori: «si vince all'asta» vale ora solo
-quando qualcuno contesta.*
+**Lo staff si assume a prezzo fisso, sempre, senza asta.**
+Allenatori, preparatori e osservatori hanno un prezzo che dipende dalle stelle — un cinque
+stelle costa `economy.staffBudgetShare` del budget, gli altri scendono col quadrato — e chi
+non lavora per nessuno si assume con un tocco. Senza finestra di contestazione: un
+preparatore in più non ribalta una stagione, e dodici ore d'attesa su ogni assunzione
+renderebbero lo staff più faticoso dei giocatori.
+Chi vende un proprio membro dello staff lo mette a listino e incassa lui.
+*Chiesta all'inizio del progetto — è la richiesta che ha fatto nascere questo file. Il
+2026-08-24 era passata dall'asta al listino, ma il listino lo riempiva solo il server:
+finché quello non girava restava «Metti all'asta» e basta. Il **2026-08-25** il
+proprietario l'ha segnalato di nuovo — «per prendere lo staff si è ancora obbligati a farlo
+tramite asta» — e la dipendenza dal server è stata tolta.*
+*`core/market/Valuation.staffPrice`, `staff_price`, `buy_staff`, `ui/screens/Staff.kt`*
+
+**Un osservatore sta via al massimo due ore.**
+Le fa il peggiore; il migliore mezz'ora. Erano otto ore per un cinque stelle e
+**quarantotto** per un una stella, scritte dentro una funzione SQL dove nessuno poteva
+vederle: due giorni reali per una singola ricerca, in un gioco che gioca due partite al
+giorno. Le stelle continuano a comprare tempo oltre che qualità, ma su una scala che sta
+dentro una serata.
+*Detta il 2026-08-25 · `rules.scoutMinutesBest/Worst`, `core/world/Scouting.kt`, `send_scout`*
 
 **Chi apre un'asta per comprare ha già offerto il prezzo base.**
 L'ha aperta perché lo vuole: parte in testa. Chi invece mette all'asta **un proprio**
@@ -108,18 +121,18 @@ Prima l'asta nasceva senza nessuno in testa, e succedevano tre cose: scadeva des
 per chi l'aveva aperta, l'app scriveva «nessuno ha ancora offerto» pure sulla propria, e i
 crediti di chi apriva non risultavano impegnati — quindi si potevano aprire tre aste che
 insieme valevano più della cassa.
-*Detta il 2026-08-24 · `core/market/Auction.kt` (`AuctionRules.open`),
-`supabase/migrations/0026_chi_apre_ha_offerto.sql`, `TickRunner.apriAsta`*
+*Detta il 2026-08-24 · `core/market/Auction.kt` (`AuctionRules.open`), `start_auction` in
+`schema.sql`, `TickRunner.apriAsta`*
 
 **Gli under 20 non passano dalle aste.**
 Si trovano mandandoci un osservatore. Un fuoriclasse di diciotto anni non deve poter essere
 comprato da chi ha solo più soldi.
-*`0019_staff_e_scouting.sql`*
+*`start_auction` in `schema.sql`*
 
 **Durante l'asta si vede chi ha offerto e quanto ha portato il prezzo. Il massimo
 dichiarato resta segreto fino alla chiusura.**
 Vederlo prima cancellerebbe la meccanica: si offre quel numero più uno e si vince sempre.
-*Confermata il 2026-08-20 · `0023_chi_ha_offerto.sql`, `ui/Auctions.kt`*
+*Confermata il 2026-08-20 · `auction_bids_public` in `schema.sql`, `ui/Auctions.kt`*
 
 **Si dichiara un massimo, non un rilancio.**
 Il sistema difende la posizione da solo. È ciò che permette di andare a dormire durante
@@ -141,7 +154,7 @@ comunque voce in capitolo.
 La finestra dell'intervallo: `MatchEngine` simula già primo e secondo tempo separati e la
 configurazione la prevede, ma la partita si guarda solo finita. È l'unico momento in cui
 una partita asincrona diventa una partita che si guarda.
-*Confermata il 2026-08-24 · `WorldTick.halfTimesDue`, `TickRunner.giocaPrimoTempo`, `0029_finestra_intervallo.sql`*
+*Confermata il 2026-08-24 · `WorldTick.halfTimesDue`, `TickRunner.giocaPrimoTempo`, `fixtures.resume_at`*
 
 **Gli orari li sceglie chi gioca.**
 Non fasce predefinite: l'ora si scrive. Vale per le competizioni e per le amichevoli.
@@ -159,7 +172,7 @@ vengono emessi e la palla riparte: devono produrre un tentativo, deciso da chi b
 (passaggio, tecnica) e da chi salta in area (fisico, posizionamento — nessun attributo
 nuovo, aggiungerlo rigenererebbe il mondo).
 *Detta il 2026-08-24 · `core/match/SetPieces.kt`, `MatchEngine.resolveCorner`,
-`0027_incarichi_e_ordini.sql`, `ui/screens/Campo.kt`*
+`lineups.corner_taker_id` e sorelle, `ui/screens/Campo.kt`*
 
 **Il capitano tiene in piedi la squadra.**
 Quando si va sotto o si perdono partite di fila, frena il crollo di morale e prestazione;
@@ -196,6 +209,31 @@ di `AiScheduler` e i tetti di azioni giornaliere non si toccano. È il difetto c
 esiste per impedire.
 *Confermata il 2026-08-24*
 
+**Una squadra del computer con la rosa incompleta compra in fretta. Con la rosa completa,
+piano.**
+Misurato dal proprietario: dopo mezza giornata reale, cinque club su dieci avevano qualche
+giocatore e nessuno ne aveva più di tre. Lo scaglionamento serve a proteggere chi gioca dal
+rumore, ma comprare uno svincolato a prezzo di listino **non è un evento per nessuno** —
+non c'è un venditore da avvisare, non c'è nessuno che viene superato. Sotto il minimo di
+rosa quindi fa fino a otto mosse per risveglio; sopra torna a una, dove ogni mossa è una
+notifica sul telefono di qualcuno.
+*Detta il 2026-08-25 · `AiTurn.movesPerWake`*
+
+**Anche le squadre del computer schierano, e la loro formazione si vede.**
+«Non schierano o fanno nessuna tattica o scelta tecnica» era vero alla lettera: il server
+gli costruiva un undici un istante prima del fischio d'inizio, con l'assetto predefinito
+uguale per tutti e dieci, e lo buttava un istante dopo. Adesso ogni club del computer
+**salva** modulo, undici, panchina, assetto e i cinque incarichi, e li riscrive a ogni
+risveglio perché la rosa cambia. Aprire il campo di un avversario deve mostrare qualcosa.
+*Detta il 2026-08-25 · `core/ai/AiTactics.kt`, `TickRunner.schieraLAi`*
+
+**L'assetto lo decide la rosa, poi la stanchezza, poi il carattere — in quest'ordine.**
+Chi ha l'attacco più forte della difesa gioca in avanti; chi ha la rosa a terra rallenta
+comunque, qualunque carattere abbia; le fissazioni inclinano e basta. Se il carattere
+pesasse più della rosa si otterrebbero club che attaccano senza attaccanti, che è il modo
+in cui un'AI smette di sembrare una persona.
+*Detta il 2026-08-25 · `AiTactics.choose`*
+
 ---
 
 ## Gli obiettivi
@@ -222,6 +260,35 @@ avversario.
 ---
 
 ## L'interfaccia
+
+**L'interruttore Prima squadra / Primavera vale su tutta la sezione Squadra.**
+Rosa, campo, staff, spogliatoio, infermeria: se è su Primavera, si vedono i ragazzi e non i
+titolari. Spogliatoio e infermeria leggevano sempre la prima squadra qualunque cosa dicesse
+l'interruttore — e un comando che smette di funzionare a metà strada è peggio di un comando
+che non c'è.
+*Detta il 2026-08-25 · `AppState.clubMostrato`*
+
+**Niente didascalie che spiegano l'ovvio in cima agli elenchi.**
+Tolte quelle che dicevano «991 si comprano subito · nessuna attesa, nessuna asta», «1115 da
+prendere · 14 hanno già un club», «tocca un giocatore per la sua scheda», «comprati da poco
+· si possono ancora contestare». Sopravvive solo il conto delle aste, perché «quante hanno
+una tua offerta» non è deducibile guardando l'elenco.
+Il criterio: un'intestazione resta se aggiunge un fatto, non se ripete quello che c'è
+sotto. Una spiegazione utile il primo giorno diventa rumore il secondo, su una schermata
+che si riapre venti volte al giorno.
+*Detta il 2026-08-25 · `ui/PlayerList.kt`, `ui/screens/Rosa.kt`, `ui/Auctions.kt`*
+
+**Nel listone ogni giocatore dice di chi è, su una riga sua e col nome per intero.**
+«di Matletico Mangao», sotto l'età. Era in coda ai dati anagrafici e abbreviato, e
+appiccicato dopo l'età si legge come un altro dato del giocatore invece che come il suo
+proprietario.
+*Detta il 2026-08-25 · `ui/PlayerList.kt`*
+
+**Chi compra uno svincolato lo vede sparire dagli svincolati nello stesso istante.**
+Non dopo la rilettura dal server: subito. Il server ha già risposto sì, quindi il contratto
+esiste; aspettare qualche secondo su una rete lenta significa vederlo ancora fra quelli da
+prendere, toccarlo di nuovo, e ricevere un rifiuto che sembra un guasto.
+*Detta il 2026-08-25 · `AppViewModel.compra`*
 
 **L'aspetto di MFoot è quello del riferimento allegato il 2026-08-23.**
 Venticinque schermate di un'altra app, consegnate come modello. Blu notte di fondo, barra

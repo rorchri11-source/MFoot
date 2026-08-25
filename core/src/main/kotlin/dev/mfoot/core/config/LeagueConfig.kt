@@ -202,6 +202,19 @@ data class EconomyConfig(
      * tutti e toglie la scelta.
      */
     val topPlayerBudgetShare: Double = 0.65,
+    /**
+     * Quanto costa un membro dello staff da cinque stelle, in frazione del budget.
+     *
+     * La stessa manopola di [topPlayerBudgetShare], per l'altro mercato. Il quattro per
+     * cento contro il sessantacinque non e' una svalutazione dello staff: e' il rapporto
+     * fra le due spese. Una rosa sono venti acquisti, lo staff sono tre — e un allenatore
+     * che costasse come un titolare renderebbe la scelta ovvia in un verso solo.
+     *
+     * Il conto per le stelle sotto lo fa [dev.mfoot.core.market.Valuation.staffPrice], con
+     * una curva quadratica: 1★ costa un venticinquesimo di 5★, che e' quello che merita
+     * chi fa crescere i giocatori tre volte meno.
+     */
+    val staffBudgetShare: Double = 0.04,
     /** Il rinnovo costa questa frazione di quanto era stato pagato. */
     val renewalCostFraction: Double = 0.5,
     val negativeBalanceAllowed: Boolean = false,
@@ -421,6 +434,27 @@ data class RulesConfig(
     val injurySeverity: InjurySeverity = InjurySeverity.NORMALE,
     val suspensionsEnabled: Boolean = true,
     val yellowCardsForSuspension: Int = 5,
+
+    /**
+     * Quanto sta via un osservatore da cinque stelle, in minuti.
+     *
+     * ## Perche' due numeri e non una formula scritta nel codice
+     *
+     * Perche' la formula c'era, stava dentro una funzione SQL — `8 + (5 - stelle) * 10`
+     * ore — e nessuno poteva toccarla senza aprire il database. Otto ore per il migliore,
+     * **quarantotto** per il peggiore: due giorni reali per una singola ricerca, in un
+     * gioco dove si gioca due partite al giorno.
+     *
+     * Il proprietario l'ha misurato e ha deciso il 2026-08-25: massimo due ore, e le fa
+     * il peggiore. Le stelle continuano a comprare tempo oltre che qualita' — trenta
+     * minuti contro centoventi sono comunque quattro volte tanto — ma su una scala che
+     * sta dentro una serata invece che dentro un fine settimana.
+     *
+     * Il conto lo fa [dev.mfoot.core.world.Scouting.missionMinutes].
+     */
+    val scoutMinutesBest: Int = 30,
+    /** Quanto sta via un osservatore da una stella. Il tetto, deciso dal proprietario. */
+    val scoutMinutesWorst: Int = 120,
 
     val youthTeamEnabled: Boolean = true,
     val youthMaxAge: Int = 21,

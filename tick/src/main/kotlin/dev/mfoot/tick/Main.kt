@@ -38,10 +38,14 @@ fun main() {
     log("MFoot World Tick - avvio $startedAt")
     if (config.dryRun) log("MODALITÀ DI PROVA: nessuna scrittura sul database.")
 
+    // Il tempo che questo giro ha prima che GitHub lo ammazzi. Vedi [TickBudget]: senza,
+    // due giri su tre venivano interrotti a transazione aperta e perdevano tutto.
+    val budget = TickBudget.fromEnv(startedAt)
+
     val exitCode = try {
         connect(config).use { connection ->
             connection.autoCommit = false
-            val runner = TickRunner(connection, config)
+            val runner = TickRunner(connection, config, budget = budget)
             val summary = runner.runAllLeagues(startedAt)
             log(summary.describe())
             // Una lega fallita rende rosso il giro. Vedi TickSummary.failed: prima

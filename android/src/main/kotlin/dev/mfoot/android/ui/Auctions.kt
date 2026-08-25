@@ -180,8 +180,6 @@ private fun Contestabili(
             .fillMaxWidth()
             .padding(MFootSpacing.section, MFootSpacing.related, MFootSpacing.section, 4.dp),
     ) {
-        Label("Comprati da poco · si possono ancora contestare")
-        Spacer(Modifier.height(9.dp))
 
         righe.take(4).forEach { row ->
             val acquisto = row.acquisto ?: return@forEach

@@ -57,7 +57,7 @@ niente rilanci, niente tick. Per **dodici ore** l'acquisto resta *contestabile*:
 può opporsi, e solo allora nasce un'asta. Passate le dodici ore il giocatore è tuo per
 sempre.
 
-*Detta il 2026-08-24 · vive in `core/market/` (regola nuova), `supabase/migrations/`,
+*Detta il 2026-08-24 · vive in `core/market/` (regola nuova), `supabase/schema.sql`,
 `TickRunner`*
 
 ### Perché

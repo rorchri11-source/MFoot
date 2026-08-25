@@ -236,19 +236,11 @@ private fun Intestazione(
             )
         }
 
-        // Dire cosa c'e' dietro una riga, una volta, in cima.
-        //
-        // La freccia sulle righe dice «si tocca»; questa riga dice «e vale la pena». Sono
-        // due cose diverse e servono tutte e due: chi non sa che esiste una scheda non ha
-        // motivo di provare a toccare, e la scheda e' il posto dove vivono overall,
-        // attributi, stelle, crescita e condizione.
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Tocca un giocatore per la sua scheda: overall, attributi, crescita e condizione.",
-            style = MFootType.chip,
-            color = MFootColors.ink3,
-            textAlign = TextAlign.Center,
-        )
+        // Qui c'era una riga che spiegava che toccando un giocatore si apre la sua scheda.
+        // Tolta il 2026-08-25 su richiesta del proprietario, insieme alle altre didascalie
+        // dello stesso tipo. Il motivo per cui era stata scritta — «chi non sa che esiste
+        // una scheda non prova a toccare» — vale il primo giorno e diventa rumore il
+        // secondo, e questa e' una schermata che si riapre venti volte al giorno.
     }
     Hairline()
 }

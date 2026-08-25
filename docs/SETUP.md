@@ -6,13 +6,17 @@ illimitati, che è ciò che rende il tick gratuito.
 
 ---
 
-## 1. Creare le tabelle
+## 1. Creare il database
 
 Su Supabase → **SQL Editor** → **New query** → incolla tutto il contenuto di
-[`supabase/migrations/0001_schema.sql`](../supabase/migrations/0001_schema.sql) → **Run**.
+[`supabase/schema.sql`](../supabase/schema.sql) → **Run**.
 
-Deve finire senza errori. Se ne trovi, di solito è perché lo script è stato eseguito a
-metà: cancella le tabelle create e rifallo da capo.
+È un file solo e contiene tutto: tabelle, indici, permessi, funzioni. Deve finire senza
+errori. Se ne trovi, di solito è perché è stato eseguito a metà: cancella le tabelle
+create e rifallo da capo.
+
+È rieseguibile. Quando aggiorni MFoot, rilanciarlo aggiorna le funzioni senza toccare i
+dati — ed è la cosa da fare **prima** di installare un APK nuovo.
 
 ---
 
@@ -166,13 +170,12 @@ Su Supabase: **Authentication → Sign In / Providers → Anonymous sign-ins →
 Senza, l'app non può identificare chi crea la lega e le funzioni la rifiutano. È la scelta
 che permette ai tuoi amici di entrare scrivendo solo un nickname, senza email né password.
 
-### 6b. Eseguire la seconda migrazione
+### 6b. Le funzioni della lega
 
-SQL Editor → incolla
-[`supabase/migrations/0002_create_league.sql`](../supabase/migrations/0002_create_league.sql)
-→ Run. Anche questo è rieseguibile.
+Sono già dentro `schema.sql`, eseguito al punto 1: non c'è un secondo file da lanciare.
+Erano una migrazione a parte fino al 2026-08-25.
 
-Aggiunge due funzioni: `create_league`, che crea la lega e carica l'intero mondo in
+Le due che contano qui sono `create_league`, che crea la lega e carica l'intero mondo in
 **un'unica transazione**, e `join_league`, per entrare con il codice.
 
 > **Perché una funzione e non degli insert.** Creare una lega significa scrivere in sei
