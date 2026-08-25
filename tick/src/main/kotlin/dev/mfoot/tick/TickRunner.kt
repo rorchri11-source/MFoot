@@ -1,6 +1,7 @@
 package dev.mfoot.tick
 
 import dev.mfoot.core.ai.AiInitiative
+import dev.mfoot.core.ai.AiMarket
 import dev.mfoot.core.ai.AiManager
 import dev.mfoot.core.ai.AiMove
 import dev.mfoot.core.ai.AiTurn
@@ -30,10 +31,15 @@ import dev.mfoot.core.growth.GrowthEngine
 import dev.mfoot.core.growth.MoraleEngine
 import dev.mfoot.core.growth.TeamOutcome
 import dev.mfoot.core.json.JsonNode
+import dev.mfoot.core.json.JsonWriter
 import dev.mfoot.core.market.Auction
 import dev.mfoot.core.market.AuctionRules
 import dev.mfoot.core.market.AuctionTarget
 import dev.mfoot.core.market.Bid
+import dev.mfoot.core.market.ContestRules
+import dev.mfoot.core.market.Listing
+import dev.mfoot.core.market.Purchase
+import dev.mfoot.core.market.PurchaseStatus
 import dev.mfoot.core.market.Negotiation
 import dev.mfoot.core.market.Valuation
 import dev.mfoot.core.market.OfferStatus
@@ -41,12 +47,16 @@ import dev.mfoot.core.market.OfferTerms
 import dev.mfoot.core.market.TradeEvaluator
 import dev.mfoot.core.market.TradeOffer
 import dev.mfoot.core.match.AutoLineup
+import dev.mfoot.core.match.ConditionalOrder
 import dev.mfoot.core.match.Formation
 import dev.mfoot.core.match.Lineup
 import dev.mfoot.core.match.LineupFitter
 import dev.mfoot.core.match.LineupSlot
+import dev.mfoot.core.match.MatchDuty
 import dev.mfoot.core.match.MatchEngine
 import dev.mfoot.core.match.MatchResult
+import dev.mfoot.core.match.OrderJson
+import dev.mfoot.core.match.SetPieces
 import dev.mfoot.core.match.Tactics
 import dev.mfoot.core.match.TeamSetup
 import dev.mfoot.core.model.Attr
@@ -65,6 +75,7 @@ import dev.mfoot.core.rng.DeterministicRandom
 import dev.mfoot.core.rng.MathX
 import dev.mfoot.core.world.PotentialEstimator
 import dev.mfoot.core.model.Trait
+import dev.mfoot.core.tick.PausedFixture
 import dev.mfoot.core.tick.TickEffect
 import dev.mfoot.core.tick.TickInput
 import dev.mfoot.core.tick.WorldTick
@@ -160,6 +171,15 @@ class TickRunner(
     private fun runLeague(league: LeagueRow, now: Instant): LeagueSummary {
         val state = loadTickState(league.id)
 
+        // Le finestre di contestazione scadute senza opposizioni si chiudono da sole,
+        // prima di ogni altra cosa: da quel momento quei giocatori sono definitivi, e
+        // tutto quello che viene dopo — mercato delle AI compreso — deve saperlo.
+        confermaAcquistiScaduti(league)
+
+        // E il listino degli svincolati si allinea prima che chiunque compri: le AI di
+        // questo giro devono vedere lo stesso mercato che vede l'app.
+        aggiornaListinoSvincolati(league)
+
         val today = MatchDay(league.currentMatchDay)
         val input = TickInput(
             now = now,
@@ -174,6 +194,7 @@ class TickRunner(
             activeContracts = loadExpiringContracts(league.id, today),
             activeLoans = loadExpiringLoans(league.id, today),
             pendingFixtures = loadPendingFixtures(league.id),
+            pausedFixtures = loadPausedFixtures(league.id),
             aiStates = loadAiStates(league.id),
             settledMatchDays = state.settledMatchDays,
             lastDigestAt = state.lastDigestAt,
@@ -191,6 +212,15 @@ class TickRunner(
                 is TickEffect.ChiudiAsta -> {
                     closeAuction(league, effect.auctionId)
                     applied++
+                }
+
+                is TickEffect.RiprendiPartita -> {
+                    if (resumeMatch(league, effect.fixture, notes)) {
+                        applied++
+                    } else {
+                        pending++
+                        notes += "Partita ${effect.fixture.id}: ripresa rinviata."
+                    }
                 }
 
                 is TickEffect.SimulaPartita -> {
@@ -1832,6 +1862,16 @@ class TickRunner(
         val auction = loadAuction(auctionId) ?: return
         if (!auction.isOpen) return
 
+        // Un'asta nata da una contestazione **non puo' passare di qui**: il giocatore ha
+        // gia' cambiato squadra al momento dell'acquisto, quindi `proprietarioDi` restituisce
+        // chi ha comprato mentre `started_by` e' chi ha contestato. Il controllo qui sotto
+        // vedrebbe due club diversi, concluderebbe che il giocatore e' stato ceduto durante
+        // l'asta — che e' esattamente cosa **non** e' successo — e annullerebbe tutto.
+        loadPurchaseByAuction(auctionId)?.let { purchase ->
+            closeContestation(league, auction, purchase)
+            return
+        }
+
         // Chi vende, se e' una vendita e non uno svincolato.
         //
         // Il venditore non ha una colonna sua: e' `started_by`, e lo si riconosce dal fatto
@@ -1933,6 +1973,157 @@ class TickRunner(
 
         notify(league.id, winner, "Ti sei aggiudicato l'asta per ${outcome.price} crediti.")
         log("Asta $auctionId aggiudicata al club ${winner.value} per ${outcome.price}.")
+    }
+
+    // ------------------------------------------------------- la finestra di dodici ore
+
+    /** L'acquisto legato a un'asta, se quell'asta e' nata da una contestazione. */
+    private fun loadPurchaseByAuction(auctionId: Long): Purchase? =
+        connection.prepareStatement(
+            "select id, player_id, buyer_club_id, seller_club_id, price, bought_at, " +
+                "contestable_until, status, auction_id from purchases where auction_id = ?",
+        ).use { st ->
+            st.setLong(1, auctionId)
+            st.executeQuery().use { rs -> if (rs.next()) readPurchase(rs) else null }
+        }
+
+    private fun readPurchase(rs: java.sql.ResultSet): Purchase = Purchase(
+        id = rs.getLong("id"),
+        playerId = PlayerId(rs.getLong("player_id")),
+        buyer = ClubId(rs.getLong("buyer_club_id")),
+        seller = rs.getLong("seller_club_id").takeIf { !rs.wasNull() }?.let { ClubId(it) },
+        price = rs.getInt("price"),
+        boughtAt = rs.getTimestamp("bought_at").toInstant(),
+        contestableUntil = rs.getTimestamp("contestable_until").toInstant(),
+        status = PurchaseStatus.valueOf(rs.getString("status")),
+        auctionId = rs.getLong("auction_id").takeIf { !rs.wasNull() },
+    )
+
+    /**
+     * Chiude una contestazione.
+     *
+     * ## I tre esiti, e perche' muovono soldi diversi
+     *
+     * **Nessuno ha superato chi aveva comprato**: l'acquisto si conferma e si paga solo la
+     * differenza fra il prezzo d'asta e quello gia' versato — mai il prezzo intero due volte.
+     *
+     * **Ha vinto un altro**: il giocatore cambia squadra, e chi aveva comprato **riprende i
+     * crediti interi**. Ha perso il giocatore, non i soldi: e' la regola dettata il
+     * 2026-08-24, ed e' cio' che rende accettabile comprare sapendo di poter essere
+     * contestati.
+     *
+     * **Il venditore incassa il prezzo finale, non quello di listino.** Aveva gia' preso il
+     * prezzo di vendita al momento dell'acquisto; qui riceve la differenza. Il conto torna:
+     * chi vende incassa quanto il giocatore e' valso davvero, che e' il motivo per cui la
+     * contestazione ripaga anche chi ha messo un prezzo troppo basso in buona fede.
+     */
+    private fun closeContestation(league: LeagueRow, auction: Auction, purchase: Purchase) {
+        val esito = ContestRules.settle(purchase, auction, Instant.now(), league.config.market)
+
+        // I fondi impegnati si liberano per tutti, chi ha comprato compreso: la sua offerta
+        // e' stata inserita da `contest_purchase` e va sciolta come le altre.
+        liberaFondi(auction)
+
+        when (esito) {
+            is ContestRules.Settlement.Confermato -> {
+                if (esito.extraDaPagare > 0) {
+                    addebita(purchase.buyer, esito.extraDaPagare)
+                    purchase.seller?.let { accredita(it, esito.extraDaPagare) }
+                }
+                segnaAcquisto(purchase.id, PurchaseStatus.CONFERMATO)
+                chiudiAstaContestata(auction.id, purchase.buyer, purchase.price + esito.extraDaPagare)
+                notify(
+                    league.id, purchase.buyer,
+                    if (esito.extraDaPagare > 0) {
+                        "Contestazione respinta: te lo tieni, hai pagato ${esito.extraDaPagare} in più."
+                    } else {
+                        "Nessuno ha contestato: è tuo."
+                    },
+                    kind = "asta", urgency = "immediata",
+                )
+            }
+
+            is ContestRules.Settlement.Revocato -> {
+                accredita(purchase.buyer, esito.daRimborsare)
+                addebita(esito.vincitore, esito.prezzo)
+                // Al venditore la differenza: aveva gia' incassato il prezzo di listino.
+                purchase.seller?.let { accredita(it, esito.prezzo - purchase.price) }
+
+                assignPlayer(league, purchase.playerId, esito.vincitore, esito.prezzo)
+                segnaAcquisto(purchase.id, PurchaseStatus.REVOCATO)
+                chiudiAstaContestata(auction.id, esito.vincitore, esito.prezzo)
+
+                notify(
+                    league.id, purchase.buyer,
+                    "Te l'hanno soffiato: ${esito.daRimborsare} crediti ti sono tornati.",
+                    kind = "asta", urgency = "immediata",
+                )
+                notify(
+                    league.id, esito.vincitore,
+                    "Contestazione vinta: è tuo per ${esito.prezzo} crediti.",
+                    kind = "asta", urgency = "immediata",
+                )
+            }
+        }
+
+        log("Contestazione sull'acquisto ${purchase.id} chiusa.")
+    }
+
+    /**
+     * Conferma gli acquisti la cui finestra e' passata senza che nessuno si opponesse.
+     *
+     * Non passa dal pianificatore come le aste, e non e' una scorciatoia: non c'e' niente
+     * da decidere. E' una scadenza oggettiva su una riga, non produce notifiche e non
+     * muove un credito — l'unica cosa che cambia e' che da quel momento il giocatore non
+     * si puo' piu' contestare.
+     */
+    private fun confermaAcquistiScaduti(league: LeagueRow) {
+        connection.prepareStatement(
+            "update purchases set status = 'CONFERMATO' " +
+                "where league_id = ? and status = 'IN_FINESTRA' and contestable_until <= now()",
+        ).use { st ->
+            st.setLong(1, league.id)
+            val quanti = st.executeUpdate()
+            if (quanti > 0) log("$quanti acquisti confermati: finestra chiusa senza opposizioni.")
+        }
+    }
+
+    private fun segnaAcquisto(purchaseId: Long, status: PurchaseStatus) {
+        connection.prepareStatement("update purchases set status = ? where id = ?").use { st ->
+            st.setString(1, status.name)
+            st.setLong(2, purchaseId)
+            st.executeUpdate()
+        }
+    }
+
+    private fun chiudiAstaContestata(auctionId: Long, winner: ClubId, price: Int) {
+        connection.prepareStatement(
+            "update auctions set status = 'AGGIUDICATA', winner_club_id = ?, final_price = ? " +
+                "where id = ?",
+        ).use { st ->
+            st.setLong(1, winner.value)
+            st.setInt(2, price)
+            st.setLong(3, auctionId)
+            st.executeUpdate()
+        }
+    }
+
+    private fun addebita(club: ClubId, quanto: Int) {
+        if (quanto <= 0) return
+        connection.prepareStatement("update clubs set credits = credits - ? where id = ?").use { st ->
+            st.setInt(1, quanto)
+            st.setLong(2, club.value)
+            st.executeUpdate()
+        }
+    }
+
+    private fun accredita(club: ClubId, quanto: Int) {
+        if (quanto <= 0) return
+        connection.prepareStatement("update clubs set credits = credits + ? where id = ?").use { st ->
+            st.setInt(1, quanto)
+            st.setLong(2, club.value)
+            st.executeUpdate()
+        }
     }
 
     /** Di chi e' adesso, o null se e' svincolato. */
@@ -2112,6 +2303,118 @@ class TickRunner(
      *   campo una squadra diversa da quella che aveva impostato.
      * @return false se la partita non si e' potuta giocare: rosa insufficiente, tipicamente.
      */
+    /**
+     * Gioca il primo tempo e apre la finestra dei cambi.
+     *
+     * La partita **non** viene segnata come giocata: resta li', con `resume_at` che dice
+     * quando riprende, ed e' `WorldTick.halfTimesDue` a rimetterla in fila al giro giusto.
+     * Nel frattempo chi c'e' puo' cambiare formazione, assetto e incarichi, e chi non c'e'
+     * non viene tagliato fuori — i suoi ordini condizionali girano lo stesso.
+     */
+    private fun giocaPrimoTempo(
+        league: LeagueRow,
+        fixture: Fixture,
+        home: TeamSetup,
+        away: TeamSetup,
+        seed: Long,
+        finestraMinuti: Int,
+    ): Boolean {
+        val primo = MatchEngine.simulateFirstHalf(home, away, league.config, seed)
+
+        connection.prepareStatement(
+            "update fixtures set resume_at = now() + make_interval(mins => ?), " +
+                "first_half = ?::jsonb where id = ?",
+        ).use { st ->
+            st.setInt(1, finestraMinuti)
+            st.setString(2, HalfTimeJson.write(home, away))
+            st.setLong(3, fixture.id)
+            st.executeUpdate()
+        }
+
+        val parziale = "${primo.homeGoals}-${primo.awayGoals}"
+        listOf(fixture.home, fixture.away).forEach { club ->
+            notify(
+                league.id, club,
+                "Intervallo: $parziale. Hai $finestraMinuti minuti per cambiare qualcosa.",
+                kind = "partita", urgency = "immediata",
+            )
+        }
+        log("Partita ${fixture.id} all'intervallo sul $parziale, riprende fra $finestraMinuti minuti.")
+        return true
+    }
+
+    /**
+     * Riprende una partita ferma al 45'.
+     *
+     * ## Perche' si ri-simula il primo tempo invece di conservarlo
+     *
+     * Perche' il motore e' deterministico e costa microsecondi: stesso seed e stessi
+     * ingressi danno lo stesso identico primo tempo. Conservarlo vorrebbe dire
+     * serializzare timeline, statistiche e schieramenti — un secondo formato da tenere
+     * allineato al motore per sempre, e un modo nuovo di far divergere quello che si vede
+     * da quello che e' successo.
+     *
+     * Gli **ingressi** invece si conservano ([HalfTimeJson]), perche' quelli sono cambiati:
+     * e' esattamente cio' che il manager ha fatto nella finestra.
+     */
+    private fun resumeMatch(
+        league: LeagueRow,
+        fixture: Fixture,
+        notes: MutableList<String>,
+    ): Boolean {
+        val salvato = connection.prepareStatement(
+            "select first_half from fixtures where id = ?",
+        ).use { st ->
+            st.setLong(1, fixture.id)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else null }
+        }
+
+        // Senza gli schieramenti di partenza non si puo' ricostruire niente: si rigioca
+        // tutta la partita da capo, che e' peggio di un intervallo ma molto meglio di una
+        // partita che resta a meta' per sempre.
+        if (salvato == null) {
+            connection.prepareStatement(
+                "update fixtures set resume_at = null where id = ?",
+            ).use { st -> st.setLong(1, fixture.id); st.executeUpdate() }
+            notes += "Partita ${fixture.id}: intervallo illeggibile, rigiocata per intero."
+            return playMatch(league, fixture, notes)
+        }
+
+        val node = JsonNode.parse(salvato)
+        val today = MatchDay(fixture.matchDay.value)
+        val rosa = loadSquad(league.id, fixture.home).associateBy { it.id.value } +
+            loadSquad(league.id, fixture.away).associateBy { it.id.value }
+
+        val primoHome = HalfTimeJson.readTeam(node["home"], rosa)
+        val primoAway = HalfTimeJson.readTeam(node["away"], rosa)
+        if (primoHome == null || primoAway == null) {
+            connection.prepareStatement(
+                "update fixtures set resume_at = null where id = ?",
+            ).use { st -> st.setLong(1, fixture.id); st.executeUpdate() }
+            notes += "Partita ${fixture.id}: schieramenti del primo tempo incompleti, rigiocata."
+            return playMatch(league, fixture, notes)
+        }
+
+        val seed = league.config.setup.worldSeed * 31L + fixture.id
+        val intervallo = MatchEngine.simulateFirstHalf(primoHome, primoAway, league.config, seed)
+
+        // I setup **di adesso**: e' qui che entrano i cambi fatti nella finestra. Se
+        // nessuno ha toccato niente si rilegge la stessa formazione e non cambia nulla.
+        val secondoHome = buildTeam(league, fixture.home, today, notes) ?: primoHome
+        val secondoAway = buildTeam(league, fixture.away, today, notes) ?: primoAway
+
+        val result = MatchEngine.simulateSecondHalf(
+            intervallo, league.config, secondoHome, secondoAway,
+        )
+
+        connection.prepareStatement(
+            "update fixtures set resume_at = null, first_half = null where id = ?",
+        ).use { st -> st.setLong(1, fixture.id); st.executeUpdate() }
+
+        salvaEsito(league, fixture, result, seed, secondoHome, secondoAway)
+        return true
+    }
+
     private fun playMatch(
         league: LeagueRow,
         fixture: Fixture,
@@ -2122,8 +2425,39 @@ class TickRunner(
         val away = buildTeam(league, fixture.away, today, notes) ?: return false
 
         val seed = league.config.setup.worldSeed * 31L + fixture.id
-        val result = MatchEngine.simulate(home, away, league.config, seed)
 
+        // La finestra dell'intervallo: si gioca il primo tempo e si aspetta.
+        //
+        // E' l'unico momento in cui una partita asincrona diventa una partita che si
+        // guarda — e finora non esisteva, malgrado il motore sapesse gia' fermarsi al 45'
+        // e la configurazione prevedesse la finestra.
+        val finestra = league.config.calendar.halfTimeWindowMinutes
+        if (finestra > 0) {
+            return giocaPrimoTempo(league, fixture, home, away, seed, finestra)
+        }
+
+        val result = MatchEngine.simulate(home, away, league.config, seed)
+        salvaEsito(league, fixture, result, seed, home, away)
+        return true
+    }
+
+    /**
+     * Scrive il risultato e tutto quello che ne consegue.
+     *
+     * Estratta da `playMatch` quando e' arrivata la finestra dell'intervallo: la partita
+     * puo' finire per due strade — tutta in un colpo, oppure in due tempi — e quello che
+     * succede **dopo** il fischio finale deve essere identico in tutte e due. Duplicarla
+     * avrebbe voluto dire, prima o poi, una strada che paga i premi e una che se li
+     * dimentica.
+     */
+    private fun salvaEsito(
+        league: LeagueRow,
+        fixture: Fixture,
+        result: MatchResult,
+        seed: Long,
+        home: TeamSetup,
+        away: TeamSetup,
+    ) {
         connection.prepareStatement(
             """
             insert into match_results (fixture_id, league_id, home_goals, away_goals, seed,
@@ -2163,7 +2497,6 @@ class TickRunner(
         }
 
         log("Lega ${league.id}: ${home.name} ${result.scoreline} ${away.name}")
-        return true
     }
 
     /**
@@ -2404,6 +2737,11 @@ class TickRunner(
                 AiMove.METTI_IN_VENDITA -> mettiInVendita(league, state, club, squad)
                 AiMove.GESTISCI_ROSA -> tieniInOrdineLaRosa(league, state, club, squad, today)
                 AiMove.PROPONI_SCAMBIO -> proponiUnoScambio(league, state, club, squad, today)
+                AiMove.COMPRA_A_LISTINO -> compraDalListino(league, state, club, squad)
+                AiMove.CONTESTA -> contestaUnAcquisto(league, state, club, squad)
+                AiMove.METTI_A_LISTINO -> mettiSulListino(league, state, club, squad)
+                AiMove.OFFRI_CREDITI -> offriCreditiPerUnGiocatore(league, state, club, squad, today)
+                AiMove.PROPONI_PRESTITO -> proponiUnPrestito(league, state, club, squad, today)
                 AiMove.CHIEDI_AMICHEVOLE -> chiediUnAmichevole(league, state, club, squad) ||
                     staffEMissioniDellAi(league, club)
             }
@@ -2495,6 +2833,517 @@ class TickRunner(
      * `refusalCooldowns` esisteva gia' per le trattative e vale anche qui: chi ti ha appena
      * detto di no non va richiamato domani.
      */
+    // ------------------------------------------------------- le AI e il listino
+
+    /**
+     * I giocatori indicati, in un colpo solo.
+     *
+     * Una query per tutto il listino invece di una per riga: `loadSquad` fa gia' una
+     * query per club ed e' chiamata da sette punti — e' il difetto che rende il tick
+     * lento otto minuti a giro. Non si aggiunge un altro ciclo di andate e ritorno.
+     */
+    private fun loadPlayersByIds(leagueId: Long, ids: List<Long>): Map<Long, Player> {
+        if (ids.isEmpty()) return emptyMap()
+        val out = HashMap<Long, Player>(ids.size)
+        connection.prepareStatement(
+            "select p.* from players p where p.league_id = ? and p.id = any(?)",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setArray(2, connection.createArrayOf("bigint", ids.toTypedArray()))
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val player = readPlayer(rs)
+                    out[player.id.value] = player
+                }
+            }
+        }
+        return out
+    }
+
+    /** Il listino aperto della lega, con i giocatori gia' agganciati. */
+    private fun loadListings(leagueId: Long): List<Pair<Listing, Player>> {
+        val righe = mutableListOf<Triple<Long, Long?, Pair<Long, Int>>>()
+        connection.prepareStatement(
+            // Solo i giocatori: lo staff sta nella stessa tabella con un target_type suo,
+            // e players e staff hanno sequenze di id separate — senza il filtro un'AI
+            // comprerebbe un allenatore credendo di prendere un centrocampista.
+            "select id, player_id, seller_club_id, price from listings " +
+                "where league_id = ? and status = 'APERTO' and target_type = 'player'",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    righe += Triple(
+                        rs.getLong("id"),
+                        rs.getLong("seller_club_id").takeIf { !rs.wasNull() },
+                        rs.getLong("player_id") to rs.getInt("price"),
+                    )
+                }
+            }
+        }
+        if (righe.isEmpty()) return emptyList()
+
+        val giocatori = loadPlayersByIds(leagueId, righe.map { it.third.first })
+        return righe.mapNotNull { (id, seller, coppia) ->
+            val player = giocatori[coppia.first] ?: return@mapNotNull null
+            Listing(
+                id = id,
+                playerId = player.id,
+                seller = seller?.let { ClubId(it) },
+                price = coppia.second,
+                listedAt = Instant.now(),
+            ) to player
+        }
+    }
+
+    /**
+     * Mette a listino gli svincolati, e toglie dal listino chi non lo e' piu'.
+     *
+     * ## Il buco che questa funzione chiude
+     *
+     * La regola del 2026-08-24 dice: «sul listino ci vanno **gli svincolati** e chi il
+     * proprietario mette in vendita». La seconda meta' funzionava — `list_player` — e la
+     * prima no: `listings` si riempiva solo quando qualcuno vendeva, quindi un giocatore
+     * senza contratto non era comprabile a prezzo fisso e restava raggiungibile **solo
+     * all'asta**. Cioe' esattamente la cosa da cui il listino serve a scappare, per la
+     * meta' piu' numerosa del mercato.
+     *
+     * Trovato provando le funzioni sul database vero, non leggendo il codice.
+     *
+     * ## Perche' il prezzo lo mette il tick e non il database
+     *
+     * Perche' il prezzo di uno svincolato e' il suo **valore di mercato**, e quel conto e'
+     * `Valuation.marketValue` — una curva con esponente 7,5, l'eta' e il potenziale, tarata
+     * da un test che stampa il listino. Riscriverla in SQL vorrebbe dire due listini che si
+     * separano al primo ritocco. Il tick ha `core` in mano: il conto lo fa una volta sola,
+     * con la regola vera.
+     *
+     * ## Gli under 20 restano fuori
+     *
+     * Regola di `0019`: si trovano mandandoci un osservatore. A prezzo fisso un fuoriclasse
+     * di diciotto anni sarebbe di chi ha piu' soldi e basta.
+     */
+    private fun aggiornaListinoSvincolati(league: LeagueRow) {
+        if (!league.config.market.instantBuyEnabled) return
+
+        // Chi e' a listino come svincolato ma nel frattempo ha trovato squadra esce: la
+        // riga resterebbe comprabile, e due club si contenderebbero un giocatore che ha
+        // gia' un contratto.
+        connection.prepareStatement(
+            """
+            update listings set status = 'RITIRATO'
+            where league_id = ? and status = 'APERTO' and target_type = 'player'
+              and seller_club_id is null
+              and player_id in (select player_id from contracts where league_id = ?)
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, league.id)
+            st.executeUpdate()
+        }
+
+        val daMettere = mutableListOf<Player>()
+        connection.prepareStatement(
+            """
+            select p.* from players p
+            where p.league_id = ?
+              and p.age >= ?
+              and not exists (select 1 from contracts c where c.player_id = p.id)
+              and not exists (
+                  select 1 from listings l
+                  where l.player_id = p.id and l.target_type = 'player' and l.status = 'APERTO'
+              )
+              and not exists (
+                  select 1 from auctions a
+                  where a.target_type = 'player' and a.target_id = p.id and a.status = 'APERTA'
+              )
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setInt(2, ETA_MINIMA_A_LISTINO)
+            st.executeQuery().use { rs -> while (rs.next()) daMettere += readPlayer(rs) }
+        }
+
+        if (daMettere.isEmpty()) return
+
+        connection.prepareStatement(
+            "insert into listings (league_id, player_id, seller_club_id, price, target_type) " +
+                "values (?, ?, null, ?, 'player')",
+        ).use { st ->
+            daMettere.forEach { player ->
+                st.setLong(1, league.id)
+                st.setLong(2, player.id.value)
+                st.setInt(3, Valuation.marketValue(player, league.config).coerceAtLeast(1))
+                st.addBatch()
+            }
+            st.executeBatch()
+        }
+
+        log("Listino: ${daMettere.size} svincolati messi in vendita al valore di mercato.")
+    }
+
+    /** Sotto questa eta' uno svincolato si trova solo con gli osservatori, non a listino. */
+    private val ETA_MINIMA_A_LISTINO = 20
+
+    /**
+     * Compra dal listino, subito.
+     *
+     * ## Perche' questa mossa cambia il ritmo della lega
+     *
+     * Perche' e' l'unica che non ha bisogno di un altro giro di tick. Aprire un'asta e
+     * aspettare che chiuda costa due risvegli e un'ora di orologio; qui il giocatore entra
+     * in rosa dentro questa transazione. E' la correzione della lamentela «le AI ci mettono
+     * settimane a riempire la rosa», che non era una loro lentezza: era la strada che
+     * avevano a disposizione.
+     */
+    private fun compraDalListino(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+    ): Boolean {
+        val listino = loadListings(league.id)
+        if (listino.isEmpty()) return false
+
+        val (listing, player) = AiMarket.playerToBuy(state, club, squad, listino, league.config)
+            ?: return false
+
+        // La riga si blocca prima di toccarla: due AI che si svegliano nello stesso giro
+        // devono trovarne una sola disponibile.
+        val preso = connection.prepareStatement(
+            "update listings set status = 'VENDUTO' where id = ? and status = 'APERTO'",
+        ).use { st ->
+            st.setLong(1, listing.id)
+            st.executeUpdate() > 0
+        }
+        if (!preso) return false
+
+        addebita(club.id, listing.price)
+        listing.seller?.let { accredita(it, listing.price) }
+        assignPlayer(league, player.id, club.id, listing.price)
+
+        val finestra = league.config.market.contestWindowHours
+        connection.prepareStatement(
+            """
+            insert into purchases (league_id, player_id, buyer_club_id, seller_club_id,
+                                   price, contestable_until)
+            values (?, ?, ?, ?, ?, now() + make_interval(hours => ?))
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, player.id.value)
+            st.setLong(3, club.id.value)
+            if (listing.seller != null) st.setLong(4, listing.seller!!.value) else st.setNull(4, java.sql.Types.BIGINT)
+            st.setInt(5, listing.price)
+            st.setInt(6, finestra)
+            st.executeUpdate()
+        }
+
+        listing.seller?.let { venditore ->
+            notify(
+                league.id, venditore,
+                "${clubNameOf(club.id)} ha comprato ${player.shortName} per ${listing.price}.",
+                kind = "mercato", urgency = "immediata",
+            )
+        }
+        log("${clubNameOf(club.id)} compra ${player.shortName} a listino per ${listing.price}.")
+        return true
+    }
+
+    /**
+     * Contesta l'acquisto di qualcun altro.
+     *
+     * Solo su chi voleva davvero e solo se e' stato pagato troppo poco: la regola sta in
+     * [AiMarket], con le sue prove. Se contestassero tutto, il listino tornerebbe a essere
+     * un'asta continua — cioe' la cosa da cui serve a scappare.
+     */
+    private fun contestaUnAcquisto(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+    ): Boolean {
+        val aperti = loadOpenPurchases(league.id).filter { it.buyer != club.id }
+        if (aperti.isEmpty()) return false
+
+        val giocatori = loadPlayersByIds(league.id, aperti.map { it.playerId.value })
+
+        for (purchase in aperti) {
+            val player = giocatori[purchase.playerId.value] ?: continue
+            val massimo = AiMarket.contestBid(state, club, squad, purchase, player, league.config)
+                ?: continue
+
+            val auctionId = purchase.auctionId ?: apriAstaDiContestazione(league, purchase, club)
+
+            // L'offerta passa da `place_bid` come tutte le altre: anti-snipe, blocco fondi
+            // e prezzo corrente stanno gia' li' dentro, e riscriverli qui vorrebbe dire due
+            // regole d'asta che si separano al primo ritocco.
+            val accettata = connection.prepareStatement("select place_bid(?, ?, ?)").use { st ->
+                st.setLong(1, auctionId)
+                st.setLong(2, club.id.value)
+                st.setInt(3, massimo)
+                st.executeQuery().use { rs ->
+                    rs.next() && JsonNode.parse(rs.getString(1))["ok"].bool(false)
+                }
+            }
+            if (!accettata) continue
+
+            notify(
+                league.id, purchase.buyer,
+                "${clubNameOf(club.id)} ha contestato il tuo acquisto di ${player.shortName}.",
+                kind = "asta", urgency = "immediata",
+            )
+            log("${clubNameOf(club.id)} contesta l'acquisto ${purchase.id} a $massimo.")
+            return true
+        }
+        return false
+    }
+
+    private fun loadOpenPurchases(leagueId: Long): List<Purchase> {
+        val out = mutableListOf<Purchase>()
+        connection.prepareStatement(
+            "select id, player_id, buyer_club_id, seller_club_id, price, bought_at, " +
+                "contestable_until, status, auction_id from purchases " +
+                "where league_id = ? and status in ('IN_FINESTRA','CONTESTATO') " +
+                "and contestable_until > now()",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> while (rs.next()) out += readPurchase(rs) }
+        }
+        return out
+    }
+
+    /**
+     * Fa nascere l'asta di contestazione, con dentro gia' chi ha comprato.
+     *
+     * La regola sta in `core` (`ContestRules.open`) e la fa anche `contest_purchase` in
+     * SQL: chi ha comprato entra al prezzo che ha pagato e i suoi crediti risultano
+     * impegnati, esattamente come quelli di chiunque altro.
+     */
+    private fun apriAstaDiContestazione(
+        league: LeagueRow,
+        purchase: Purchase,
+        contestante: Club,
+    ): Long {
+        val auctionId = connection.prepareStatement(
+            """
+            insert into auctions (league_id, target_type, target_id, started_by,
+                                  ends_at, starting_price)
+            values (?, 'player', ?, ?, ?, ?) returning id
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, purchase.playerId.value)
+            st.setLong(3, contestante.id.value)
+            st.setTimestamp(4, java.sql.Timestamp.from(purchase.contestableUntil))
+            st.setInt(5, purchase.price)
+            st.executeQuery().use { rs -> rs.next(); rs.getLong(1) }
+        }
+
+        connection.prepareStatement(
+            "insert into bids (auction_id, club_id, max_amount, placed_at) values (?, ?, ?, ?)",
+        ).use { st ->
+            st.setLong(1, auctionId)
+            st.setLong(2, purchase.buyer.value)
+            st.setInt(3, purchase.price)
+            st.setTimestamp(4, java.sql.Timestamp.from(purchase.boughtAt))
+            st.executeUpdate()
+        }
+        connection.prepareStatement(
+            "update clubs set committed_credits = committed_credits + ? where id = ?",
+        ).use { st ->
+            st.setInt(1, purchase.price)
+            st.setLong(2, purchase.buyer.value)
+            st.executeUpdate()
+        }
+        connection.prepareStatement(
+            "update purchases set status = 'CONTESTATO', auction_id = ? where id = ?",
+        ).use { st ->
+            st.setLong(1, auctionId)
+            st.setLong(2, purchase.id)
+            st.executeUpdate()
+        }
+
+        return auctionId
+    }
+
+    /** Mette in vendita a listino chi non serve piu', al prezzo che chiede l'AI. */
+    private fun mettiSulListino(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+    ): Boolean {
+        val (daCedere, _) = AiInitiative.playerToSell(state, squad, league.config) ?: return false
+
+        // Uno gia' in vendita o gia' all'asta non si rimette in vendita.
+        val libero = connection.prepareStatement(
+            """
+            select 1 from listings
+             where player_id = ? and target_type = 'player' and status = 'APERTO'
+            union all
+            select 1 from auctions where target_type = 'player' and target_id = ? and status = 'APERTA'
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, daCedere.id.value)
+            st.setLong(2, daCedere.id.value)
+            st.executeQuery().use { rs -> !rs.next() }
+        }
+        if (!libero) return false
+
+        val prezzo = AiMarket.askingPrice(daCedere, state.personality, league.config)
+        connection.prepareStatement(
+            "insert into listings (league_id, player_id, seller_club_id, price, target_type) " +
+                "values (?, ?, ?, ?, 'player')",
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, daCedere.id.value)
+            st.setLong(3, club.id.value)
+            st.setInt(4, prezzo)
+            st.executeUpdate()
+        }
+
+        log("${clubNameOf(club.id)} mette in vendita ${daCedere.shortName} a $prezzo.")
+        return true
+    }
+
+    /**
+     * Offre crediti a un altro club per un suo giocatore.
+     *
+     * ## La mossa che mancava del tutto
+     *
+     * `AiInitiative.proposeTrade` sa proporre solo giocatore contro giocatore. Il
+     * conguaglio in crediti esiste nel modello dal principio — `TradeOffer.cash` ha il
+     * segno — e non veniva mai usato da solo: in tutta la vita di una lega nessuna AI ha
+     * mai chiesto «quanto vuoi per il tuo attaccante?», che e' la cosa piu' normale che
+     * possa fare un club.
+     */
+    private fun offriCreditiPerUnGiocatore(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+        today: MatchDay,
+    ): Boolean {
+        if (!league.config.market.swapsEnabled) return false
+
+        val altri = loadClubIds(league.id)
+            .filter { it != club.id && state.canActOn(it, today) }
+            .filterNot { haGiaUnaPropostaAperta(club.id, it) }
+        if (altri.isEmpty()) return false
+
+        val bersaglio = altri[(club.id.value + today.value + 1).toInt().mod(altri.size)]
+        val suaRosa = loadSquad(league.id, bersaglio)
+        if (suaRosa.size <= league.config.setup.minSquadSize) return false
+
+        // Il migliore fra quelli che le interessano davvero.
+        val scelta = suaRosa
+            .mapNotNull { player ->
+                AiMarket.cashOffer(state, club, squad, player, league.config)
+                    ?.let { player to it }
+            }
+            .maxByOrNull { it.second } ?: return false
+
+        val (player, crediti) = scelta
+
+        connection.prepareStatement(
+            """
+            insert into trades (league_id, from_club, to_club, offered, wanted, cash,
+                                message, kind)
+            values (?, ?, ?, ?, ?, ?, ?, 'SCAMBIO')
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, club.id.value)
+            st.setLong(3, bersaglio.value)
+            st.setArray(4, connection.createArrayOf("bigint", emptyArray<Long>()))
+            st.setArray(5, connection.createArrayOf("bigint", arrayOf(player.id.value)))
+            st.setInt(6, crediti)
+            st.setString(
+                7,
+                "Ti offro $crediti crediti per ${player.shortName}. Nessuno scambio, " +
+                    "solo soldi.",
+            )
+            st.executeUpdate()
+        }
+
+        notify(
+            league.id, bersaglio,
+            "${clubNameOf(club.id)} ti offre $crediti crediti per ${player.shortName}.",
+            kind = "scambio", urgency = "immediata",
+        )
+        log("${clubNameOf(club.id)} offre $crediti per ${player.shortName}.")
+        return true
+    }
+
+    /**
+     * «Il mio attaccante non gioca mai, lo prendi in prestito?»
+     *
+     * L'unica mossa delle AI che apre un discorso invece di chiudere una transazione:
+     * arriva con un messaggio scritto, e chi la riceve puo' rispondere. Le AI sapevano
+     * gia' **rispondere** a un prestito e non proporne mai uno — che e' la parte visibile
+     * del «non fanno mai il primo passo».
+     */
+    private fun proponiUnPrestito(
+        league: LeagueRow,
+        state: AiState,
+        club: Club,
+        squad: List<Player>,
+        today: MatchDay,
+    ): Boolean {
+        if (!league.config.market.loansEnabled) return false
+
+        val ragazzo = AiInitiative.playerToLoanOut(squad, league.config) ?: return false
+
+        val altri = loadClubIds(league.id)
+            .filter { it != club.id && state.canActOn(it, today) }
+            .filterNot { haGiaUnaPropostaAperta(club.id, it) }
+        if (altri.isEmpty()) return false
+
+        val bersaglio = altri[(club.id.value + ragazzo.id.value).toInt().mod(altri.size)]
+        val giornate = league.config.market.minLoanMatchDays
+            .coerceAtLeast(league.config.market.maxLoanMatchDays / 2)
+
+        val terms = JsonWriter(256).apply {
+            beginObject()
+            field("matchDays", giornate)
+            field("fee", 0)
+            field("wagePaidByBorrower", true)
+            field("canPlayAgainstOwner", false)
+            endObject()
+        }.toString()
+
+        connection.prepareStatement(
+            """
+            insert into trades (league_id, from_club, to_club, offered, wanted, cash,
+                                message, kind, terms)
+            values (?, ?, ?, ?, ?, 0, ?, 'PRESTITO', ?::jsonb)
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, club.id.value)
+            st.setLong(3, bersaglio.value)
+            st.setArray(4, connection.createArrayOf("bigint", arrayOf(ragazzo.id.value)))
+            st.setArray(5, connection.createArrayOf("bigint", emptyArray<Long>()))
+            st.setString(
+                6,
+                "${ragazzo.shortName} da noi non gioca mai e ha ancora da crescere. " +
+                    "Te lo diamo in prestito per $giornate giornate: stipendio a carico " +
+                    "vostro, nessun canone.",
+            )
+            st.setString(7, terms)
+            st.executeUpdate()
+        }
+
+        notify(
+            league.id, bersaglio,
+            "${clubNameOf(club.id)} ti offre ${ragazzo.shortName} in prestito.",
+            kind = "scambio", urgency = "immediata",
+        )
+        log("${clubNameOf(club.id)} propone ${ragazzo.shortName} in prestito.")
+        return true
+    }
+
     private fun proponiUnoScambio(
         league: LeagueRow,
         state: AiState,
@@ -3495,6 +4344,10 @@ class TickRunner(
             name = name,
             lineup = repaired.lineup,
             tactics = repaired.tactics,
+            // Gli ordini condizionali erano completi in `core` dal primo giorno e la
+            // colonna li aspettava: da qui in avanti arrivano fino al motore, ed e' cio'
+            // che permette di preparare una partita che si gioca mentre si lavora.
+            orders = repaired.orders,
             coachStars = coachStars,
         )
     }
@@ -3506,19 +4359,48 @@ class TickRunner(
         val tactics: String?,
         val captainId: Long?,
         val penaltyTakerId: Long?,
+        val cornerTakerId: Long? = null,
+        val freeKickTakerId: Long? = null,
+        val longBallTakerId: Long? = null,
+        /** Gli ordini condizionali, ancora come li ha scritti l'app. */
+        val orders: String? = null,
     )
 
     /** Quello che si e' riusciti a ricostruire, piu' cosa e' stato corretto d'ufficio. */
     private data class RepairedLineup(
         val lineup: Lineup,
         val tactics: Tactics,
+        val orders: List<ConditionalOrder>,
         val problems: List<String>,
     )
 
+    /**
+     * La formazione salvata.
+     *
+     * ## Perche' due query e non una
+     *
+     * Le tre colonne degli incarichi da palla ferma arrivano dalla migrazione `0027`. Su un
+     * database dove non e' ancora stata eseguita, chiederle fa fallire l'intera `select` —
+     * e qui dentro un fallimento non riguarda una schermata: **annullerebbe la transazione
+     * della lega**, cioe' fermerebbe le partite di tutti finche' qualcuno non se ne accorge.
+     *
+     * Si prova la lettura completa; se il database e' indietro si ricade su quella di
+     * sempre, e gli incarichi li sceglie il motore come faceva prima che esistessero.
+     */
     private fun loadSavedLineup(clubId: ClubId): SavedLineupRow? =
-        connection.prepareStatement(
-            "select formation, slots, bench, tactics, captain_id, penalty_taker_id " +
-                "from lineups where club_id = ?",
+        runCatching { readLineupRow(clubId, conIncarichi = true) }
+            .getOrElse { readLineupRow(clubId, conIncarichi = false) }
+
+    private fun readLineupRow(clubId: ClubId, conIncarichi: Boolean): SavedLineupRow? {
+        val colonne = buildString {
+            append("formation, slots, bench, tactics, captain_id, penalty_taker_id, orders")
+            if (conIncarichi) {
+                append(", corner_taker_id, free_kick_taker_id, long_ball_taker_id")
+            }
+        }
+
+        return connection.prepareStatement(
+            "select $colonne from lineups where club_id = ?",
         ).use { st ->
             st.setLong(1, clubId.value)
             st.executeQuery().use { rs ->
@@ -3531,9 +4413,20 @@ class TickRunner(
                     tactics = rs.getString("tactics"),
                     captainId = rs.getLong("captain_id").takeIf { !rs.wasNull() },
                     penaltyTakerId = rs.getLong("penalty_taker_id").takeIf { !rs.wasNull() },
+                    cornerTakerId = if (conIncarichi) {
+                        rs.getLong("corner_taker_id").takeIf { !rs.wasNull() }
+                    } else null,
+                    freeKickTakerId = if (conIncarichi) {
+                        rs.getLong("free_kick_taker_id").takeIf { !rs.wasNull() }
+                    } else null,
+                    longBallTakerId = if (conIncarichi) {
+                        rs.getLong("long_ball_taker_id").takeIf { !rs.wasNull() }
+                    } else null,
+                    orders = rs.getString("orders"),
                 )
             }
         }
+    }
 
     /**
      * Trasforma la formazione salvata in una schierabile, completando quello che manca.
@@ -3603,21 +4496,29 @@ class TickRunner(
             .distinctBy { it.id.value }
             .take(LineupFitter.DEFAULT_BENCH)
 
+        // Gli incarichi: quello scelto se e' ancora in campo, altrimenti il piu' adatto.
+        // La scelta la fa [SetPieces], che e' lo stesso codice con cui l'app li mostra:
+        // due criteri diversi vorrebbero dire un rigorista sullo schermo e un altro nel
+        // tabellino, e chi guarda penserebbe che il gioco non ascolti.
+        val base = Lineup(formation = formation, slots = slots, bench = bench)
+        val salvati = mapOf(
+            MatchDuty.CAPITANO to saved.captainId,
+            MatchDuty.RIGORISTA to saved.penaltyTakerId,
+            MatchDuty.ANGOLI to saved.cornerTakerId,
+            MatchDuty.PUNIZIONI to saved.freeKickTakerId,
+            MatchDuty.LANCI_LUNGHI to saved.longBallTakerId,
+        )
+        val conIncarichi = MatchDuty.entries.fold(base) { lineup, duty ->
+            val scelto = salvati[duty]
+                ?.let { id -> eleven.firstOrNull { it.id.value == id }?.id }
+                ?: SetPieces.best(SetPieces.candidates(lineup, duty), duty)?.id
+            SetPieces.assign(lineup, duty, scelto)
+        }
+
         return RepairedLineup(
-            lineup = Lineup(
-                formation = formation,
-                slots = slots,
-                bench = bench,
-                // Un capitano ceduto non blocca la partita: si ricade sulla stessa scelta
-                // che farebbe la formazione automatica.
-                captainId = saved.captainId
-                    ?.let { id -> eleven.firstOrNull { it.id.value == id }?.id }
-                    ?: eleven.maxByOrNull { it.overall + it.age }?.id,
-                penaltyTakerId = saved.penaltyTakerId
-                    ?.let { id -> eleven.firstOrNull { it.id.value == id }?.id }
-                    ?: eleven.maxByOrNull { it.attributes[Attr.TIRO] }?.id,
-            ),
+            lineup = conIncarichi,
             tactics = LineupJson.tactics(saved.tactics),
+            orders = OrderJson.read(JsonNode.parse(saved.orders ?: "[]")),
             problems = problems,
         )
     }
@@ -3725,6 +4626,18 @@ class TickRunner(
             st.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else "Club ${clubId.value}" }
         }
 
+    /**
+     * Le partite ancora da cominciare.
+     *
+     * `resume_at is null` esclude quelle **gia' cominciate e ferme all'intervallo**: sono
+     * ancora `not played`, e senza questo filtro verrebbero pianificate come se dovessero
+     * partire adesso — cioe' il primo tempo si rigiocherebbe da capo mentre il secondo
+     * aspetta. Le riprese le raccoglie [loadPausedFixtures], su un'altra strada.
+     *
+     * La colonna arriva dalla migrazione `0029`: qui si puo' chiedere perche' e' il tick,
+     * che gira su un database di cui l'amministratore controlla le migrazioni, e non
+     * l'app installata su cinque telefoni diversi.
+     */
     private fun loadPendingFixtures(leagueId: Long): List<Fixture> {
         val out = mutableListOf<Fixture>()
         connection.prepareStatement(
@@ -3733,6 +4646,7 @@ class TickRunner(
                    match_day, kickoff, tie_id, is_second_leg
             from fixtures
             where league_id = ? and not played and kickoff is not null
+              and resume_at is null
             order by kickoff
             """.trimIndent(),
         ).use { st ->
@@ -3760,6 +4674,43 @@ class TickRunner(
                             ?.atZone(ZoneOffset.UTC)?.toLocalDateTime(),
                         tieId = rs.getString("tie_id"),
                         isSecondLeg = rs.getBoolean("is_second_leg"),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    /** Le partite ferme all'intervallo, con l'ora in cui riprendono. */
+    private fun loadPausedFixtures(leagueId: Long): List<PausedFixture> {
+        val out = mutableListOf<PausedFixture>()
+        connection.prepareStatement(
+            """
+            select id, competition_id, round, round_label, home_club_id, away_club_id,
+                   match_day, kickoff, tie_id, is_second_leg, resume_at
+            from fixtures
+            where league_id = ? and not played and resume_at is not null
+            order by resume_at
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += PausedFixture(
+                        fixture = Fixture(
+                            id = rs.getLong("id"),
+                            competitionId = CompetitionId(rs.getLong("competition_id")),
+                            round = rs.getInt("round"),
+                            roundLabel = rs.getString("round_label"),
+                            home = ClubId(rs.getLong("home_club_id")),
+                            away = ClubId(rs.getLong("away_club_id")),
+                            matchDay = MatchDay(rs.getInt("match_day")),
+                            kickoff = rs.getTimestamp("kickoff")?.toInstant()
+                                ?.atZone(ZoneOffset.UTC)?.toLocalDateTime(),
+                            tieId = rs.getString("tie_id"),
+                            isSecondLeg = rs.getBoolean("is_second_leg"),
+                        ),
+                        resumeAt = rs.getTimestamp("resume_at").toInstant(),
                     )
                 }
             }
