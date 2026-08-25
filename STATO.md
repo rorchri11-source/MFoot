@@ -228,6 +228,16 @@ senza sapere da dove è arrivato.
    esecuzioni **59 restano `cancelled`** perché i giri continuano ad accavallarsi, e la
    cadenza vera è fra i venti e i quaranta minuti.
 
+   **Rimisurato il 2026-08-25, ed è peggiorato.** Gli intervalli fra un giro riuscito e
+   il successivo, letti dal registro pubblico: 22, 51, 50, 48 minuti — e dopo l'ultimo
+   sono passati cinquantuno minuti senza che ne partisse un altro. Il cron dice dieci.
+   Non è (solo) l'accavallamento: GitHub ritarda le esecuzioni programmate dei
+   repository gratuiti, e il ritardo qui vale **cinque volte** il periodo chiesto.
+
+   Ha una conseguenza pratica che vale la pena sapere prima di aspettare: **una cosa
+   pubblicata adesso può metterci un'ora a succedere nel mondo**. Per provare subito c'è
+   `workflow_dispatch` nella tab Actions, con l'opzione «calcola senza scrivere».
+
    Non è solo spreco di CI. **L'anti-snipe è tarato su sessanta secondi**: se il tick
    passa ogni mezz'ora, un'asta che scade alle 21:00 chiude alle 21:35, e il meccanismo
    che dovrebbe far vincere chi valuta di più invece di chi ha il dito veloce smette di
