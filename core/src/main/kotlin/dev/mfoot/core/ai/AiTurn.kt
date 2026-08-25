@@ -4,6 +4,31 @@ import dev.mfoot.core.config.LeagueConfig
 
 /** Le cose che un club gestito dal computer puo' fare quando si sveglia. */
 enum class AiMove {
+    /**
+     * Comprare dal listino, a prezzo fisso e subito.
+     *
+     * Dal 2026-08-24 e' la prima mossa di un club a cui manca gente, e sostituisce la
+     * fila di aste che rendeva il completamento di una rosa lungo settimane reali.
+     */
+    COMPRA_A_LISTINO,
+
+    /**
+     * Contestare l'acquisto di qualcun altro.
+     *
+     * Solo quando quel giocatore lo voleva davvero **ed** e' stato pagato troppo poco:
+     * se contestassero tutto, si tornerebbe a fare aste ogni giorno.
+     */
+    CONTESTA,
+
+    /** Mettere in vendita a listino chi non serve piu'. */
+    METTI_A_LISTINO,
+
+    /** Offrire crediti a un altro club per un suo giocatore. */
+    OFFRI_CREDITI,
+
+    /** Proporre in prestito un giovane che qui non gioca mai. */
+    PROPONI_PRESTITO,
+
     /** Mettere all'asta uno svincolato che serve, o un proprio giocatore che non serve. */
     APRI_ASTA,
 
@@ -69,19 +94,37 @@ object AiTurn {
      * completa: un club che deve ancora arrivare a undici titolari non ha niente da
      * proporre a nessuno, perche' quello che gli avanza non avanza, gli manca.
      */
-    fun order(squadSize: Int, config: LeagueConfig): List<AiMove> =
-        if (squadSize < config.setup.minSquadSize) {
-            listOf(AiMove.APRI_ASTA, AiMove.OFFRI)
-        } else {
-            listOf(
+    fun order(squadSize: Int, config: LeagueConfig): List<AiMove> {
+        // Dal 2026-08-24 il listino viene **prima di tutto** per chi ha la rosa corta:
+        // comprare a prezzo fisso e' immediato, mentre un'asta costa un giro di tick per
+        // aprirsi e un altro per chiudersi. Era la ragione per cui i club del computer
+        // restavano fermi fra uno e nove giocatori dopo venti risvegli.
+        val listinoPrima = config.market.instantBuyEnabled
+
+        return if (squadSize < config.setup.minSquadSize) {
+            listOfNotNull(
+                AiMove.COMPRA_A_LISTINO.takeIf { listinoPrima },
+                AiMove.APRI_ASTA,
                 AiMove.OFFRI,
+            )
+        } else {
+            listOfNotNull(
+                // Contestare scade: la finestra dura dodici ore e non torna. Viene prima
+                // di ogni altra cosa perche' e' l'unica mossa che ha una scadenza vera.
+                AiMove.CONTESTA.takeIf { listinoPrima },
+                AiMove.OFFRI,
+                AiMove.COMPRA_A_LISTINO.takeIf { listinoPrima },
                 AiMove.GESTISCI_ROSA,
                 AiMove.PROPONI_SCAMBIO,
+                AiMove.OFFRI_CREDITI.takeIf { listinoPrima },
+                AiMove.PROPONI_PRESTITO,
                 AiMove.APRI_ASTA,
+                AiMove.METTI_A_LISTINO.takeIf { listinoPrima },
                 AiMove.METTI_IN_VENDITA,
                 AiMove.CHIEDI_AMICHEVOLE,
             )
         }
+    }
 
     /**
      * Quante aste puo' aprire con i soldi che ha.

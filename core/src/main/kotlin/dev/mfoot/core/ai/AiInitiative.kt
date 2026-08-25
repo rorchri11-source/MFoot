@@ -210,6 +210,43 @@ object AiInitiative {
     }
 
     /**
+     * Un giovane da mandare a giocare altrove, o null.
+     *
+     * ## Perche' un'AI dovrebbe farlo
+     *
+     * Perche' e' la mossa piu' normale del calcio e finora nessuna AI la faceva: sapevano
+     * **rispondere** a un prestito ([answerLoan]) e non proporne uno. Un ragazzo con una
+     * forbice di crescita larga che sta in fondo alla rosa non cresce, e chi lo tiene lo sa.
+     *
+     * E' anche l'unica mossa che apre un discorso invece di una transazione: arriva con un
+     * messaggio, e chi la riceve puo' rispondere. «Il mio attaccante non gioca mai, lo
+     * prendi in prestito?» e' precisamente la cosa che il proprietario ha chiesto il
+     * 2026-08-24 quando ha detto che le AI non fanno mai il primo passo.
+     *
+     * Chi ha margine di crescita **e** sta sotto la mediana: se e' gia' forte lo si tiene,
+     * se e' scarso e senza prospettive non interessa a nessuno.
+     */
+    fun playerToLoanOut(
+        squad: List<Player>,
+        config: LeagueConfig,
+    ): Player? {
+        if (squad.size <= config.setup.minSquadSize) return null
+        val mediana = squad.map { it.overall }.sorted()[squad.size / 2]
+
+        return squad
+            .filterNot { it.isCustom }
+            .filter { it.age <= config.rules.peakAgeStart }
+            .filter { it.overall < mediana }
+            // Deve avere qualcosa da guadagnarci: un prestito serve a far crescere, e chi
+            // non ha piu' margine sta altrettanto bene in panchina qui.
+            .filter { it.potentialMax > it.overall + MARGINE_UTILE }
+            .maxByOrNull { it.potentialMax - it.overall }
+    }
+
+    /** Quanti punti di crescita rendono utile mandarlo a giocare. */
+    private const val MARGINE_UTILE = 4
+
+    /**
      * Accetta un prestito?
      *
      * ## Perche' non si riusa il valutatore degli scambi
