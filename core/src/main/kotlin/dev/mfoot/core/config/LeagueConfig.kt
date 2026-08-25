@@ -282,6 +282,45 @@ data class MarketConfig(
     val negotiationExpiryMinutes: Int = 1440,
     val minLoanMatchDays: Int = 2,
     val maxLoanMatchDays: Int = 19,
+
+    // ------------------------------------------------- il listino e la contestazione
+
+    /**
+     * Si compra a prezzo fisso, e il giocatore e' tuo nello stesso istante.
+     *
+     * Deciso dal proprietario il 2026-08-24. L'asta come rito obbligatorio costava un
+     * giorno reale per ogni gregario — peggiorato dal fatto che il tick passa ogni venti
+     * o quaranta minuti, non ogni dieci — e una rosa da diciotto uomini diventava tre
+     * settimane di attesa.
+     *
+     * Spegnerlo riporta la lega al mercato di sole aste.
+     */
+    val instantBuyEnabled: Boolean = true,
+
+    /**
+     * Per quante ore un acquisto puo' essere contestato.
+     *
+     * E' l'unica cosa che fa nascere un'asta. Passate queste ore il giocatore e' di chi
+     * l'ha comprato per sempre, e chi compra conosce **fin dal primo istante** l'ora in
+     * cui sara' definitivo: l'asta di contestazione scade insieme alla finestra, non
+     * un'ora dopo l'ultimo rilancio.
+     *
+     * A zero il mercato diventa senza reti: si compra e non si discute.
+     */
+    val contestWindowHours: Int = 12,
+
+    /**
+     * Il prezzo di vendita lo scrive il proprietario, libero.
+     *
+     * Deciso il 2026-08-24, sapendo il rischio: due amici d'accordo possono spostare un
+     * fuoriclasse per un credito. **Il correttivo e' la contestazione** — un prezzo fuori
+     * mercato e' la definizione stessa dell'affare troppo buono, e chiunque ha dodici ore
+     * per portarlo all'asta. Le due decisioni si tengono in piedi a vicenda.
+     *
+     * Questo resta come limite di sanita', non come regola di gioco: un prezzo sotto
+     * l'unita' non e' un regalo, e' un errore di battitura.
+     */
+    val minListingPrice: Int = 1,
 )
 
 // ------------------------------------------------------------------------- calendario
@@ -612,6 +651,39 @@ data class EngineConfig(
     val redCardChanceOnFoul: Double = 0.006,
     val cornerChanceOnLostAttack: Double = 0.14,
     val injuryChancePerAction: Double = 0.0016,
+
+    /**
+     * Quanto spesso un angolo diventa una conclusione vera.
+     *
+     * I due estremi sono le probabilita' col peggior battitore possibile e col migliore:
+     * e' **la ragione per cui l'incarico dei calci d'angolo esiste**. Fino al 2026-08-24
+     * l'angolo veniva emesso e la palla ripartiva, quindi valeva esattamente zero per
+     * chiunque e chi aveva in rosa uno specialista non ne ricavava niente.
+     */
+    val cornerConversionMin: Double = 0.10,
+    val cornerConversionMax: Double = 0.34,
+
+    /** Quanto spesso un fallo in zona offensiva produce una punizione battuta in porta. */
+    val freeKickShotChance: Double = 0.28,
+
+    /** xG di una punizione, dal peggior battitore al migliore. */
+    val freeKickXgMin: Double = 0.028,
+    val freeKickXgMax: Double = 0.125,
+
+    /**
+     * Quanto il capitano tiene in piedi la squadra quando si va sotto.
+     *
+     * Si somma all'inerzia psicologica ([momentumStrength]) e **solo in svantaggio**: e'
+     * la regola dettata il 2026-08-24 — la fascia serve quando c'e' da tenere botta, non
+     * quando si vince 3-0. A zero il capitano torna a essere un titolo senza effetti.
+     *
+     * **Misurato, non scelto.** A 2,6 valeva quasi quanto un gol subito ([momentumStrength]
+     * e' 3,2) e spostava il bilanciamento di tutta la lega: fra squadre pari le vittorie in
+     * casa scendevano dal 45,1% al 42,5%, perche' chi va sotto piu' spesso e' l'ospite e la
+     * spinta arrivava quasi sempre a lui. A 1,3 il capitano si sente nelle rimonte e i
+     * numeri tornano dove `BalanceReportTest` li aveva misurati.
+     */
+    val captainResilience: Double = 1.3,
 
     /**
      * Quanto pesa l'inerzia psicologica dopo un gol.
