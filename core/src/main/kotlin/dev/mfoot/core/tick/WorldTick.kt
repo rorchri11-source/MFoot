@@ -29,6 +29,30 @@ sealed interface TickEffect {
 
     data class SimulaPartita(val fixture: Fixture, override val dueAt: Instant) : TickEffect
 
+    /**
+     * Riprendere una partita ferma all'intervallo.
+     *
+     * ## Perche' e' un effetto suo e non una `SimulaPartita`
+     *
+     * Perche' una partita si simula quando il **calcio d'inizio** cade nella finestra del
+     * giro, e per una ripresa quel momento e' gia' passato da un pezzo. Con lo stesso
+     * effetto la seconda meta' non sarebbe mai stata giocata: la partita sarebbe rimasta
+     * ferma al 45' per sempre, con il risultato del primo tempo e nessun modo di chiuderla.
+     *
+     * ## Perche' si recupera anche fuori finestra
+     *
+     * Come le aste, e per lo stesso motivo: se non riprende adesso non riprendera' mai
+     * piu'. E' il contrario di quello che vale per il **primo** tempo — li' il calcio
+     * d'inizio resta per sempre nel passato, e recuperare fuori finestra significava
+     * rigiocare la stessa partita a ogni giro. E' il difetto numero dieci di `STATO.md`,
+     * ed e' la ragione per cui questi due casi restano separati.
+     */
+    data class RiprendiPartita(
+        val fixture: Fixture,
+        val resumeAt: Instant,
+        override val dueAt: Instant,
+    ) : TickEffect
+
     data class ChiudiAsta(val auctionId: Long, override val dueAt: Instant) : TickEffect
 
     data class ScadiTrattativa(val negotiationId: Long, override val dueAt: Instant) : TickEffect
@@ -79,6 +103,14 @@ data class TickInput(
     val config: LeagueConfig,
     /** Partite programmate e non ancora giocate. */
     val pendingFixtures: List<Fixture> = emptyList(),
+    /**
+     * Partite ferme all'intervallo, con l'ora in cui riprendono.
+     *
+     * Separate dalle pendenti perche' rispondono a una domanda diversa: una pendente
+     * aspetta il suo calcio d'inizio, una in pausa ha gia' quarantacinque minuti giocati
+     * e aspetta che scada la finestra dei cambi.
+     */
+    val pausedFixtures: List<PausedFixture> = emptyList(),
     val openAuctions: List<Auction> = emptyList(),
     val openNegotiations: List<Negotiation> = emptyList(),
     val activeContracts: List<Contract> = emptyList(),
@@ -88,6 +120,9 @@ data class TickInput(
     val settledMatchDays: Set<Int> = emptySet(),
     val lastDigestAt: Instant? = null,
 )
+
+/** Una partita ferma all'intervallo. */
+data class PausedFixture(val fixture: Fixture, val resumeAt: Instant)
 
 data class TickOutput(
     val effects: List<TickEffect>,
@@ -163,6 +198,7 @@ object WorldTick {
 
         val effects = buildList {
             addAll(matchesDue(input, from, to))
+            addAll(halfTimesDue(input))
             addAll(auctionsDue(input, from, to))
             addAll(negotiationsDue(input, from, to))
             addAll(loansDue(input))
@@ -224,6 +260,20 @@ object WorldTick {
             .filter { it.kickoff != null }
             .filter { inWindow(it.kickoff!!.toInstant(ZoneOffset.UTC), from, to) }
             .map { TickEffect.SimulaPartita(it, it.kickoff!!.toInstant(ZoneOffset.UTC)) }
+
+    /**
+     * Le partite ferme all'intervallo la cui finestra e' finita.
+     *
+     * Qui vale il «in ritardo conta lo stesso» delle aste, e non quello delle partite: una
+     * ripresa saltata non si ripresenta mai piu' con un orario nuovo — resterebbe una
+     * partita a meta' per sempre. Il rischio di rigiocare non c'e', perche' appena il
+     * secondo tempo e' andato la partita esce dall'elenco (`played`) e questo effetto non
+     * puo' piu' nascere.
+     */
+    private fun halfTimesDue(input: TickInput): List<TickEffect> =
+        input.pausedFixtures
+            .filter { !it.resumeAt.isAfter(input.now) }
+            .map { TickEffect.RiprendiPartita(it.fixture, it.resumeAt, it.resumeAt) }
 
     private fun auctionsDue(input: TickInput, from: Instant, to: Instant): List<TickEffect> =
         input.openAuctions
