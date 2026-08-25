@@ -232,22 +232,43 @@ Non è un riempitivo. Ogni difetto grosso corretto finora — il mercato bloccat
 che si mantenevano da sole, gli orari sbagliati di due ore in tre file diversi — è stato
 trovato perché **qualcuno ha guardato**, non perché una prova ha fallito.
 
-### Visto sull'emulatore il 2026-08-25, e non chiuso
+### Visto sull'emulatore il 2026-08-25, capito e corretto lo stesso giorno
 
-**«Metti all'asta» non compare più nel piede della scheda giocatore.** Alla primissima
-apertura dopo l'installazione c'era; riaprendo la stessa scheda più tardi non c'è più, su
-uno svincolato, con zero aste aperte e il club regolarmente presente — cioè con
-`canAuction` che dovrebbe essere vero.
+**«Metti all'asta» spariva dal piede della scheda giocatore.** Alla primissima apertura
+dopo l'installazione c'era; riaprendo la stessa scheda più tardi non c'era più, su uno
+svincolato, con zero aste aperte sui giocatori e il club regolarmente presente.
 
-Non è stato riprodotto in modo pulito e **non è chiaro se dipenda dalle modifiche del
-2026-08-25**: il calcolo di `canAuction` in `MainActivity` non è stato toccato. L'unica
-differenza osservata fra il caso che funziona e quello che non funziona è che nel secondo
-era già passato almeno un giro leggero (`aggiornaLeggero`), che da oggi rilegge anche
-listino, acquisti e intervalli. È il primo posto dove guardare.
+Era scritto qui come «visto e non capito», con l'indizio giusto — *«nel caso che non
+funziona era già passato un giro leggero»*. La causa:
 
-Sta scritto qui invece che nella lista delle cose fatte perché **è stato visto e non
-capito**, e un difetto visto e taciuto è il modo più rapido di ritrovarselo fra un mese
-senza sapere da dove è arrivato.
+```kotlin
+current.auctions.none { it.auction.targetId == row.player.id.value }
+```
+
+`targetId` è un id di **giocatore oppure di staff**, e le due tabelle hanno sequenze
+separate: il giocatore 7 e l'allenatore 7 esistono tutti e due. I club del computer
+aprivano aste sullo staff, e un'asta sull'allenatore numero 7 spegneva il pulsante sul
+giocatore numero 7. Alla prima apertura l'elenco delle aste era ancora vuoto, quindi il
+pulsante c'era; dopo il primo giro leggero le aste arrivavano e il pulsante spariva.
+
+Ogni altro punto dell'app confrontava già anche `targetType`. Questo era l'unico rimasto
+indietro — ed è esattamente il difetto che il commento dentro la vecchia migrazione `0028`
+descriveva in anticipo, sulla tabella `listings`, senza che nessuno lo cercasse anche
+altrove.
+
+Corrette tre cose insieme, perché erano la stessa:
+
+- il confronto adesso guarda anche il tipo (`MainActivity`);
+- **i club del computer non aprono più aste sullo staff**: lo assumono a prezzo fisso come
+  chiunque altro, il che toglie di mezzo la sorgente delle collisioni;
+- e adesso **lo pagano**. `assumiDalFondo` faceva `update staff set club_id = …` e
+  nient'altro: i computer prendevano allenatori e preparatori gratis mentre un umano li
+  pagava. Non era bilanciamento, era una riga mancante.
+
+Vale la pena tenere il metodo, non solo il risultato: il difetto è stato trovato perché
+**qualcuno ha guardato** e perché quello che ha visto è stato scritto anche senza essere
+capito. Un difetto visto e taciuto è il modo più rapido di ritrovarselo fra un mese senza
+sapere da dove è arrivato.
 
 ### Il prossimo blocco, in ordine di valore
 

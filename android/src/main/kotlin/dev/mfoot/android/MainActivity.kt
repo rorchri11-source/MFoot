@@ -375,9 +375,32 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                             // il suo club. La rosa altrui non si tocca — quella si tratta
                             // — ma vendere i propri e' cio' che tiene vivo il mercato dopo
                             // che gli svincolati sono finiti.
+                            /*
+                             * IL CONFRONTO DEVE GUARDARE ANCHE IL TIPO DI BERSAGLIO
+                             *
+                             * `targetId` di un'asta e' un id di **giocatore oppure di
+                             * staff**, e le due tabelle hanno sequenze separate: il
+                             * giocatore 7 e l'allenatore 7 esistono tutti e due. Senza
+                             * `targetType`, un'asta aperta su un membro dello staff
+                             * spegneva «Metti all'asta» sul giocatore con lo stesso
+                             * numero.
+                             *
+                             * E' il difetto visto sull'emulatore il 2026-08-25 e
+                             * registrato in STATO.md come «visto e non capito»: alla prima
+                             * apertura il pulsante c'era, riaprendo la stessa scheda piu'
+                             * tardi spariva. La differenza era che nel frattempo il giro
+                             * leggero aveva caricato le aste — comprese quelle sullo staff
+                             * che aprivano i club del computer.
+                             *
+                             * Ogni altro punto dell'app confronta gia' anche il tipo:
+                             * questo era l'unico rimasto indietro.
+                             */
                             canAuction = current.lega.myClub != null &&
                                 (row.isFreeAgent || row.club?.isMine == true) &&
-                                current.auctions.none { it.auction.targetId == row.player.id.value },
+                                current.auctions.none {
+                                    it.auction.targetType == "player" &&
+                                        it.auction.targetId == row.player.id.value
+                                },
                             isSelling = row.club?.isMine == true,
                             // Il pulsante compare solo dove ha senso: sui propri, e solo
                             // se l'eta' lo consente. Mostrarlo su chiunque vorrebbe dire

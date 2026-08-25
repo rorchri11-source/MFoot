@@ -70,14 +70,21 @@ data class ScoutingMission(
 /**
  * Lo staff: chi lavora per te, chi e' libero, e dove sono i tuoi osservatori.
  *
- * ## Perche' lo staff si vince all'asta
+ * ## Perche' lo staff si assume a prezzo fisso, e non si batte all'asta
  *
- * Perche' un allenatore da cinque stelle vale il triplo di uno da una sulla crescita, e a
- * prezzo fisso se lo prenderebbe chi apre l'app per primo. Un'asta trasforma quella
- * differenza in una decisione: quanto vale, per te, far crescere i tuoi ragazzi il triplo.
+ * Il ragionamento originale era il contrario: un allenatore da cinque stelle vale il
+ * triplo di uno da una sulla crescita, quindi a prezzo fisso se lo prenderebbe chi apre
+ * l'app per primo, e un'asta trasforma quella differenza in una decisione.
  *
- * La funzione `start_auction` accetta `target_type = 'staff'` dal primo giorno e non l'ha
- * mai chiamata nessuno: mancava solo la schermata.
+ * Regge in teoria e non ha retto alla prova. L'asta costa un giro di server per aprirsi e
+ * un altro per chiudersi, e il server gira quando gli pare: dal telefono lo staff non si
+ * prendeva mai, e il proprietario ha dovuto segnalarlo due volte. La differenza fra uno e
+ * cinque stelle la esprime adesso il **prezzo** — venticinque volte, con
+ * [dev.mfoot.core.market.Valuation.staffPrice] — che e' una decisione altrettanto vera e
+ * non ha bisogno che giri niente.
+ *
+ * Resta la vendita: chi ha uno staff e ne trova uno migliore lo mette a listino al prezzo
+ * di sempre e incassa lui.
  */
 object StaffRepository {
 

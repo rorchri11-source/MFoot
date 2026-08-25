@@ -75,6 +75,7 @@ import dev.mfoot.core.model.StaffId
 import dev.mfoot.core.rng.DeterministicRandom
 import dev.mfoot.core.rng.MathX
 import dev.mfoot.core.world.PotentialEstimator
+import dev.mfoot.core.world.Scouting
 import dev.mfoot.core.model.Trait
 import dev.mfoot.core.tick.PausedFixture
 import dev.mfoot.core.tick.TickEffect
@@ -643,14 +644,11 @@ class TickRunner(
         val clubId = club.id
         val mancante = ruoloMancante(clubId)
 
-        // Se manca un ruolo, prima si prova all'asta sul meglio disponibile: e' la
-        // stessa strada che percorre un umano, e un allenatore da cinque stelle deve
-        // costare a tutti. Solo se non c'e' niente da battere si ripiega sul fondo del
-        // listino, che nessuno si contende.
-        if (mancante != null) {
-            if (apriAstaStaff(league, club, mancante)) return true
-            if (assumiDalFondo(league.id, clubId, mancante)) return true
-        }
+        // Se manca un ruolo, lo si assume a prezzo fisso: la stessa strada che percorre un
+        // umano, con lo stesso prezzo. Prima erano due strade diverse — un'asta sui quattro
+        // e cinque stelle, e il fondo del listino preso **gratis** — e nessuna delle due
+        // era quella degli umani.
+        if (mancante != null && assumiStaffAi(league, club, mancante)) return true
 
         val osservatore = osservatoreLibero(clubId) ?: return false
         // Paese e ruolo deterministici sul club e sull osservatore: due AI non partono
@@ -663,10 +661,18 @@ class TickRunner(
         val paese = paesi[rng.nextInt(paesi.size)]
         val ruolo = Position.entries[rng.nextInt(Position.entries.size)]
 
+        // La durata la decide [Scouting], in `core`, dalla configurazione della lega.
+        //
+        // Qui c'era la formula scritta a mano — `8 + (5 - stelle) * 10` **ore** — che era
+        // una terza copia della stessa regola: una in SQL, una qui, e nessuna delle due
+        // toccabile dall'admin. Dal 2026-08-25 il massimo e' due ore e i due estremi
+        // stanno in `rules.scoutMinutesBest/Worst`.
+        val minuti = Scouting.missionMinutes(osservatore.second, league.config.rules)
+
         connection.prepareStatement(
             """
             insert into scouting_missions (league_id, club_id, staff_id, country, position, ready_at)
-            values (?, ?, ?, ?, ?, now() + make_interval(hours => ?))
+            values (?, ?, ?, ?, ?, now() + make_interval(mins => ?))
             """.trimIndent(),
         ).use { st ->
             st.setLong(1, league.id)
@@ -674,105 +680,93 @@ class TickRunner(
             st.setLong(3, osservatore.first)
             st.setString(4, paese)
             st.setString(5, ruolo.name)
-            st.setInt(6, 8 + (5 - osservatore.second.coerceIn(1, 5)) * 10)
+            st.setInt(6, minuti)
             st.executeUpdate()
         }
         return true
     }
 
     /**
-     * Apre un'asta su un membro dello staff che serve davvero.
+     * Il club del computer assume, a prezzo fisso come chiunque altro.
      *
-     * ## Perche' anche le AI devono farlo
+     * ## Perche' non apre piu' un'asta
      *
-     * Perche' se solo gli umani battessero lo staff all'asta, i cinque stelle andrebbero
-     * sempre al primo che apre l'app, senza che nessuno gliene contenda uno. Un allenatore
-     * che moltiplica per 1,8 la crescita di tutta una rosa vale una guerra, e la guerra la
-     * si fa in due.
+     * Perche' dal 2026-08-25 lo staff **non si batte all'asta**, si assume e basta: la
+     * regola vale per gli umani e non poteva valere solo per loro. Un'AI che continuasse a
+     * indire aste su una merce che tutti gli altri comprano con un tocco creerebbe una
+     * seconda economia parallela, con prezzi diversi, sulla stessa cosa.
      *
-     * Il tetto di aste della lega vale anche qui: lo staff non deve poter riempire il
-     * listino al posto dei giocatori.
+     * E quelle aste facevano un danno concreto: `targetId` di un'asta sullo staff e' un id
+     * della tabella `staff`, che ha una sequenza sua. Un'asta aperta sull'allenatore numero
+     * 7 spegneva il pulsante «Metti all'asta» sul **giocatore** numero 7 nell'app, e nessuno
+     * capiva perche'.
+     *
+     * ## Perche' adesso paga
+     *
+     * Perche' prima no. `assumiDalFondo` faceva `update staff set club_id = ...` e
+     * nient'altro: i club del computer si prendevano allenatori e preparatori **gratis**,
+     * mentre un umano li pagava. Non era una scelta di bilanciamento, era una riga
+     * mancante.
+     *
+     * ## Perche' fino a tre stelle e non oltre
+     *
+     * Perche' il tetto di spesa dell'AI durante l'allestimento serve alla rosa, e un
+     * allenatore da cinque stelle costa quanto un titolare. Prende il meglio che puo'
+     * permettersi restando sotto un ventesimo della cassa: cosi' l'organigramma si riempie
+     * senza che il computer si giochi il mercato su un preparatore.
      */
-    private fun apriAstaStaff(league: LeagueRow, club: Club, ruolo: String): Boolean {
-        val market = league.config.market
-        if (countOpenAuctions(league.id) >= market.maxOpenAuctionsPerLeague) return false
-        if (countOpenAuctionsBy(club.id) >= market.maxParallelAuctionsPerClub) return false
+    private fun assumiStaffAi(league: LeagueRow, club: Club, ruolo: String): Boolean {
+        val disponibili = club.credits - club.committedCredits
+        // Un ventesimo della cassa: lo staff non deve mai competere con la rosa.
+        val tetto = disponibili / 20
 
-        val giaInAsta = connection.prepareStatement(
-            "select target_id from auctions where league_id = ? and status = 'APERTA' " +
-                "and target_type = 'staff'",
-        ).use { st ->
-            st.setLong(1, league.id)
-            st.executeQuery().use { rs ->
-                val out = mutableSetOf<Long>()
-                while (rs.next()) out += rs.getLong(1)
-                out
-            }
-        }
-
-        // Solo da quattro stelle in su: sotto non vale la pena occupare uno slot d'asta,
-        // e ci pensa `assumiDalFondo` a riempire l'organigramma senza far rumore.
-        val candidato = connection.prepareStatement(
+        val candidati = mutableListOf<Pair<Long, Int>>()
+        connection.prepareStatement(
             """
             select id, stars from staff
-            where league_id = ? and club_id is null and role = ? and stars >= 4
-            order by stars desc limit 5
+            where league_id = ? and club_id is null and role = ?
+            order by stars desc limit 10
             """.trimIndent(),
         ).use { st ->
             st.setLong(1, league.id)
             st.setString(2, ruolo)
             st.executeQuery().use { rs ->
-                var scelto: Pair<Long, Int>? = null
-                while (rs.next() && scelto == null) {
-                    val id = rs.getLong("id")
-                    if (id !in giaInAsta) scelto = id to rs.getInt("stars")
-                }
-                scelto
+                while (rs.next()) candidati += rs.getLong("id") to rs.getInt("stars")
             }
-        } ?: return false
-
-        val base = 1.coerceAtLeast(candidato.second * candidato.second * 200)
-        if (base > club.availableCredits) return false
-
-        // Lo staff libero non e' di nessuno, quindi chi apre sta sempre **comprando**:
-        // l'offerta di apertura ci va sempre, senza il caso «sto vendendo».
-        val auctionId = connection.prepareStatement(
-            """
-            insert into auctions (league_id, target_type, target_id, started_by, ends_at,
-                                  starting_price, current_price, status)
-            values (?, 'staff', ?, ?, now() + make_interval(mins => ?), ?, ?, 'APERTA')
-            returning id
-            """.trimIndent(),
-        ).use { st ->
-            st.setLong(1, league.id)
-            st.setLong(2, candidato.first)
-            st.setLong(3, club.id.value)
-            st.setInt(4, market.auctionDurationMinutes)
-            st.setInt(5, base)
-            st.setInt(6, base)
-            st.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else null }
-        } ?: return false
-
-        connection.prepareStatement(
-            "insert into bids (auction_id, club_id, max_amount) values (?, ?, ?)",
-        ).use { st ->
-            st.setLong(1, auctionId)
-            st.setLong(2, club.id.value)
-            st.setInt(3, base)
-            st.executeUpdate()
         }
 
-        connection.prepareStatement(
-            "update clubs set committed_credits = committed_credits + ? where id = ?",
-        ).use { st ->
-            st.setInt(1, base)
-            st.setLong(2, club.id.value)
-            st.executeUpdate()
-        }
+        // Il migliore che sta dentro il tetto. La lista e' gia' ordinata per stelle, quindi
+        // il primo che passa il filtro e' quello.
+        val scelto = candidati.firstOrNull { (_, stelle) ->
+            Valuation.staffPrice(stelle, league.config) <= tetto
+        } ?: return false
 
-        log("Lega ${league.id}: ${club.name} apre un'asta per un $ruolo da ${candidato.second} stelle.")
+        val prezzo = Valuation.staffPrice(scelto.second, league.config)
+
+        // `and club_id is null` non e' pleonastico: fra la lettura e la scrittura un'altra
+        // AI dello stesso giro puo' averlo gia' preso, e due club con lo stesso allenatore
+        // e' esattamente il genere di corsa critica che la transazione per lega esiste per
+        // impedire.
+        val preso = connection.prepareStatement(
+            "update staff set club_id = ? where id = ? and club_id is null",
+        ).use { st ->
+            st.setLong(1, club.id.value)
+            st.setLong(2, scelto.first)
+            st.executeUpdate() > 0
+        }
+        if (!preso) return false
+
+        connection.prepareStatement("update clubs set credits = credits - ? where id = ?")
+            .use { st ->
+                st.setInt(1, prezzo)
+                st.setLong(2, club.id.value)
+                st.executeUpdate()
+            }
+
+        log("Lega ${league.id}: ${club.name} assume un $ruolo da ${scelto.second} stelle per $prezzo.")
         return true
     }
+
 
     /** Ruolo e stelle di un membro dello staff, per valutarne l asta. */
     private fun staffInAsta(staffId: StaffId): Pair<String, Int>? =
@@ -798,29 +792,6 @@ class TickRunner(
             st.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else null }
         }
 
-    /** Prende il migliore fra i liberi fino a tre stelle, se se lo puo' permettere. */
-    private fun assumiDalFondo(leagueId: Long, clubId: ClubId, ruolo: String): Boolean {
-        val scelto = connection.prepareStatement(
-            """
-            select id, stars from staff
-            where league_id = ? and club_id is null and role = ? and stars <= 3
-            order by stars desc limit 1
-            """.trimIndent(),
-        ).use { st ->
-            st.setLong(1, leagueId)
-            st.setString(2, ruolo)
-            st.executeQuery().use { rs ->
-                if (rs.next()) rs.getLong("id") to rs.getInt("stars") else null
-            }
-        } ?: return false
-
-        connection.prepareStatement("update staff set club_id = ? where id = ? and club_id is null")
-            .use { st ->
-                st.setLong(1, clubId.value)
-                st.setLong(2, scelto.first)
-                return st.executeUpdate() > 0
-            }
-    }
 
     /** Un osservatore di questo club che non e' gia' in viaggio. */
     private fun osservatoreLibero(clubId: ClubId): Pair<Long, Int>? =
