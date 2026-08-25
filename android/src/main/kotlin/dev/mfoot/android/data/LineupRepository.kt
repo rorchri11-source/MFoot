@@ -2,7 +2,9 @@ package dev.mfoot.android.data
 
 import dev.mfoot.core.json.JsonNode
 import dev.mfoot.core.json.JsonWriter
+import dev.mfoot.core.match.ConditionalOrder
 import dev.mfoot.core.match.Formation
+import dev.mfoot.core.match.OrderJson
 import dev.mfoot.core.match.TacticalPressing
 import dev.mfoot.core.match.TacticalStance
 import dev.mfoot.core.match.TacticalTempo
@@ -25,7 +27,43 @@ data class SavedLineup(
     val tactics: Tactics,
     val captainId: Long?,
     val penaltyTakerId: Long?,
+    /**
+     * Gli ordini condizionali.
+     *
+     * Stanno qui e non in [SavedDuties] perche' la colonna `orders` esiste in `lineups`
+     * dalla `create table` di `0001_schema.sql`: chiederla non puo' rompere niente su
+     * nessun database. Quello che mancava non era la colonna, era la schermata.
+     */
+    val orders: List<ConditionalOrder> = emptyList(),
 )
+
+/**
+ * I tre incarichi da palla ferma, che si leggono e si scrivono **a parte**.
+ *
+ * ## Perche' a parte, e non insieme al resto
+ *
+ * Perche' `corner_taker_id`, `free_kick_taker_id` e `long_ball_taker_id` arrivano dalla
+ * migrazione `0027`, e questa e' la trappola che il progetto ha gia' pagato due volte —
+ * con `clubs.division_level` e con `clubs.parent_club_id`. PostgREST rifiuta **l'intera
+ * query** per una colonna che non esiste: infilarle nella SELECT della formazione
+ * vorrebbe dire che, su un database dove la `0027` non e' ancora stata eseguita, non si
+ * legge piu' nessuna formazione — non gli incarichi, la formazione intera.
+ *
+ * Chiesti a parte, al peggio falliscono da soli: restano null, e
+ * [dev.mfoot.core.match.SetPieces] mette in campo il piu' adatto come ha sempre fatto.
+ */
+data class SavedDuties(
+    val cornerTakerId: Long? = null,
+    val freeKickTakerId: Long? = null,
+    val longBallTakerId: Long? = null,
+) {
+    val vuoti: Boolean
+        get() = cornerTakerId == null && freeKickTakerId == null && longBallTakerId == null
+
+    companion object {
+        val NESSUNO = SavedDuties()
+    }
+}
 
 /**
  * Legge e scrive la propria formazione.
@@ -43,9 +81,54 @@ data class SavedLineup(
  */
 object LineupRepository {
 
+    /**
+     * Gli incarichi da palla ferma, in una lettura tutta sua.
+     *
+     * Un errore qui **non e' un errore per chi gioca**: significa quasi sempre che la
+     * migrazione `0027` non e' ancora stata eseguita su quel database. Si torna
+     * [SavedDuties.NESSUNO] e la partita si gioca con gli incaricati scelti dal motore,
+     * esattamente come prima che questi tre campi esistessero.
+     */
+    suspend fun readDuties(clubId: Long): SavedDuties {
+        val path = "/rest/v1/lineups?select=corner_taker_id,free_kick_taker_id," +
+            "long_ball_taker_id&club_id=eq.$clubId"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            is ApiResult.Error -> SavedDuties.NESSUNO
+            is ApiResult.Ok -> {
+                val row = JsonNode.parse(esito.value).asList().firstOrNull()
+                    ?: return SavedDuties.NESSUNO
+                SavedDuties(
+                    cornerTakerId = row["corner_taker_id"].long(0).takeIf { it != 0L },
+                    freeKickTakerId = row["free_kick_taker_id"].long(0).takeIf { it != 0L },
+                    longBallTakerId = row["long_ball_taker_id"].long(0).takeIf { it != 0L },
+                )
+            }
+        }
+    }
+
+    /**
+     * Scrive i tre incarichi nuovi, e **se non riesce lascia tutto com'e'**.
+     *
+     * Separata da [save] per la stessa ragione per cui [readDuties] e' separata da [read]:
+     * un corpo che contiene una colonna inesistente viene rifiutato tutto intero, e
+     * infilarli nell'upsert vorrebbe dire che su un database non migrato non si salva piu'
+     * nemmeno la formazione.
+     */
+    suspend fun saveDuties(clubId: Long, duties: SavedDuties) {
+        val w = JsonWriter(256)
+        w.beginObject()
+        w.nullableId("corner_taker_id", duties.cornerTakerId)
+        w.nullableId("free_kick_taker_id", duties.freeKickTakerId)
+        w.nullableId("long_ball_taker_id", duties.longBallTakerId)
+        w.endObject()
+
+        SupabaseApi.patch("lineups?club_id=eq.$clubId", w.toString())
+    }
+
     suspend fun read(clubId: Long): ApiResult<SavedLineup?> {
         val path = "/rest/v1/lineups?select=formation,slots,bench,tactics,captain_id," +
-            "penalty_taker_id&club_id=eq.$clubId"
+            "penalty_taker_id,orders&club_id=eq.$clubId"
 
         return SupabaseApi.get(path).then { body ->
             val row = JsonNode.parse(body).asList().firstOrNull()
@@ -92,6 +175,7 @@ object LineupRepository {
                     },
                     captainId = row["captain_id"].long(0).takeIf { it != 0L },
                     penaltyTakerId = row["penalty_taker_id"].long(0).takeIf { it != 0L },
+                    orders = OrderJson.read(row["orders"]),
                 ),
             )
         }
@@ -138,6 +222,10 @@ object LineupRepository {
         // virgolette e' un cast che a volte passa e a volte no.
         w.nullableId("captain_id", lineup.captainId)
         w.nullableId("penalty_taker_id", lineup.penaltyTakerId)
+
+        // Gli ordini passano da `core`, che e' anche chi li rilegge nel tick: due
+        // serializzazioni diverse darebbero ordini che l'app mostra e il server ignora.
+        w.rawField("orders", OrderJson.write(lineup.orders))
         w.endObject()
         w.endArray()
 

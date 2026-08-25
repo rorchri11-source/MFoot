@@ -300,6 +300,29 @@ object SupabaseApi {
             ).then { ApiResult.Ok(Unit) }
         }
 
+    /**
+     * Aggiorna alcune colonne di righe che esistono gia'.
+     *
+     * Serve dove [upsert] non basta: le colonne aggiunte da una migrazione si scrivono
+     * **in una richiesta a parte**, perche' su un database che non ha ancora quella
+     * migrazione PostgREST rifiuta l'intero corpo — e con l'upsert vorrebbe dire non
+     * riuscire piu' a salvare nemmeno le colonne di sempre.
+     *
+     * @param path percorso con il filtro gia' scritto, es. `lineups?club_id=eq.12`.
+     */
+    suspend fun patch(path: String, payload: String): ApiResult<Unit> =
+        withContext(Dispatchers.IO) {
+            request(
+                path = "/rest/v1/$path",
+                method = "PATCH",
+                body = payload,
+                extraHeaders = mapOf(
+                    "Prefer" to "return=minimal",
+                    "Content-Profile" to "public",
+                ),
+            ).then { ApiResult.Ok(Unit) }
+        }
+
     /** Quante righe ci sono in una tabella: serve a verificare che il carico sia arrivato. */
     suspend fun count(table: String, leagueId: Long): ApiResult<Int> =
         withContext(Dispatchers.IO) {

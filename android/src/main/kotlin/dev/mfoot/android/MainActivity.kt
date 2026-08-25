@@ -255,8 +255,11 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onLoadStaff = viewModel::caricaStaff,
                         onMoveStaff = viewModel::spostaStaff,
                         onAuctionStaff = viewModel::mettiStaffAllAsta,
+                        onAssumiStaff = viewModel::assumiStaff,
+                        onVendiStaff = viewModel::vendiStaff,
                         onSendScout = viewModel::mandaOsservatore,
                         onDismissNotice = viewModel::chiudiAvviso,
+                        onCrediti = viewModel::adminCrediti,
                         settings = settings,
                         onConfigChange = viewModel::modificaRegolamento,
                         onConfigSave = viewModel::salvaRegolamento,
@@ -361,6 +364,13 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                             row = row,
                             carriera = carriera,
                             giornata = current.lega.league.currentMatchDay,
+                            // Solo per i propri: gli incarichi degli altri club non si
+                            // conoscono, e mostrarne di finti sarebbe peggio che tacere.
+                            incarichi = if (row.club?.isMine == true) {
+                                lineup.incarichiDi(row.player.id.value)
+                            } else {
+                                emptyList()
+                            },
                             // Uno svincolato lo puo' battere chiunque; un tesserato solo
                             // il suo club. La rosa altrui non si tocca — quella si tratta
                             // — ma vendere i propri e' cio' che tiene vivo il mercato dopo
@@ -382,8 +392,27 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                                     "In Primavera"
                                 else -> null
                             },
+                            creditiDisponibili = current.lega.myClub?.available ?: 0,
+                            rilancioMinimo = current.lega.league.config.market.minimumRaise,
                             onYouth = { viewModel.spostaSquadra(row) },
                             onAuction = { viewModel.mettiAllAsta(row) },
+                            onCompra = { viewModel.compra(row) },
+                            onVendi = { prezzo -> viewModel.mettiInVendita(row, prezzo) },
+                            onRitira = { viewModel.ritiraDalListino(row) },
+                            onSvincola = { viewModel.svincola(row) },
+                            onContesta = { massimo -> viewModel.contesta(row, massimo) },
+                            // Solo all'admin, e solo sulle prime squadre: spostare un
+                            // giocatore in una Primavera vorrebbe dire scavalcare la
+                            // regola dell'eta', che vive da un'altra parte.
+                            adminClubs = if (current.lega.league.isAdmin) {
+                                current.lega.clubs
+                                    .filter { it.parentClubId == null }
+                                    .map { it.id to it.name }
+                            } else {
+                                emptyList()
+                            },
+                            onAdminAssegna = { clubId -> viewModel.adminAssegna(row, clubId) },
+                            onAdminSvincola = { viewModel.adminSvincola(row) },
                             onClose = { viewModel.select(null) },
                         )
                     }

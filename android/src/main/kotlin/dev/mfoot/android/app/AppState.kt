@@ -35,6 +35,22 @@ data class PlayerRow(
     val knowledge: Int = 0,
     /** Sta in Primavera: si allena e non gioca. */
     val isYouth: Boolean = false,
+    /**
+     * Scadenza e stipendio, se qualcuno lo ha sotto contratto.
+     *
+     * Null per gli svincolati, ed e' il caso giusto: uno svincolato non ha una scadenza,
+     * non ha una scadenza *sconosciuta*.
+     */
+    val contratto: dev.mfoot.android.data.ContractInfo? = null,
+    /** Il prezzo a cui e' in vendita adesso, o null se non lo e'. */
+    val inVendita: dev.mfoot.android.data.ListingView? = null,
+    /**
+     * L'acquisto ancora contestabile che lo riguarda.
+     *
+     * Vale per dodici ore dopo che qualcuno l'ha comprato: e' l'unica finestra in cui
+     * si puo' aprire un'asta, e finita quella il giocatore e' definitivo.
+     */
+    val acquisto: dev.mfoot.android.data.PurchaseView? = null,
 ) {
     val isFreeAgent: Boolean get() = club == null
 
@@ -258,6 +274,23 @@ sealed interface AppState {
         val browse: BrowseState = BrowseState(),
         val auctions: List<AuctionRow> = emptyList(),
         val auctionFilter: AuctionFilter = AuctionFilter.TUTTE,
+        /**
+         * Gli acquisti ancora contestabili, di tutta la lega.
+         *
+         * Pubblici di proposito: contestare richiede di sapere che qualcuno ha comprato.
+         * Un acquisto segreto per dodici ore sarebbe una finestra che nessuno puo' usare.
+         */
+        val acquisti: List<dev.mfoot.android.data.PurchaseView> = emptyList(),
+        /** L'acquisto che si sta contestando, a schermo pieno. */
+        val contestando: PlayerRow? = null,
+        /**
+         * Una partita propria ferma all'intervallo.
+         *
+         * Dura pochi minuti, ed e' l'unica cosa dell'app che ha una scadenza cosi' breve:
+         * senza scriverlo da qualche parte, la finestra passerebbe senza che nessuno sappia
+         * di averla avuta.
+         */
+        val intervallo: dev.mfoot.android.data.Intervallo? = null,
         /** L'asta aperta a schermo pieno per fare un'offerta. */
         val bidding: AuctionRow? = null,
         /** La cronologia dell'asta aperta a schermo pieno: chi ha offerto, e a che prezzo. */
@@ -298,6 +331,17 @@ sealed interface AppState {
 
         /** C'e' una seconda squadra fra cui passare? */
         val haLaPrimavera: Boolean get() = lega.myYouthClub != null
+
+        /**
+         * Gli acquisti che si possono ancora contestare.
+         *
+         * I propri restano dentro: chi ha comprato deve poter vedere quanto manca alla
+         * fine della finestra, ed e' l'informazione che gli interessa di piu' — e' il
+         * momento in cui sapra' se il giocatore e' suo davvero.
+         */
+        val contestabili: List<PlayerRow>
+            get() = rows.filter { it.acquisto?.aperto() == true }
+                .sortedBy { it.acquisto?.contestableUntil }
 
         /** C'e' una schermata sotto a cui tornare, o il tasto indietro chiude l'app? */
         val canGoBack: Boolean get() = stack.size > 1 || drawerOpen || bidding != null

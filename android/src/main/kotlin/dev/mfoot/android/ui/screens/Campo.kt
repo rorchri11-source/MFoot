@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.LineupEdit
+import dev.mfoot.android.app.OrdineInComposizione
 import dev.mfoot.android.ui.Chip
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Hairline
@@ -44,6 +45,8 @@ import dev.mfoot.android.ui.theme.MFootSpacing
 import dev.mfoot.android.ui.theme.MFootType
 import dev.mfoot.core.match.Formation
 import dev.mfoot.core.match.LineupFitter
+import dev.mfoot.core.match.MatchDuty
+import dev.mfoot.core.match.SetPieces
 import dev.mfoot.core.match.TacticalPressing
 import dev.mfoot.core.match.TacticalStance
 import dev.mfoot.core.match.TacticalTempo
@@ -107,12 +110,64 @@ fun CampoScreen(
         return
     }
 
+    val assegnando = edit.assegnando
+    if (assegnando != null) {
+        SceltaIncaricato(
+            duty = assegnando,
+            candidati = edit.candidati(assegnando),
+            attuale = edit.incaricato(assegnando),
+            onPick = { onChange(edit.conIncarico(assegnando, it.id.value)) },
+            onClear = { onChange(edit.conIncarico(assegnando, null)) },
+            onClose = { onChange(edit.copy(assegnando = null)) },
+        )
+        return
+    }
+
+    val ordine = edit.nuovoOrdine
+    if (ordine != null) {
+        ComponiOrdine(
+            bozza = ordine,
+            inCampo = edit.eleven.filterNotNull(),
+            panchina = edit.bench,
+            onChange = { onChange(edit.copy(nuovoOrdine = it)) },
+            onConferma = {
+                // L'identificativo e' il primo libero: gli ordini con lo stesso id fanno
+                // fallire `TeamSetup` dentro al tick, cioe' fermano la partita.
+                val id = (edit.orders.maxOfOrNull { it.id } ?: 0) + 1
+                val costruito = ordine.costruisci(id)
+                onChange(
+                    edit.copy(
+                        orders = if (costruito == null) edit.orders else edit.orders + costruito,
+                        nuovoOrdine = null,
+                    ),
+                )
+            },
+            onClose = { onChange(edit.copy(nuovoOrdine = null)) },
+        )
+        return
+    }
+
     Column(
         Modifier
             .fillMaxSize()
             .background(MFootColors.bg)
             .verticalScroll(rememberScrollState()),
     ) {
+        // La finestra dell'intervallo, se e' aperta adesso.
+        //
+        // In cima a tutto e con il conto alla rovescia: dura pochi minuti, ed e' l'unica
+        // cosa dell'app che scade mentre la si guarda. Sotto c'e' gia' tutto quello che
+        // serve per approfittarne — undici caselle, panchina, assetto e incarichi.
+        state.intervallo?.takeIf { it.aperto() }?.let { finestra ->
+            Box(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 0.dp)) {
+                Notice(
+                    "Intervallo: puoi cambiare per il secondo tempo. Si riprende fra " +
+                        finestra.tempoRimasto() + ". Salva prima che scada.",
+                    MFootColors.gamble,
+                )
+            }
+        }
+
         Moduli(edit.formation) { onChange(edit.withFormation(it)) }
 
         Box(Modifier.padding(horizontal = MFootSpacing.section)) {
@@ -170,7 +225,15 @@ fun CampoScreen(
         Spacer(Modifier.height(MFootSpacing.section))
         Panchina(edit)
         Spacer(Modifier.height(MFootSpacing.section))
+        Incarichi(edit) { onChange(edit.copy(assegnando = it)) }
+        Spacer(Modifier.height(MFootSpacing.section))
         Assetto(edit) { onChange(edit.copy(tactics = it)) }
+        Spacer(Modifier.height(MFootSpacing.section))
+        Ordini(
+            edit = edit,
+            onNuovo = { onChange(edit.copy(nuovoOrdine = OrdineInComposizione())) },
+            onElimina = { id -> onChange(edit.copy(orders = edit.orders.filterNot { it.id == id })) },
+        )
         Spacer(Modifier.height(40.dp))
     }
 }
@@ -363,6 +426,464 @@ private fun <T> Scelta(
  * scelta sbagliata. Accanto al nome si vede quanto rende li', cosi' il salto e' visibile
  * invece che sottinteso.
  */
+// --------------------------------------------------------------------------- incarichi
+
+/**
+ * I cinque incarichi.
+ *
+ * ## Perche' stanno qui e non in una schermata loro
+ *
+ * Perche' si decidono **guardando l'undici**. Chi batte gli angoli lo si sceglie dopo aver
+ * visto chi gioca sulle fasce, e il capitano dopo aver visto chi e' in campo: portarli
+ * altrove vorrebbe dire ricordarsi a memoria la formazione appena composta.
+ *
+ * ## Cosa dice la riga quando non hai scelto
+ *
+ * Il nome di chi calcerebbe comunque, con scritto che lo ha scelto il gioco. E' una
+ * differenza che conta: «nessuno» farebbe pensare che i rigori non li tiri nessuno, mentre
+ * il motore un rigorista ce l'ha sempre — e per la prima volta si puo' vedere chi e'.
+ */
+@Composable
+private fun Incarichi(edit: LineupEdit, onApri: (MatchDuty) -> Unit) {
+    Column(Modifier.padding(horizontal = MFootSpacing.section)) {
+        Label("Incarichi")
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Se non scegli sceglie il gioco, e sceglie il più adatto. Ma sul dischetto " +
+                "all'ultimo minuto ci va chi hai deciso tu.",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+        Spacer(Modifier.height(12.dp))
+
+        MatchDuty.entries.forEach { duty ->
+            val scelto = edit.incaricato(duty)
+            val ripiego = if (scelto == null) edit.candidati(duty).firstOrNull() else null
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onApri(duty) }
+                    .padding(vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .background(
+                            if (scelto != null) MFootColors.elite else MFootColors.core,
+                            MFootShapes.field,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        sigla(duty),
+                        style = MFootType.value,
+                        color = if (scelto != null) MFootColors.onAccent else MFootColors.ink3,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+
+                Column(Modifier.weight(1f)) {
+                    Text(duty.label, style = MFootType.rowTitle, color = MFootColors.ink)
+                    Text(
+                        when {
+                            scelto != null -> "${scelto.shortName} · ${duty.hint}"
+                            ripiego != null -> "${ripiego.shortName} — scelto dal gioco"
+                            else -> "Nessuno in campo"
+                        },
+                        style = MFootType.chip,
+                        color = if (scelto != null) MFootColors.ink2 else MFootColors.ink3,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Text("›", style = MFootType.playerName, color = MFootColors.ink3)
+            }
+            Hairline()
+        }
+    }
+}
+
+/** La lettera sul quadratino. Una sola, perche' compare anche piccola sul campo. */
+private fun sigla(duty: MatchDuty): String = when (duty) {
+    MatchDuty.CAPITANO -> "C"
+    MatchDuty.RIGORISTA -> "R"
+    MatchDuty.ANGOLI -> "A"
+    MatchDuty.PUNIZIONI -> "P"
+    MatchDuty.LANCI_LUNGHI -> "L"
+}
+
+@Composable
+private fun SceltaIncaricato(
+    duty: MatchDuty,
+    candidati: List<Player>,
+    attuale: Player?,
+    onPick: (Player) -> Unit,
+    onClear: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().background(MFootColors.bg)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(MFootColors.core)
+                .padding(MFootSpacing.section, 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(duty.label, style = MFootType.playerName, color = MFootColors.ink)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "In ordine di ${duty.hint}, fra chi è in campo",
+                    style = MFootType.chip,
+                    color = MFootColors.ink3,
+                )
+            }
+            Text(
+                "Chiudi",
+                style = MFootType.rowTitle,
+                color = MFootColors.ink2,
+                modifier = Modifier.clickable(onClick = onClose).padding(8.dp),
+            )
+        }
+        Hairline()
+
+        LazyColumn(Modifier.weight(1f)) {
+            if (attuale != null) {
+                item {
+                    Text(
+                        "Lascia scegliere al gioco",
+                        style = MFootType.rowTitle,
+                        color = MFootColors.gamble,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onClear)
+                            .padding(MFootSpacing.section, 15.dp),
+                    )
+                    Hairline()
+                }
+            }
+
+            items(candidati, key = { it.id.value }) { player ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(player) }
+                        .padding(MFootSpacing.section, 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Ruolo(player.primaryPosition)
+                    Spacer(Modifier.width(11.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            player.shortName,
+                            style = MFootType.rowTitle,
+                            color = MFootColors.ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (player.id == attuale?.id) {
+                            Text("Ha l'incarico adesso", style = MFootType.chip, color = MFootColors.elite)
+                        }
+                    }
+                    // Il punteggio dell'incarico, non l'overall: qui la domanda non e'
+                    // quanto e' forte, e' quanto e' adatto a questa cosa.
+                    Text(
+                        "${StrictMath.round(SetPieces.aptitude(player, duty)).toInt()}",
+                        style = MFootType.overallRow,
+                        color = MFootColors.rating(
+                            StrictMath.round(SetPieces.aptitude(player, duty)).toInt(),
+                        ),
+                    )
+                }
+                Hairline()
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------- ordini
+
+/**
+ * Gli ordini condizionali.
+ *
+ * ## Perche' esistono
+ *
+ * Perche' le partite si giocano quando le ha fissate qualcun altro, e chi lavora alle
+ * nove di sera non deve per questo giocare in dieci. Un ordine e' una decisione presa
+ * prima: «se sono sotto dal 60', dentro la punta». Il motore li applica da solo.
+ *
+ * Erano completi in `core` dal primo giorno — con i loro test — e la colonna del database
+ * li aspettava vuota. Mancava solo questa lista.
+ */
+@Composable
+private fun Ordini(edit: LineupEdit, onNuovo: () -> Unit, onElimina: (Int) -> Unit) {
+    Column(Modifier.padding(horizontal = MFootSpacing.section)) {
+        Label("Ordini per la partita")
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Decisioni prese adesso, che il gioco esegue durante la partita. Servono " +
+                "quando si gioca alle nove e tu sei al lavoro.",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+        Spacer(Modifier.height(12.dp))
+
+        if (edit.orders.isEmpty()) {
+            Text(
+                "Nessun ordine: la partita andrà come l'hai schierata.",
+                style = MFootType.secondary,
+                color = MFootColors.ink3,
+            )
+            Spacer(Modifier.height(12.dp))
+        } else {
+            edit.orders.forEach { ordine ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        ordine.describe(),
+                        style = MFootType.secondary,
+                        color = MFootColors.ink,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "Togli",
+                        style = MFootType.chip,
+                        color = MFootColors.gamble,
+                        modifier = Modifier
+                            .clickable { onElimina(ordine.id) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                Hairline()
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+
+        GhostButton(text = "Aggiungi un ordine", onClick = onNuovo, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+/**
+ * Il compositore di un ordine: **quando**, e **allora**.
+ *
+ * Due domande in fila, e in fondo la frase che ne esce scritta com'e' — la stessa che
+ * comparira' nella lista. Vedere l'ordine prima di confermarlo evita l'errore piu'
+ * frequente di questa schermata: comporre l'opposto di quello che si voleva.
+ */
+@Composable
+private fun ComponiOrdine(
+    bozza: OrdineInComposizione,
+    inCampo: List<Player>,
+    panchina: List<Player>,
+    onChange: (OrdineInComposizione) -> Unit,
+    onConferma: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().background(MFootColors.bg)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(MFootColors.core)
+                .padding(MFootSpacing.section, 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Nuovo ordine",
+                style = MFootType.playerName,
+                color = MFootColors.ink,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Chiudi",
+                style = MFootType.rowTitle,
+                color = MFootColors.ink2,
+                modifier = Modifier.clickable(onClick = onClose).padding(8.dp),
+            )
+        }
+        Hairline()
+
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(MFootSpacing.section),
+        ) {
+            Label("Quando")
+            Spacer(Modifier.height(9.dp))
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                OrdineInComposizione.Quando.entries.forEach { q ->
+                    Chip(q.label, q == bozza.quando) { onChange(bozza.copy(quando = q)) }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            if (bozza.quando == OrdineInComposizione.Quando.STANCO) {
+                Numero(
+                    etichetta = "Sotto questa stamina",
+                    valore = bozza.soglia,
+                    passo = 5,
+                    minimo = 10,
+                    massimo = 70,
+                ) { onChange(bozza.copy(soglia = it)) }
+            } else {
+                Numero(
+                    etichetta = "Dal minuto",
+                    valore = bozza.minuto,
+                    passo = 5,
+                    minimo = 5,
+                    massimo = 90,
+                ) { onChange(bozza.copy(minuto = it)) }
+            }
+
+            Spacer(Modifier.height(22.dp))
+            Label("Allora")
+            Spacer(Modifier.height(9.dp))
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                OrdineInComposizione.Cosa.entries.forEach { c ->
+                    val possibile = c != OrdineInComposizione.Cosa.SOSTITUZIONE || panchina.isNotEmpty()
+                    if (possibile) Chip(c.label, c == bozza.cosa) { onChange(bozza.copy(cosa = c)) }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            when (bozza.cosa) {
+                OrdineInComposizione.Cosa.ASSETTO -> Valori(
+                    TacticalStance.entries, bozza.stance, { it.label },
+                ) { onChange(bozza.copy(stance = it)) }
+
+                OrdineInComposizione.Cosa.RITMO -> Valori(
+                    TacticalTempo.entries, bozza.tempo, { it.label },
+                ) { onChange(bozza.copy(tempo = it)) }
+
+                OrdineInComposizione.Cosa.PRESSING -> Valori(
+                    TacticalPressing.entries, bozza.pressing, { it.label },
+                ) { onChange(bozza.copy(pressing = it)) }
+
+                OrdineInComposizione.Cosa.AMPIEZZA -> Valori(
+                    TacticalWidth.entries, bozza.width, { it.label },
+                ) { onChange(bozza.copy(width = it)) }
+
+                OrdineInComposizione.Cosa.SOSTITUZIONE -> {
+                    Label("Chi esce")
+                    Spacer(Modifier.height(8.dp))
+                    Valori(inCampo, inCampo.firstOrNull { it.id.value == bozza.esce }, { it.shortName }) {
+                        onChange(bozza.copy(esce = it.id.value))
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Label("Chi entra")
+                    Spacer(Modifier.height(8.dp))
+                    Valori(panchina, panchina.firstOrNull { it.id.value == bozza.entra }, { it.shortName }) {
+                        onChange(bozza.copy(entra = it.id.value))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            // L'ordine scritto per esteso, prima di confermarlo.
+            bozza.costruisci(0)?.let { anteprima ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(MFootColors.core, MFootShapes.band)
+                        .padding(16.dp),
+                ) {
+                    Text(anteprima.describe(), style = MFootType.rowTitle, color = MFootColors.elite)
+                }
+            }
+        }
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(MFootColors.core)
+                .padding(MFootSpacing.section, 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(MFootSpacing.related),
+        ) {
+            GhostButton(text = "Annulla", onClick = onClose, modifier = Modifier.weight(1f))
+            PrimaryButton(
+                text = "Aggiungi",
+                // Una sostituzione senza chi entra non e' un ordine: il pulsante e' spento
+                // prima, non un errore dopo.
+                enabled = bozza.completo,
+                onClick = onConferma,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+/** Una fila di valori fra cui sceglierne uno. */
+@Composable
+private fun <T> Valori(
+    opzioni: List<T>,
+    selezionato: T?,
+    labelOf: (T) -> String,
+    onPick: (T) -> Unit,
+) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        opzioni.forEach { opzione ->
+            Chip(labelOf(opzione), opzione == selezionato) { onPick(opzione) }
+        }
+    }
+}
+
+/** Un numero che si alza e si abbassa a passi, senza tastiera. */
+@Composable
+private fun Numero(
+    etichetta: String,
+    valore: Int,
+    passo: Int,
+    minimo: Int,
+    massimo: Int,
+    onChange: (Int) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MFootColors.core, MFootShapes.band)
+            .padding(14.dp, 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(etichetta, style = MFootType.secondary, color = MFootColors.ink2, modifier = Modifier.weight(1f))
+        Passo("−") { onChange((valore - passo).coerceAtLeast(minimo)) }
+        Text(
+            "$valore",
+            style = MFootType.price,
+            color = MFootColors.ink,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(52.dp),
+        )
+        Passo("+") { onChange((valore + passo).coerceAtMost(massimo)) }
+    }
+}
+
+@Composable
+private fun Passo(segno: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(38.dp)
+            .background(MFootColors.bg, MFootShapes.pill)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(segno, style = MFootType.playerName, color = MFootColors.ink)
+    }
+}
+
 @Composable
 private fun SceltaGiocatore(
     position: Position,

@@ -1,12 +1,14 @@
 package dev.mfoot.android.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,6 +28,7 @@ import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Scheda
 import dev.mfoot.android.ui.kit.CrestBadge
 import dev.mfoot.android.ui.theme.MFootColors
+import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.comparsa
 import dev.mfoot.android.ui.theme.lampo
 import dev.mfoot.android.ui.theme.ricordaIntro
@@ -51,6 +54,8 @@ import dev.mfoot.core.model.Money
 fun SquadreScreen(
     state: AppState.Dentro,
     onOpenClub: (Long) -> Unit,
+    /** Correzione dei crediti da amministratore: il delta, mai il totale. */
+    onCrediti: (Long, Int) -> Unit = { _, _ -> },
 ) {
     val divisioni = state.lega.league.config.divisions
     val mio = state.lega.myClub
@@ -144,6 +149,21 @@ fun SquadreScreen(
                         .padding(horizontal = MFootSpacing.section)
                         .comparsa(indice, intro),
                 ) { onOpenClub(c.id) }
+
+                // I comandi da amministratore, sotto la scheda del club.
+                //
+                // Il passo e' il decimo del budget iniziale della lega, non un numero
+                // fisso: in una lega da trecento crediti «+100» e' un terzo di stagione,
+                // in una da centomila e' polvere. Come tutto il resto dell'economia, la
+                // cifra segue quella che l'admin ha scelto.
+                if (state.lega.league.isAdmin) {
+                    val passo = (state.lega.league.config.economy.startingCredits / 10)
+                        .coerceAtLeast(1)
+                    CorrezioneCrediti(
+                        passo = passo,
+                        modifier = Modifier.padding(horizontal = MFootSpacing.section),
+                    ) { delta -> onCrediti(c.id, delta) }
+                }
             }
         }
     }
@@ -157,6 +177,44 @@ fun SquadreScreen(
  * sinistra invece che da un fondo colorato: il fondo colorato su una scheda gia' scura
  * non si vedeva.
  */
+/**
+ * Piu' e meno crediti, per l'amministratore.
+ *
+ * Un **delta** e mai un totale: scrivere «metti 300» a un club che ne ha 412 e' una
+ * perdita silenziosa di quello che ha guadagnato giocando, e in una lega fra amici quella
+ * perdita la scopre lui, dopo, senza sapere perche'.
+ */
+@Composable
+private fun CorrezioneCrediti(
+    passo: Int,
+    modifier: Modifier = Modifier,
+    onCrediti: (Int) -> Unit,
+) {
+    Row(
+        modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "admin",
+            style = MFootType.label,
+            color = MFootColors.ink3,
+            modifier = Modifier.weight(1f),
+        )
+        listOf(-passo, passo).forEach { delta ->
+            Text(
+                if (delta > 0) "+$delta" else "$delta",
+                style = MFootType.chip,
+                color = if (delta > 0) MFootColors.elite else MFootColors.gamble,
+                modifier = Modifier
+                    .background(MFootColors.core, MFootShapes.pill)
+                    .clickable { onCrediti(delta) }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun ClubRow(
     club: ClubInfo,

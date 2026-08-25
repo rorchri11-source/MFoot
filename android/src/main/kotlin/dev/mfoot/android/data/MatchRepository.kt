@@ -68,7 +68,60 @@ data class PlayedMatch(
  * la partita e' il momento in cui il resto acquista senso: senza, schierare la formazione
  * e' compilare un modulo e sperare.
  */
+/**
+ * Una partita ferma all'intervallo.
+ *
+ * Dura pochi minuti ed e' l'unico momento in cui una partita asincrona diventa una
+ * partita che si guarda: chi c'e' cambia qualcosa, chi non c'e' non viene tagliato fuori
+ * perche' i suoi ordini condizionali girano lo stesso.
+ */
+data class Intervallo(
+    val fixtureId: Long,
+    val home: Long,
+    val away: Long,
+    val riprendeAlle: Instant,
+) {
+    fun aperto(now: Instant = Instant.now()): Boolean = now.isBefore(riprendeAlle)
+
+    fun tempoRimasto(now: Instant = Instant.now()): String {
+        val secondi = java.time.Duration.between(now, riprendeAlle).seconds
+        if (secondi <= 0) return "si riprende"
+        val m = secondi / 60
+        return if (m > 0) "${m}m ${secondi % 60}s" else "${secondi}s"
+    }
+}
+
 object MatchRepository {
+
+    /**
+     * Le partite ferme all'intervallo.
+     *
+     * ## Perche' e' una lettura tutta sua
+     *
+     * `resume_at` arriva dalla migrazione `0029`, ed e' la trappola che questo progetto ha
+     * gia' pagato due volte: una colonna nuova dentro una SELECT condivisa fa rifiutare
+     * **l'intera query** a PostgREST su un database non ancora migrato. Chiesta qui, al
+     * peggio torna vuota e l'app si comporta come prima che l'intervallo esistesse.
+     */
+    suspend fun intervalliAperti(leagueId: Long): List<Intervallo> {
+        val path = "/rest/v1/fixtures?select=id,home_club_id,away_club_id,resume_at" +
+            "&league_id=eq.$leagueId&played=is.false&resume_at=not.is.null"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            is ApiResult.Error -> emptyList()
+            is ApiResult.Ok -> JsonNode.parse(esito.value).asList().mapNotNull { riga ->
+                val quando = riga["resume_at"].strOrNull()
+                    ?.let { runCatching { Instant.parse(if (it.endsWith("Z")) it else it + "Z") }.getOrNull() }
+                    ?: return@mapNotNull null
+                Intervallo(
+                    fixtureId = riga["id"].long(0),
+                    home = riga["home_club_id"].long(0),
+                    away = riga["away_club_id"].long(0),
+                    riprendeAlle = quando,
+                )
+            }
+        }
+    }
 
     suspend fun load(fixtureId: Long): ApiResult<PlayedMatch> {
         val path = "/rest/v1/fixtures?select=id,home_club_id,away_club_id,match_day,kickoff," +

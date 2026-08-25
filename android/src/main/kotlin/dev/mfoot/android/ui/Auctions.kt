@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,7 +66,10 @@ fun AuctionList(
     onOpenBid: (AuctionRow) -> Unit,
     onRefresh: () -> Unit,
     onFilter: (AuctionFilter) -> Unit = {},
+    /** Apre la scheda di un giocatore appena comprato, da cui si contesta. */
+    onApriGiocatore: (dev.mfoot.android.app.PlayerRow) -> Unit = {},
 ) {
+    val contestabili = state.contestabili
     // Un orologio condiviso: ricalcolare il tempo residuo dentro ogni riga farebbe
     // ridisegnare la lista a ritmi diversi e la farebbe sembrare nervosa.
     var now by remember { mutableStateOf(Instant.now()) }
@@ -76,7 +80,7 @@ fun AuctionList(
         }
     }
 
-    if (state.auctions.isEmpty()) {
+    if (state.auctions.isEmpty() && contestabili.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
@@ -106,7 +110,19 @@ fun AuctionList(
     val visibili = state.asteVisibili
 
     Column(Modifier.fillMaxSize()) {
+        // Gli acquisti dentro la finestra stanno **sopra le aste**, non dentro: sono la
+        // cosa che scade prima e l'unica su cui si puo' ancora fare qualcosa. Un acquisto
+        // di dieci minuti fa contestato adesso e' un'asta; fra dodici ore non lo e' piu'.
+        if (contestabili.isNotEmpty()) {
+            Contestabili(contestabili, myClubId, now, onApriGiocatore)
+        }
+
         Filtri(state, onFilter)
+
+        if (visibili.isEmpty() && contestabili.isNotEmpty() && state.auctions.isEmpty()) {
+            Spacer(Modifier.height(MFootSpacing.section))
+            return@Column
+        }
 
         if (visibili.isEmpty()) {
             Vuoto(
@@ -135,6 +151,77 @@ fun AuctionList(
                 AuctionCard(row, myClubId, now, indice, intro) { onOpenBid(row) }
             }
             item { Spacer(Modifier.height(20.dp)) }
+        }
+    }
+}
+
+/**
+ * Gli acquisti ancora contestabili.
+ *
+ * ## Perche' hanno una fascia loro
+ *
+ * Perche' sono l'unico posto del gioco dove **il tempo scade su una cosa gia' successa**.
+ * Un'asta la si guarda per decidere se offrire; qui il giocatore ha gia' cambiato squadra,
+ * e quello che si guarda e' se lasciarglielo. Metterli in mezzo alle aste vorrebbe dire
+ * non farli vedere a nessuno, che e' come non averli fatti.
+ *
+ * Il proprio acquisto resta in elenco, e non e' ridondanza: e' l'unico modo di sapere
+ * quanto manca alla certezza.
+ */
+@Composable
+private fun Contestabili(
+    righe: List<dev.mfoot.android.app.PlayerRow>,
+    myClubId: Long?,
+    now: Instant,
+    onApri: (dev.mfoot.android.app.PlayerRow) -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(MFootSpacing.section, MFootSpacing.related, MFootSpacing.section, 4.dp),
+    ) {
+        Label("Comprati da poco · si possono ancora contestare")
+        Spacer(Modifier.height(9.dp))
+
+        righe.take(4).forEach { row ->
+            val acquisto = row.acquisto ?: return@forEach
+            val mio = acquisto.buyer == myClubId
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(MFootShapes.band)
+                    .background(MFootColors.core)
+                    .clickable { onApri(row) }
+                    .padding(13.dp, 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        row.player.fullName,
+                        style = MFootType.rowTitle,
+                        color = MFootColors.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        when {
+                            acquisto.contestato -> "Contestato: decide l'asta"
+                            mio -> "Tuo, se nessuno si fa avanti"
+                            else -> "Comprato per ${acquisto.price}"
+                        },
+                        style = MFootType.chip,
+                        color = if (acquisto.contestato) MFootColors.gamble else MFootColors.ink3,
+                    )
+                }
+
+                Text(
+                    acquisto.tempoRimasto(now),
+                    style = MFootType.value,
+                    color = if (mio) MFootColors.elite else MFootColors.gamble,
+                )
+            }
+            Spacer(Modifier.height(7.dp))
         }
     }
 }

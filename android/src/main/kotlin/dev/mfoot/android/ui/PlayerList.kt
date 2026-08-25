@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.ui.icons.MFootIcons
@@ -65,7 +66,10 @@ fun PlayerListScreen(
         ListHeader(state, onQuery, onFilter, onDismissNotice)
 
         if (state.browse.scope == ListScope.ASTE) {
-            AuctionList(state, onOpenBid, onRefreshAuctions, onAuctionFilter)
+            // Toccare un acquisto contestabile apre la scheda di quel giocatore, che e'
+            // il posto da cui si contesta: la stessa strada di ogni altra decisione di
+            // mercato, invece di un foglio che esiste solo qui.
+            AuctionList(state, onOpenBid, onRefreshAuctions, onAuctionFilter, onSelect)
             return@Column
         }
 
@@ -298,12 +302,38 @@ private fun PlayerListRow(
                 color = MFootColors.rating(player.overall),
                 modifier = Modifier.width(38.dp),
             )
-            Text(
-                Money(row.value).formatShort(),
-                style = MFootType.value,
-                color = MFootColors.ink2,
-                modifier = Modifier.width(52.dp),
-            )
+
+            // In vendita, o comprato da poco: due stati che si leggono scorrendo, e senza
+            // i quali il listino esisterebbe solo dentro le schede — cioe' per nessuno.
+            val acquisto = row.acquisto?.takeIf { it.aperto() }
+            when {
+                row.inVendita != null -> Text(
+                    "${row.inVendita.price}",
+                    style = MFootType.value,
+                    color = MFootColors.onAccent,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .width(52.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(MFootColors.elite)
+                        .padding(vertical = 4.dp),
+                )
+
+                acquisto != null -> Text(
+                    acquisto.tempoRimasto(),
+                    style = MFootType.chip,
+                    color = MFootColors.gamble,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(52.dp),
+                )
+
+                else -> Text(
+                    Money(row.value).formatShort(),
+                    style = MFootType.value,
+                    color = MFootColors.ink2,
+                    modifier = Modifier.width(52.dp),
+                )
+            }
         }
     }
 }

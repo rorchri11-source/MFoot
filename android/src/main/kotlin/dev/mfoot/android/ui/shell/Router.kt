@@ -109,8 +109,12 @@ fun Router(
     onLoadStaff: () -> Unit,
     onMoveStaff: (Long, Long) -> Unit,
     onAuctionStaff: (Long) -> Unit,
+    onAssumiStaff: (Long, Int) -> Unit = { _, _ -> },
+    onVendiStaff: (Long, Int) -> Unit = { _, _ -> },
     onSendScout: (Long, String, String) -> Unit,
     onDismissNotice: () -> Unit,
+    /** Correzione crediti da amministratore: club e delta. */
+    onCrediti: (Long, Int) -> Unit = { _, _ -> },
     settings: SettingsEdit,
     onConfigChange: (LeagueConfig) -> Unit,
     onConfigSave: () -> Unit,
@@ -198,6 +202,8 @@ fun Router(
                     onCarica = onLoadStaff,
                     onSposta = onMoveStaff,
                     onAsta = onAuctionStaff,
+                    onCompra = onAssumiStaff,
+                    onVendi = onVendiStaff,
                 )
 
                 TabSquadra.SPOGLIATOIO -> SpogliatoioScreen(
@@ -279,7 +285,7 @@ fun Router(
                         onOpenMatch = onOpenMatch,
                     )
                 }
-                TabLega.SQUADRE -> SquadreScreen(state) { clubId -> onNavigate(Route.Rosa(clubId)) }
+                TabLega.SQUADRE -> SquadreScreen(state, { clubId -> onNavigate(Route.Rosa(clubId)) }, onCrediti)
             }
         }
 

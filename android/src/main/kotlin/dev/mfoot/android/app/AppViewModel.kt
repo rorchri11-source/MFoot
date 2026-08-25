@@ -16,6 +16,10 @@ import dev.mfoot.android.data.MatchRepository
 import dev.mfoot.android.data.MyLeaguesRepository
 import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
+import dev.mfoot.android.data.ListingView
+import dev.mfoot.android.data.MarketRepository
+import dev.mfoot.android.data.PurchaseView
+import dev.mfoot.android.data.SavedDuties
 import dev.mfoot.android.data.ObjectiveRepository
 import dev.mfoot.android.data.PlayerRepository
 import dev.mfoot.android.data.PromiseRepository
@@ -355,7 +359,13 @@ class AppViewModel : ViewModel() {
                     // poi vederle cambiare sotto gli occhi.
                     scouting = lega.myClub?.let { ScoutingRepository.load(it.id) }.orEmpty()
 
-                    val rows = withContext(Dispatchers.Default) { righe(lega) }
+                    // Listino e acquisti contestabili: due letture leggere che al peggio
+                    // tornano vuote. Se la migrazione `0028` non c'e' ancora, il mercato
+                    // resta quello di sempre — le aste — invece di non aprirsi affatto.
+                    val listino = MarketRepository.listings(leagueId)
+                    val acquisti = MarketRepository.purchases(leagueId)
+
+                    val rows = withContext(Dispatchers.Default) { righe(lega, listino, acquisti) }
                     val aste = AuctionRepository.openAuctions(leagueId)
                     val nuove = squadreNuove(prima, lega)
 
@@ -384,6 +394,7 @@ class AppViewModel : ViewModel() {
                             lega = lega,
                             rows = rows,
                             auctions = righeAste,
+                            acquisti = acquisti,
                             // Il foglio dell'offerta aperto segue il prezzo.
                             //
                             // E' l'unico posto in cui un aggiornamento in tempo reale conta
@@ -402,6 +413,7 @@ class AppViewModel : ViewModel() {
                             lega = lega,
                             rows = rows,
                             auctions = righeAste,
+                            acquisti = acquisti,
                             browse = BrowseState(
                                 // Chi ha gia. una rosa vuole vedere la sua rosa; chi non ce
                                 // l.ha ancora vuole vedere cosa c.e. da prendere.
@@ -578,15 +590,27 @@ class AppViewModel : ViewModel() {
                     currentMatchDay = stato.second,
                 ),
                 clubs = clubs,
-                clubOfPlayer = contratti.first,
-                youth = contratti.second,
+                clubOfPlayer = contratti.mapValues { it.value.clubId },
+                youth = contratti.filterValues { it.isYouth }.keys,
+                contracts = contratti,
             )
             ultimaLega = lega
 
             // Le righe si ricostruiscono: senza, un club nuovo comparirebbe nell'elenco
             // squadre e resterebbe sconosciuto ovunque altro — i suoi giocatori senza
             // proprietario, le sue aste aperte «dalla lega».
-            val rows = withContext(Dispatchers.Default) { righe(lega) }
+            // Il listino e le finestre di contestazione si muovono da soli: un acquisto
+            // fatto da un altro club due minuti fa e' precisamente la cosa che il giro
+            // leggero esiste per far comparire.
+            val listino = MarketRepository.listings(leagueId)
+            val acquisti = MarketRepository.purchases(leagueId)
+
+            // La finestra dell intervallo dura pochi minuti: se non la si vede nel giro
+            // leggero, non la si vede mai.
+            val intervallo = MatchRepository.intervalliAperti(leagueId)
+                .firstOrNull { it.aperto() && (it.home == lega.myClub?.id || it.away == lega.myClub?.id) }
+
+            val rows = withContext(Dispatchers.Default) { righe(lega, listino, acquisti) }
             val nuove = squadreNuove(corrente, lega)
             val righeAste = asteViste(aste, rows, lega)
 
@@ -594,6 +618,8 @@ class AppViewModel : ViewModel() {
                 lega = lega,
                 rows = rows,
                 auctions = righeAste,
+                acquisti = acquisti,
+                intervallo = intervallo,
                 // Il foglio dell'offerta aperto segue il prezzo: e' l'unico posto in cui
                 // vedere il numero salire da solo e' esattamente cio' che serve.
                 bidding = corrente.bidding?.let { aperta ->
@@ -654,10 +680,16 @@ class AppViewModel : ViewModel() {
      * vedono forbici leggermente diverse dello stesso giocatore, ed e' quello che rende
      * possibile l'affare. Chi non ha ancora un club guarda con l'occhio della lega.
      */
-    private fun righe(snapshot: LeagueSnapshot): List<PlayerRow> {
+    private fun righe(
+        snapshot: LeagueSnapshot,
+        listino: List<ListingView> = emptyList(),
+        acquisti: List<PurchaseView> = emptyList(),
+    ): List<PlayerRow> {
         val observerId = snapshot.myClub?.id ?: snapshot.league.id
         val clubById = snapshot.clubs.associateBy { it.id }
         val config: LeagueConfig = snapshot.league.config
+        val inVenditaPerGiocatore = listino.associateBy { it.playerId }
+        val acquistoPerGiocatore = acquisti.associateBy { it.playerId }
 
         return snapshot.players.map { player ->
             // La stima ristretta, se il server ne ha calcolata una per questo club.
@@ -683,6 +715,9 @@ class AppViewModel : ViewModel() {
                 isYouth = snapshot.clubOfPlayer[player.id.value]
                     ?.let { id -> snapshot.clubs.firstOrNull { it.id == id }?.parentClubId != null }
                     ?: false,
+                contratto = snapshot.contracts[player.id.value],
+                inVendita = inVenditaPerGiocatore[player.id.value],
+                acquisto = acquistoPerGiocatore[player.id.value],
             )
         }
     }
@@ -1254,6 +1289,206 @@ class AppViewModel : ViewModel() {
                 _state.value = corrente.copy(biddingHistory = storia)
             }
         }
+    }
+
+    // --------------------------------------------------- il listino e la contestazione
+
+    /**
+     * Compra a prezzo fisso.
+     *
+     * Il giocatore e' in rosa quando questa funzione ritorna: nessun tick, nessuna attesa.
+     * Da quel momento parte la finestra di dodici ore in cui chiunque puo' contestare, e
+     * l'avviso la dice — non e' un dettaglio da nascondere, e' la meta' della regola.
+     */
+    fun compra(row: PlayerRow) {
+        val dentro = statoCorrente() ?: return
+        val prezzo = row.inVendita?.price ?: return
+        if (dentro.lega.myClub == null) {
+            _state.value = dentro.copy(errore = "Prima devi fondare il tuo club.")
+            return
+        }
+
+        viewModelScope.launch {
+            when (val esito = MarketRepository.buy(row.player.id.value)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    val corrente = statoCorrente() ?: return@launch
+                    _state.value = corrente.copy(browse = corrente.browse.copy(selected = null))
+                    ricaricaMercato(
+                        "${row.player.fullName} è tuo per $prezzo crediti. " +
+                            "Per dodici ore chiunque può contestare l'acquisto.",
+                    )
+                }
+            }
+        }
+    }
+
+    /** Mette in vendita un proprio giocatore, al prezzo che decide il proprietario. */
+    fun mettiInVendita(row: PlayerRow, prezzo: Int) {
+        viewModelScope.launch {
+            when (val esito = MarketRepository.list(row.player.id.value, prezzo)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    val corrente = statoCorrente() ?: return@launch
+                    _state.value = corrente.copy(browse = corrente.browse.copy(selected = null))
+                    ricaricaMercato("${row.player.fullName} è in vendita a $prezzo crediti.")
+                }
+            }
+        }
+    }
+
+    fun ritiraDalListino(row: PlayerRow) {
+        viewModelScope.launch {
+            MarketRepository.unlist(row.player.id.value)
+            ricaricaMercato("${row.player.fullName} non è più in vendita.")
+        }
+    }
+
+    /**
+     * Svincola: gratis, e lo sa tutta la lega.
+     *
+     * Non chiede conferma qui dentro: la chiede la schermata, che e' il posto giusto per
+     * chiederla. Da qui in poi il giocatore e' di chiunque lo prenda per primo.
+     */
+    fun svincola(row: PlayerRow) {
+        viewModelScope.launch {
+            when (val esito = MarketRepository.release(row.player.id.value)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    val corrente = statoCorrente() ?: return@launch
+                    _state.value = corrente.copy(browse = corrente.browse.copy(selected = null))
+                    ricaricaMercato(
+                        "${row.player.fullName} è svincolato. Ora può prenderlo chiunque.",
+                    )
+                }
+            }
+        }
+    }
+
+    /** Apre o chiude il foglio della contestazione. */
+    fun apriContestazione(row: PlayerRow?) {
+        val dentro = statoCorrente() ?: return
+        _state.value = dentro.copy(contestando = row, errore = null)
+    }
+
+    /**
+     * Contesta un acquisto.
+     *
+     * L'offerta massima si dichiara adesso e i crediti si impegnano adesso: contestare
+     * **e' gia' un'offerta**. E' cio' che impedisce di contestare per dispetto, ed e'
+     * anche cio' che rende difendibile il prezzo libero — chi svende viene corretto dal
+     * mercato invece che da un limite scritto nel codice.
+     */
+    fun contesta(row: PlayerRow, massimo: Int) {
+        val acquisto = row.acquisto ?: return
+
+        viewModelScope.launch {
+            when (val esito = MarketRepository.contest(acquisto.id, massimo)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    val corrente = statoCorrente() ?: return@launch
+                    _state.value = corrente.copy(contestando = null)
+                    ricaricaMercato(
+                        "Acquisto contestato: si decide all'asta, che scade quando finisce " +
+                            "la finestra.",
+                    )
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------- amministrazione
+
+    /**
+     * Sposta un giocatore in un altro club, da amministratore.
+     *
+     * Serve a riparare le leghe rotte, ed e' l'unico punto del gioco in cui qualcuno puo'
+     * muovere una rosa che non e' la sua. Non c'e' registro pubblico — scartato il
+     * 2026-08-24 — quindi il freno e' che le operazioni possibili sono poche e dichiarate.
+     */
+    fun adminAssegna(row: PlayerRow, clubId: Long) {
+        viewModelScope.launch {
+            when (val esito = MarketRepository.adminAssegna(row.player.id.value, clubId)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    val corrente = statoCorrente() ?: return@launch
+                    val nome = corrente.lega.clubs.firstOrNull { it.id == clubId }?.shortName ?: "club"
+                    _state.value = corrente.copy(browse = corrente.browse.copy(selected = null))
+                    ricaricaMercato("${row.player.fullName} assegnato a $nome.")
+                }
+            }
+        }
+    }
+
+    fun adminSvincola(row: PlayerRow) {
+        viewModelScope.launch {
+            when (val esito = MarketRepository.adminSvincola(row.player.id.value)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    val corrente = statoCorrente() ?: return@launch
+                    _state.value = corrente.copy(browse = corrente.browse.copy(selected = null))
+                    ricaricaMercato("${row.player.fullName} tolto dalla sua squadra.")
+                }
+            }
+        }
+    }
+
+    fun adminCrediti(clubId: Long, delta: Int) {
+        viewModelScope.launch {
+            when (val esito = MarketRepository.adminCrediti(clubId, delta)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> ricaricaMercato(
+                    if (delta >= 0) "Accreditati $delta crediti." else "Tolti ${-delta} crediti.",
+                )
+            }
+        }
+    }
+
+    /** Rilegge listino, acquisti e club dopo un movimento di mercato. */
+    private suspend fun ricaricaMercato(avviso: String) {
+        val dentro = statoCorrente() ?: return
+        val leagueId = dentro.lega.league.id
+
+        val listino = MarketRepository.listings(leagueId)
+        val acquisti = MarketRepository.purchases(leagueId)
+        val clubs = when (val esito = LeagueRepository.clubs(leagueId)) {
+            is ApiResult.Error -> dentro.lega.clubs
+            is ApiResult.Ok -> esito.value
+        }
+        val contratti = when (val esito = LeagueRepository.contracts(leagueId)) {
+            is ApiResult.Error -> null
+            is ApiResult.Ok -> esito.value
+        }
+
+        val corrente = statoCorrente() ?: return
+        val lega = corrente.lega.copy(
+            clubs = clubs,
+            clubOfPlayer = contratti?.mapValues { it.value.clubId } ?: corrente.lega.clubOfPlayer,
+            youth = contratti?.filterValues { it.isYouth }?.keys ?: corrente.lega.youth,
+            contracts = contratti ?: corrente.lega.contracts,
+        )
+        ultimaLega = lega
+
+        _state.value = corrente.copy(
+            lega = lega,
+            rows = withContext(Dispatchers.Default) { righe(lega, listino, acquisti) },
+            acquisti = acquisti,
+            avviso = avviso,
+        )
     }
 
     /**
@@ -2003,8 +2238,45 @@ class AppViewModel : ViewModel() {
             _staff.value = _staff.value.copy(
                 tutti = StaffRepository.all(dentro.lega.league.id),
                 missioni = StaffRepository.missions(miei),
+                // Lo staff sul listino: stessa tabella dei giocatori, altro `target_type`.
+                inVendita = MarketRepository.listings(dentro.lega.league.id, tipo = "staff")
+                    .associate { it.playerId to it.price },
                 letto = true,
             )
+        }
+    }
+
+    /** Assume subito chi e' sul listino, al prezzo scritto. */
+    fun assumiStaff(staffId: Long, prezzo: Int) {
+        viewModelScope.launch {
+            when (val esito = MarketRepository.buyStaff(staffId)) {
+                is ApiResult.Error ->
+                    _staff.value = _staff.value.copy(errore = esito.message)
+
+                is ApiResult.Ok -> {
+                    _staff.value = _staff.value.copy(
+                        avviso = "Assunto per $prezzo crediti.",
+                        errore = null,
+                    )
+                    caricaStaff()
+                    ricaricaMercato("Staff assunto per $prezzo crediti.")
+                }
+            }
+        }
+    }
+
+    /** Mette in vendita un proprio membro dello staff. */
+    fun vendiStaff(staffId: Long, prezzo: Int) {
+        viewModelScope.launch {
+            when (val esito = MarketRepository.listStaff(staffId, prezzo)) {
+                is ApiResult.Error ->
+                    _staff.value = _staff.value.copy(errore = esito.message)
+
+                is ApiResult.Ok -> {
+                    _staff.value = _staff.value.copy(avviso = "In vendita a $prezzo.", errore = null)
+                    caricaStaff()
+                }
+            }
         }
     }
 
@@ -2657,6 +2929,10 @@ class AppViewModel : ViewModel() {
             // senza schierare a mano non si giochi — mentre il server schiera da solo.
             val composta = salvata?.takeIf { it.eleven.any { id -> id != null } }
 
+            // Gli incarichi da palla ferma si leggono a parte: se la migrazione `0027`
+            // non c'e' ancora, questa torna vuota e la formazione si legge lo stesso.
+            val incarichi = LineupRepository.readDuties(club.id)
+
             val base = if (composta == null) {
                 LineupEdit(formation = AutoLineup.bestFormation(squad, today))
                     .completa(squad, today)
@@ -2672,6 +2948,10 @@ class AppViewModel : ViewModel() {
                     tactics = composta.tactics,
                     captainId = composta.captainId,
                     penaltyTakerId = composta.penaltyTakerId,
+                    cornerTakerId = incarichi.cornerTakerId,
+                    freeKickTakerId = incarichi.freeKickTakerId,
+                    longBallTakerId = incarichi.longBallTakerId,
+                    orders = composta.orders,
                 ).conPanchina(squad, today)
             }
 
@@ -2767,8 +3047,24 @@ class AppViewModel : ViewModel() {
                     tactics = edit.tactics,
                     captainId = edit.captainId,
                     penaltyTakerId = edit.penaltyTakerId,
+                    orders = edit.orders,
                 ),
             )
+
+            // I tre incarichi da palla ferma vanno in una scrittura a parte, perche' le
+            // loro colonne arrivano dalla migrazione `0027`: dentro lo stesso corpo,
+            // un database non ancora migrato rifiuterebbe **tutto**, formazione compresa.
+            // Cosi' al peggio si perdono i tre incarichi, e li sceglie il motore.
+            if (esito is ApiResult.Ok) {
+                LineupRepository.saveDuties(
+                    clubId = clubId,
+                    duties = SavedDuties(
+                        cornerTakerId = edit.cornerTakerId,
+                        freeKickTakerId = edit.freeKickTakerId,
+                        longBallTakerId = edit.longBallTakerId,
+                    ),
+                )
+            }
 
             _lineup.value = when (esito) {
                 is ApiResult.Error -> edit.copy(busy = null, errore = esito.message)

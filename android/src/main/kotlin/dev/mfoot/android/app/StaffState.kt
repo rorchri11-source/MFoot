@@ -14,6 +14,13 @@ data class StaffState(
     val tutti: List<StaffMember> = emptyList(),
     val missioni: List<ScoutingMission> = emptyList(),
     val letto: Boolean = false,
+    /**
+     * Chi e' sul listino, e a quanto.
+     *
+     * Vuota quando la migrazione `0030` non c'e' ancora: allora lo staff torna a
+     * prendersi solo all'asta, che e' come ha sempre funzionato.
+     */
+    val inVendita: Map<Long, Int> = emptyMap(),
     val busy: String? = null,
     val avviso: String? = null,
     val errore: String? = null,
@@ -23,6 +30,9 @@ data class StaffState(
 
     /** Chi non lavora per nessuno: sono quelli che si possono battere all'asta. */
     val liberi: List<StaffMember> get() = tutti.filter { it.clubId == null }
+
+    /** Il prezzo di listino, se qualcuno lo ha messo in vendita. */
+    fun prezzoDi(staffId: Long): Int? = inVendita[staffId]
 
     fun osservatoriDi(clubId: Long?): List<StaffMember> =
         di(clubId).filter { it.role == "OSSERVATORE" }
