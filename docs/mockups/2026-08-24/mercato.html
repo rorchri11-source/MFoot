@@ -1,0 +1,574 @@
+<title>Dodici ore per contestare</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap">
+
+<style>
+  :root {
+    --bg:#111D2B; --core:#0A1622; --core-top:#102030; --raised:#1C2836; --bar:#0C1520;
+    --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.14);
+    --elite:#BCCDFF; --on-accent:#12275C; --blue:#3F6ADD; --blue-deep:#0A1E86; --blue-arc:#69C0FF;
+    --ink:#F2F5FA; --ink2:#93A2B8; --ink3:#5E6E85;
+    --gamble:#E9BC5A; --alarm:#5D2725; --on-alarm:#FFCAC8; --teach:#4C0AC4; --on-teach:#D4B8FF;
+    --good:#E6ECF5; --mid:#8494AC; --low:#55647A;
+    --band:18px; --pill:999px;
+    --font:"Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font); font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .page { max-width:1240px; margin:0 auto; padding:40px 20px 80px; }
+
+  .eyebrow { font-size:11px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--ink3); margin:0 0 10px; }
+  h1 { font-size:clamp(28px,5vw,40px); font-weight:900; letter-spacing:-.02em; margin:0 0 14px; line-height:1.1; text-wrap:balance; }
+  .intro { max-width:64ch; }
+  .intro p { margin:0 0 12px; color:var(--ink2); }
+  .intro strong { color:var(--ink); font-weight:500; }
+  .teach { background:var(--teach); color:var(--on-teach); border-radius:var(--band); padding:16px 18px; margin-top:20px; font-size:14px; max-width:64ch; }
+  .teach b { color:#fff; font-weight:700; }
+
+  /* ------------------------------------------------------------------- i comandi */
+  .controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:28px 0 24px; padding:14px; background:var(--core); border-radius:var(--band); position:sticky; top:0; z-index:30; box-shadow:0 10px 26px rgba(0,0,0,.34); }
+  .controls .label { font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--ink3); }
+  .controls .spacer { flex:1; }
+  button { font-family:var(--font); font-size:13px; font-weight:500; border:0; cursor:pointer; border-radius:var(--pill); padding:9px 15px; background:var(--bg); color:var(--ink2); transition:background .16s ease,color .16s ease; }
+  button:hover:not(:disabled) { background:var(--raised); color:var(--ink); }
+  button:disabled { opacity:.36; cursor:not-allowed; }
+  button:focus-visible { outline:2px solid var(--blue-arc); outline-offset:2px; }
+  button.accent { background:var(--elite); color:var(--on-accent); font-weight:700; }
+  button.accent:hover:not(:disabled) { background:#D3DEFF; color:var(--on-accent); }
+
+  .stage { display:grid; grid-template-columns:1fr 1fr 320px; gap:20px; align-items:start; }
+  @media (max-width:1120px) { .stage { grid-template-columns:1fr 1fr; } .log-col { grid-column:1/-1; } }
+  @media (max-width:760px)  { .stage { grid-template-columns:1fr; max-width:420px; margin:0 auto; } }
+
+  /* ------------------------------------------------------------------- i telefoni */
+  .who-tag { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
+  .who-tag .crest { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; font-size:11px; font-weight:900; color:#fff; }
+  .who-tag .n { font-size:14px; font-weight:700; }
+  .who-tag .c { font-size:12px; color:var(--ink3); margin-left:auto; font-variant-numeric:tabular-nums; }
+
+  .phone { background:var(--bg); border:1px solid var(--line-strong); border-radius:30px; padding:10px; box-shadow:0 22px 44px rgba(0,0,0,.42); }
+  .screen { background:var(--bg); border-radius:22px; overflow:hidden; min-height:560px; display:flex; flex-direction:column; }
+  .statusbar { background:var(--blue); color:#fff; padding:7px 14px 8px; display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:500; font-variant-numeric:tabular-nums; }
+  .statusbar .dots { display:flex; gap:4px; } .statusbar .dots i { width:4px; height:4px; background:rgba(255,255,255,.75); border-radius:50%; display:block; }
+  .appbar { background:var(--blue); color:#fff; padding:4px 14px 13px; display:flex; align-items:center; gap:10px; }
+  .appbar .title { font-size:16px; font-weight:700; }
+  .appbar .credits { margin-left:auto; background:rgba(255,255,255,.16); border-radius:var(--pill); padding:3px 10px; font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .body { padding:13px; flex:1; display:flex; flex-direction:column; gap:11px; overflow:hidden; }
+
+  .lab { font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--ink3); }
+  .card { background:var(--core); border-radius:var(--band); }
+  .hair { height:1px; background:var(--line); }
+  .num { font-variant-numeric:tabular-nums; }
+  .rat-elite{color:var(--elite)} .rat-good{color:var(--good)} .rat-mid{color:var(--mid)} .rat-low{color:var(--low)}
+
+  /* la riga del listino */
+  .prow { display:flex; align-items:center; gap:10px; padding:10px 12px; }
+  .prow .pos { width:34px; text-align:center; background:var(--bg); border-radius:8px; padding:3px 0; font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--ink2); flex:none; }
+  .prow .who { flex:1; min-width:0; }
+  .prow .who .n { font-size:14px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .prow .who .m { font-size:11px; color:var(--ink3); }
+  .prow .ovr { font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; width:26px; text-align:right; }
+  .prow .buy { background:var(--elite); color:var(--on-accent); border-radius:var(--pill); padding:7px 12px; font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .prow .buy.mine { background:var(--raised); color:var(--ink2); font-weight:500; }
+  .prow.sold { opacity:.44; }
+
+  /* la fascia della finestra */
+  .window-band { border-radius:var(--band); padding:13px 14px; background:linear-gradient(180deg,var(--core-top),var(--core)); border:1px solid var(--line-strong); }
+  .window-band.hot { border-color:rgba(233,188,90,.42); }
+  .window-band .top { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .window-band .cd { font-size:26px; font-weight:900; font-variant-numeric:tabular-nums; letter-spacing:-.02em; color:var(--gamble); line-height:1.1; }
+  .window-band .expl { font-size:12px; color:var(--ink2); margin-top:6px; }
+  .track { height:4px; background:var(--bg); border-radius:2px; overflow:hidden; margin-top:9px; }
+  .track .fill { height:4px; background:var(--gamble); border-radius:2px; transition:width .3s linear; }
+
+  .price-row { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; margin-top:11px; }
+  .price-row .k { font-size:10px; font-weight:700; letter-spacing:.11em; text-transform:uppercase; color:var(--ink3); }
+  .price-row .v { font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; line-height:1.05; }
+  .lead-ok { color:var(--elite); } .lead-ko { color:var(--on-alarm); }
+
+  .statusline { display:flex; align-items:center; gap:8px; border-radius:12px; padding:9px 11px; font-size:12.5px; font-weight:500; }
+  .statusline.good { background:rgba(188,205,255,.12); color:var(--elite); }
+  .statusline.bad  { background:var(--alarm); color:var(--on-alarm); }
+  .statusline.calm { background:var(--core); color:var(--ink2); }
+
+  .btn-primary { display:block; width:100%; text-align:center; background:var(--elite); color:var(--on-accent); border-radius:var(--pill); padding:13px; font-size:14px; font-weight:700; border:0; cursor:pointer; font-family:var(--font); }
+  .btn-primary:disabled { opacity:.4; }
+  .btn-ghost { display:block; width:100%; text-align:center; background:transparent; color:var(--ink2); border:1px solid var(--line-strong); border-radius:var(--pill); padding:12px; font-size:14px; font-weight:500; cursor:pointer; font-family:var(--font); }
+  .actions { padding:0 13px 14px; display:flex; gap:9px; } .actions > * { flex:1; }
+
+  /* il foglio dell'offerta */
+  .sheet { position:absolute; inset:0; background:rgba(6,12,20,.82); border-radius:22px; display:flex; align-items:flex-end; }
+  .sheet .inner { width:100%; background:var(--core-top); border-radius:22px 22px 22px 22px; padding:18px 16px 16px; }
+  .sheet h4 { margin:0 0 4px; font-size:17px; font-weight:700; }
+  .sheet .sub { font-size:12.5px; color:var(--ink2); margin-bottom:14px; }
+  .stepper { display:flex; align-items:center; gap:10px; background:var(--bg); border-radius:var(--pill); padding:6px; }
+  .stepper button { width:40px; height:40px; border-radius:50%; background:var(--raised); color:var(--ink); font-size:19px; font-weight:700; padding:0; }
+  .stepper .val { flex:1; text-align:center; font-size:27px; font-weight:900; font-variant-numeric:tabular-nums; }
+  .screen-wrap { position:relative; }
+
+  .empty { text-align:center; padding:26px 14px; color:var(--ink3); font-size:13px; }
+  .empty .circle { width:64px; height:64px; border-radius:50%; background:var(--raised); margin:0 auto 12px; display:grid; place-items:center; font-size:26px; }
+
+  /* ------------------------------------------------------------------- il registro */
+  .log-col { position:sticky; top:86px; }
+  .log { background:var(--core); border-radius:var(--band); padding:16px; }
+  .log h3 { margin:0 0 3px; font-size:16px; font-weight:700; }
+  .log .hint { font-size:12px; color:var(--ink3); margin-bottom:12px; }
+  .log ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:11px; max-height:520px; overflow-y:auto; }
+  .log li { display:flex; gap:10px; font-size:13px; line-height:1.45; }
+  .log li .t { font-size:11px; color:var(--ink3); font-variant-numeric:tabular-nums; flex:none; width:46px; padding-top:1px; }
+  .log li .x { color:var(--ink2); }
+  .log li .x b { color:var(--ink); font-weight:700; }
+  .log li.key .x { color:var(--elite); }
+  .log li.warn .x { color:var(--gamble); }
+  .log .placeholder { color:var(--ink3); font-size:13px; }
+
+  .foot { margin-top:32px; color:var(--ink3); font-size:13px; max-width:72ch; }
+  .foot b { color:var(--ink2); font-weight:500; }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="page">
+
+  <div class="intro">
+    <p class="eyebrow">MFoot · mercato · 24 agosto 2026</p>
+    <h1>Dodici ore per contestare</h1>
+    <p>Si compra a <strong>prezzo fisso</strong> e il giocatore è tuo nello stesso istante:
+       niente tick, niente attesa. Per dodici ore l'acquisto resta contestabile — e
+       <strong>solo se qualcuno contesta</strong> nasce un'asta.</p>
+    <p>Questo non è un disegno: la meccanica funziona davvero. Compra Ferrara dal tuo
+       telefono, poi contestalo da quello di Marco e guarda cosa succede da tutte e due
+       le parti.</p>
+
+    <div class="teach">
+      <b>Chi ha comprato è già in testa.</b> Non deve rioffrire su un giocatore che era
+      già suo: entra nell'asta al prezzo che ha pagato. È la regola del 24 agosto —
+      <i>chi apre un'asta per comprare ha già offerto il prezzo base</i> — applicata alla
+      contestazione. Il massimo di chi contesta resta segreto: si vede solo il prezzo salire.
+    </div>
+  </div>
+
+  <div class="controls">
+    <span class="label">Tempo</span>
+    <button type="button" id="fast" disabled>Porta avanti di 11 ore</button>
+    <button type="button" id="rush" disabled>Vai agli ultimi 40 secondi</button>
+    <span class="spacer"></span>
+    <button type="button" id="reset">Ricomincia</button>
+  </div>
+
+  <div class="stage">
+
+    <!-- =============================================================== TU -->
+    <div>
+      <div class="who-tag">
+        <span class="crest" style="background:linear-gradient(150deg,#3F6ADD,#2A4EAF)">AF</span>
+        <span class="n">Ardita FC — il tuo club</span>
+        <span class="c num" id="c-mine">128 cr</span>
+      </div>
+      <div class="phone">
+        <div class="screen-wrap">
+          <div class="screen">
+            <div class="statusbar"><span class="num" id="clock-mine">21:14</span><span class="dots"><i></i><i></i><i></i></span></div>
+            <div class="appbar">
+              <span class="title" id="title-mine">Mercato</span>
+              <span class="credits num" id="cr-mine">128 cr</span>
+            </div>
+            <div class="body" id="body-mine"></div>
+            <div class="actions" id="act-mine"></div>
+          </div>
+          <div id="sheet-mine"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ MARCO -->
+    <div>
+      <div class="who-tag">
+        <span class="crest" style="background:linear-gradient(150deg,#8E5AE9,#5B2FBF)">BM</span>
+        <span class="n">Il Bar di Marco</span>
+        <span class="c num" id="c-his">96 cr</span>
+      </div>
+      <div class="phone">
+        <div class="screen-wrap">
+          <div class="screen">
+            <div class="statusbar"><span class="num" id="clock-his">21:14</span><span class="dots"><i></i><i></i><i></i></span></div>
+            <div class="appbar">
+              <span class="title" id="title-his">Mercato</span>
+              <span class="credits num" id="cr-his">96 cr</span>
+            </div>
+            <div class="body" id="body-his"></div>
+            <div class="actions" id="act-his"></div>
+          </div>
+          <div id="sheet-his"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================= REGISTRO -->
+    <div class="log-col">
+      <div class="log">
+        <h3>Cosa sta succedendo</h3>
+        <p class="hint">Ogni riga è una regola che entra in funzione.</p>
+        <ol id="log"><li class="placeholder">Compra un giocatore dal telefono di sinistra per cominciare.</li></ol>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="foot">
+    <b>Quello che questa schermata elimina:</b> aprire un'asta per un gregario da quattro
+    crediti e aspettare un giorno intero per scoprire che non la voleva nessuno. Con il
+    tick che passa ogni venti-quaranta minuti, era il novanta per cento degli acquisti
+    di una stagione.
+  </p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ------------------------------------------------------------------ i dati
+  const LISTINO = [
+    { id:1, pos:"ATT", nome:"M. Ferrara",  meta:"19 anni · svincolato",           ovr:71, prezzo:34 },
+    { id:2, pos:"DC",  nome:"A. Volkov",   meta:"31 anni · Il Bar di Marco",      ovr:84, prezzo:41 },
+    { id:3, pos:"POR", nome:"L. Sanna",    meta:"24 anni · svincolato",           ovr:68, prezzo:19 },
+    { id:4, pos:"CC",  nome:"D. Osei",     meta:"22 anni · Nordkap",              ovr:74, prezzo:28 }
+  ];
+
+  const FINESTRA_SEC = 12 * 3600;   // dodici ore
+  const RILANCIO_MIN = 1;           // MarketConfig.minimumRaise
+  const ANTISNIPE_SEC = 60;         // la soglia gia' tarata in AuctionRules
+
+  let S;
+  function stato() {
+    return {
+      fase: "listino",              // listino → finestra → asta → chiusa
+      crMine: 128, crHis: 96,
+      target: null,                 // il giocatore comprato
+      prezzoPagato: 0,
+      maxMine: 0, maxHis: 0,        // i massimi dichiarati, segreti fra loro
+      prezzo: 0,
+      leader: null,                 // "mine" | "his"
+      restano: FINESTRA_SEC,
+      prolungata: 0,
+      sheet: null,                  // "mine" | "his"
+      sheetVal: 0,
+      log: [],
+      orologio: 21 * 3600 + 14 * 60,
+      venduti: []
+    };
+  }
+
+  // ------------------------------------------------------------------ utili
+  const el = id => document.getElementById(id);
+  const ratClass = v => v >= 85 ? "rat-elite" : v >= 70 ? "rat-good" : v >= 55 ? "rat-mid" : "rat-low";
+
+  function hhmmss(sec) {
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+  }
+  function orologio() {
+    const t = S.orologio % 86400;
+    return String(Math.floor(t/3600)).padStart(2,"0") + ":" + String(Math.floor((t%3600)/60)).padStart(2,"0");
+  }
+
+  function nota(testo, tipo) {
+    S.log.push({ t: orologio(), x: testo, tipo: tipo || "" });
+  }
+
+  // ------------------------------------------------------------------ le regole
+  /* Il prezzo del capofila sale solo quanto basta a superare il secondo massimo:
+     e' la stessa formula di Auction.currentPrice(). */
+  function ricalcola() {
+    const a = { chi:"mine", max:S.maxMine }, b = { chi:"his", max:S.maxHis };
+    const ordinati = [a, b].filter(x => x.max > 0).sort((x, y) => y.max - x.max);
+    if (ordinati.length === 0) { S.leader = null; S.prezzo = S.prezzoPagato; return; }
+    if (ordinati.length === 1) { S.leader = ordinati[0].chi; S.prezzo = S.prezzoPagato; return; }
+    // parita': resta in testa chi c'era prima, cioe' chi aveva comprato
+    if (ordinati[0].max === ordinati[1].max) { S.leader = "mine"; S.prezzo = S.maxMine; return; }
+    S.leader = ordinati[0].chi;
+    S.prezzo = Math.min(ordinati[1].max + RILANCIO_MIN, ordinati[0].max);
+  }
+
+  function compra(p) {
+    S.target = p;
+    S.prezzoPagato = p.prezzo;
+    S.crMine -= p.prezzo;
+    S.maxMine = p.prezzo;      // chi compra E' GIA' in testa a quel prezzo
+    S.prezzo = p.prezzo;
+    S.leader = "mine";
+    S.fase = "finestra";
+    S.restano = FINESTRA_SEC;
+    S.venduti.push(p.id);
+    nota("<b>" + p.nome + "</b> è tuo per <b>" + p.prezzo + " crediti</b>. Subito: nessun tick, nessuna attesa.", "key");
+    nota("Restano <b>12 ore</b> in cui chiunque può contestare. Passate quelle, è tuo per sempre.");
+    render();
+  }
+
+  function apriFoglio(chi) {
+    S.sheet = chi;
+    const minimo = (chi === "his" ? S.prezzo : S.prezzo) + RILANCIO_MIN;
+    S.sheetVal = Math.max(minimo, chi === "his" ? S.prezzo + 5 : S.prezzo + 5);
+    render();
+  }
+
+  function confermaOfferta() {
+    const chi = S.sheet, valore = S.sheetVal;
+    const primaContestazione = S.fase === "finestra";
+    S.sheet = null;
+
+    if (chi === "his") S.maxHis = valore; else S.maxMine = valore;
+    const eraLeader = S.leader;
+    ricalcola();
+
+    if (primaContestazione) {
+      S.fase = "asta";
+      nota("<b>Il Bar di Marco contesta.</b> Da qui nasce l'asta — l'unica strada che la fa nascere.", "key");
+      nota("Contestare <b>è già un'offerta</b>: i suoi crediti sono impegnati adesso. Non si contesta per dispetto.");
+      nota("L'asta scade <b>insieme alla finestra</b>, non un'ora dopo l'ultimo rilancio.");
+    } else {
+      nota((chi === "his" ? "Marco" : "Tu") + " rilanci: massimo dichiarato, e resta segreto.");
+    }
+
+    // anti-snipe: un'offerta nel finale sposta la scadenza
+    if (S.restano <= ANTISNIPE_SEC) {
+      S.restano = ANTISNIPE_SEC;
+      S.prolungata++;
+      nota("Offerta negli ultimi " + ANTISNIPE_SEC + " secondi: <b>l'asta si prolunga</b>. Vince chi valuta di più, non chi ha il dito veloce.", "warn");
+    }
+
+    if (S.leader !== eraLeader) {
+      nota(S.leader === "his"
+        ? "Sei stato <b>superato</b>: il prezzo è " + S.prezzo + ". Il massimo di Marco non lo vedi."
+        : "Sei tornato <b>in testa</b> a " + S.prezzo + ".", "warn");
+    } else if (S.leader === "mine") {
+      nota("Marco ha offerto, ma <b>il tuo massimo tiene</b>: resti in testa a " + S.prezzo + ".");
+    }
+    render();
+  }
+
+  function chiudi() {
+    S.fase = "chiusa";
+    if (S.maxHis === 0) {
+      nota("<b>Dodici ore passate, nessuno ha contestato.</b> " + S.target.nome + " è tuo definitivamente, pagato " + S.prezzoPagato + ".", "key");
+    } else if (S.leader === "mine") {
+      S.crMine -= (S.prezzo - S.prezzoPagato);
+      nota("<b>Asta chiusa: l'hai tenuto</b> a " + S.prezzo + " crediti.", "key");
+    } else {
+      S.crHis -= S.prezzo;
+      S.crMine += S.prezzoPagato;
+      nota("<b>Asta chiusa: va al Bar di Marco</b> per " + S.prezzo + ".", "key");
+      nota("Ti tornano <b>" + S.prezzoPagato + " crediti interi</b>: hai perso il giocatore, non i soldi.");
+    }
+    render();
+  }
+
+  function scorri(sec) {
+    if (S.fase !== "finestra" && S.fase !== "asta") return;
+    S.restano = Math.max(0, S.restano - sec);
+    S.orologio += sec;
+    if (S.restano === 0) chiudi(); else render();
+  }
+
+  // ------------------------------------------------------------------ disegno
+  function rigaListino(p) {
+    const venduto = S.venduti.includes(p.id);
+    const suo = p.meta.indexOf("Bar di Marco") >= 0;
+    return '<div class="prow' + (venduto ? " sold" : "") + '">' +
+      '<span class="pos">' + p.pos + '</span>' +
+      '<span class="who"><span class="n">' + p.nome + '</span><span class="m">' + p.meta + '</span></span>' +
+      '<span class="ovr ' + ratClass(p.ovr) + '">' + p.ovr + '</span>' +
+      (venduto
+        ? '<span class="buy mine">venduto</span>'
+        : suo
+          ? '<span class="buy mine">tuo</span>'
+          : '<button class="buy" data-compra="' + p.id + '">Compra · ' + p.prezzo + '</button>') +
+      '</div>';
+  }
+
+  function listinoHtml(perMarco) {
+    const righe = LISTINO.map(p => {
+      if (perMarco) {
+        // per Marco, il "tuo" e' il suo: si scambiano i proprietari
+        const q = Object.assign({}, p);
+        if (p.meta.indexOf("Bar di Marco") >= 0) q.meta = p.meta.replace("Il Bar di Marco", "tuo");
+        return rigaListino(q).replace('class="buy mine">tuo', 'class="buy mine">tuo');
+      }
+      return rigaListino(p);
+    });
+    return '<div class="lab" style="margin:2px 0 4px 2px;">In vendita ora</div>' +
+      '<div class="card">' + righe.join('<div class="hair"></div>') + '</div>';
+  }
+
+  function fasciaFinestra(mio) {
+    const frazione = S.restano / FINESTRA_SEC;
+    const caldo = S.restano <= 600;
+    return '<div class="window-band' + (caldo ? " hot" : "") + '">' +
+      '<div class="top"><span class="lab">' +
+        (S.fase === "asta" ? "Asta in corso — scade con la finestra" : "Contestabile ancora") +
+      '</span></div>' +
+      '<div class="cd">' + hhmmss(S.restano) + '</div>' +
+      '<div class="track"><div class="fill" style="width:' + (frazione * 100).toFixed(2) + '%"></div></div>' +
+      '<div class="expl">' +
+        (S.fase === "asta"
+          ? (mio
+              ? (S.leader === "mine" ? "Sei in testa. Il massimo di Marco resta segreto." : "Marco è in testa. Puoi rilanciare fino alla scadenza.")
+              : (S.leader === "his" ? "Sei in testa. Il massimo di chi ha comprato resta segreto." : "L'acquirente è ancora in testa."))
+          : (mio ? "Passate le dodici ore è tuo per sempre." : "Puoi contestare finché il tempo non finisce.")) +
+      '</div>' +
+      (S.prolungata ? '<div class="expl" style="color:var(--gamble)">Prolungata ' + S.prolungata + ' volta' + (S.prolungata > 1 ? "e" : "") + ' dall\'anti-snipe.</div>' : "") +
+      '<div class="price-row">' +
+        '<span><span class="k">Prezzo adesso</span><div class="v num">' + S.prezzo + '</div></span>' +
+        '<span style="text-align:right"><span class="k">' + (mio ? "Il tuo massimo" : "Il tuo massimo") + '</span>' +
+        '<div class="v num ' + ((mio ? S.leader === "mine" : S.leader === "his") ? "lead-ok" : "lead-ko") + '">' +
+          ((mio ? S.maxMine : S.maxHis) || "—") + '</div></span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function schedaTarget() {
+    const p = S.target;
+    return '<div class="card"><div class="prow">' +
+      '<span class="pos">' + p.pos + '</span>' +
+      '<span class="who"><span class="n">' + p.nome + '</span><span class="m">' + p.meta + '</span></span>' +
+      '<span class="ovr ' + ratClass(p.ovr) + '">' + p.ovr + '</span>' +
+    '</div></div>';
+  }
+
+  function esito(mio) {
+    const vinto = (mio && S.leader === "mine") || (!mio && S.leader === "his");
+    const testo = S.maxHis === 0
+      ? (mio ? "Nessuno ha contestato: è tuo." : "L'acquisto è andato a buon fine per Ardita FC.")
+      : vinto ? "Aggiudicato a te per " + S.prezzo + " crediti."
+              : "Te lo sei fatto soffiare. Crediti liberati.";
+    return '<div class="statusline ' + (vinto || S.maxHis === 0 && mio ? "good" : "calm") + '">' + testo + '</div>';
+  }
+
+  function foglio(chi) {
+    const minimo = S.prezzo + RILANCIO_MIN;
+    const budget = chi === "mine" ? S.crMine + S.prezzoPagato : S.crHis;
+    const troppo = S.sheetVal > budget;
+    return '<div class="sheet"><div class="inner">' +
+      '<h4>' + (S.fase === "finestra" ? "Contesta l\'acquisto" : "Rilancia") + '</h4>' +
+      '<p class="sub">Dichiari il tuo <b>massimo</b>, non un rilancio: il sistema difende la ' +
+        'posizione da solo, e nessuno lo vede. Minimo ' + minimo + '.</p>' +
+      '<div class="stepper">' +
+        '<button type="button" data-step="-1">−</button>' +
+        '<span class="val">' + S.sheetVal + '</span>' +
+        '<button type="button" data-step="1">+</button>' +
+      '</div>' +
+      '<p class="sub" style="margin:10px 0 12px;">' +
+        (troppo ? '<span style="color:var(--on-alarm)">Non hai abbastanza crediti: ne hai ' + budget + '.</span>'
+                : 'Impegni ' + S.sheetVal + ' dei tuoi ' + budget + ' crediti finché l\'asta è aperta.') +
+      '</p>' +
+      '<button class="btn-primary" id="conferma" ' + (troppo ? "disabled" : "") + '>' +
+        (S.fase === "finestra" ? "Contesta a " + S.sheetVal : "Offri " + S.sheetVal) + '</button>' +
+      '<div style="height:9px"></div>' +
+      '<button class="btn-ghost" id="annulla">Lascia perdere</button>' +
+    '</div></div>';
+  }
+
+  function render() {
+    // orologi e crediti
+    el("clock-mine").textContent = orologio();
+    el("clock-his").textContent = orologio();
+    el("cr-mine").textContent = S.crMine + " cr";
+    el("cr-his").textContent = S.crHis + " cr";
+    el("c-mine").textContent = S.crMine + " cr";
+    el("c-his").textContent = S.crHis + " cr";
+
+    const bodyM = el("body-mine"), bodyH = el("body-his");
+    const actM = el("act-mine"), actH = el("act-his");
+
+    if (S.fase === "listino") {
+      el("title-mine").textContent = "Mercato";
+      el("title-his").textContent = "Mercato";
+      bodyM.innerHTML = listinoHtml(false);
+      bodyH.innerHTML = listinoHtml(true);
+      actM.innerHTML = "";
+      actH.innerHTML = '<div class="statusline calm" style="width:100%">Marco sta guardando il mercato.</div>';
+    } else {
+      el("title-mine").textContent = S.fase === "chiusa" ? "Esito" : "Il tuo acquisto";
+      el("title-his").textContent = S.fase === "chiusa" ? "Esito" : (S.fase === "asta" ? "Asta" : "Acquisto di Ardita FC");
+
+      bodyM.innerHTML = schedaTarget() +
+        (S.fase === "chiusa" ? esito(true) : fasciaFinestra(true)) +
+        (S.fase === "asta" && S.leader === "his"
+          ? '<div class="statusline bad">Superato. Il prezzo sale solo quanto serve: paghi ' + S.prezzo + ', non il suo massimo.</div>'
+          : "") +
+        (S.fase === "finestra"
+          ? '<div class="statusline good">Già in rosa: puoi schierarlo stasera.</div>'
+          : "");
+
+      bodyH.innerHTML = schedaTarget() +
+        (S.fase === "chiusa" ? esito(false) : fasciaFinestra(false)) +
+        (S.fase === "finestra"
+          ? '<div class="statusline calm">Ardita FC l\'ha comprato a ' + S.prezzoPagato + '. Lo volevi anche tu.</div>'
+          : "");
+
+      actM.innerHTML = S.fase === "asta"
+        ? '<button class="btn-primary" id="rilancia-mine">' + (S.leader === "mine" ? "Alza il tuo massimo" : "Rilancia") + '</button>'
+        : "";
+      actH.innerHTML = S.fase === "finestra"
+        ? '<button class="btn-primary" id="contesta">Contesta l\'acquisto</button>'
+        : S.fase === "asta"
+          ? '<button class="btn-primary" id="rilancia-his">' + (S.leader === "his" ? "Alza il tuo massimo" : "Rilancia") + '</button>'
+          : "";
+    }
+
+    // il foglio dell'offerta, sopra il telefono giusto
+    el("sheet-mine").innerHTML = S.sheet === "mine" ? foglio("mine") : "";
+    el("sheet-his").innerHTML  = S.sheet === "his"  ? foglio("his")  : "";
+
+    // registro
+    const log = el("log");
+    log.innerHTML = S.log.length === 0
+      ? '<li class="placeholder">Compra un giocatore dal telefono di sinistra per cominciare.</li>'
+      : S.log.map(r => '<li class="' + r.tipo + '"><span class="t num">' + r.t + '</span><span class="x">' + r.x + '</span></li>').join("");
+    log.scrollTop = log.scrollHeight;
+
+    // comandi del tempo
+    el("fast").disabled = !(S.fase === "finestra" || S.fase === "asta") || S.restano < 11 * 3600;
+    const inCorso = S.fase === "finestra" || S.fase === "asta";
+    el("rush").disabled = !inCorso || S.restano <= 3;
+    // Dopo che l'anti-snipe ha prolungato, il pulsante non deve spegnersi lasciando
+    // quaranta secondi veri da aspettare: da li' in poi fa scadere.
+    el("rush").textContent = S.restano > 45 ? "Vai agli ultimi 40 secondi" : "Fai scadere l'asta";
+  }
+
+  // ------------------------------------------------------------------ eventi
+  document.addEventListener("click", function (e) {
+    const t = e.target;
+
+    const compraId = t.getAttribute && t.getAttribute("data-compra");
+    if (compraId) { compra(LISTINO.find(p => p.id === +compraId)); return; }
+
+    if (t.id === "contesta")      { apriFoglio("his"); return; }
+    if (t.id === "rilancia-his")  { apriFoglio("his"); return; }
+    if (t.id === "rilancia-mine") { apriFoglio("mine"); return; }
+    if (t.id === "annulla")       { S.sheet = null; render(); return; }
+    if (t.id === "conferma")      { confermaOfferta(); return; }
+
+    const step = t.getAttribute && t.getAttribute("data-step");
+    if (step) {
+      const minimo = S.prezzo + RILANCIO_MIN;
+      S.sheetVal = Math.max(minimo, S.sheetVal + (+step));
+      render();
+      return;
+    }
+
+    if (t.id === "fast")  { scorri(11 * 3600); return; }
+    if (t.id === "rush")  { scorri(S.restano > 45 ? S.restano - 40 : S.restano); return; }
+    if (t.id === "reset") { S = stato(); render(); return; }
+  });
+
+  // il tempo scorre da solo, un secondo per secondo, quando c'e' una finestra aperta
+  setInterval(function () {
+    if (S.fase === "finestra" || S.fase === "asta") scorri(1);
+  }, 1000);
+
+  S = stato();
+  render();
+})();
+</script>

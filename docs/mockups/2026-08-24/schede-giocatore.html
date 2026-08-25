@@ -1,0 +1,739 @@
+<title>Tre schede, un giocatore</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;0,900&display=swap">
+
+<style>
+  /* ------------------------------------------------------------------ i token veri
+     Copiati da android/ui/theme/Theme.kt. Il sistema visivo di MFoot e' dichiaratamente
+     a tema unico — blu notte — quindi qui non c'e' nessun media query di tema: c'e' una
+     palette sola, dipinta esplicitamente, come nell'app. */
+  :root {
+    --bg:        #111D2B;
+    --core:      #0A1622;
+    --core-top:  #102030;
+    --raised:    #1C2836;
+    --bar:       #0C1520;
+
+    --line:        rgba(255,255,255,.08);
+    --line-strong: rgba(255,255,255,.14);
+
+    --elite:     #BCCDFF;
+    --on-accent: #12275C;
+    --blue:      #3F6ADD;
+    --blue-deep: #0A1E86;
+    --blue-arc:  #69C0FF;
+
+    --ink:  #F2F5FA;
+    --ink2: #93A2B8;
+    --ink3: #5E6E85;
+
+    --gamble:   #E9BC5A;
+    --alarm:    #5D2725;
+    --on-alarm: #FFCAC8;
+    --teach:    #4C0AC4;
+    --on-teach: #D4B8FF;
+
+    --good: #E6ECF5;
+    --mid:  #8494AC;
+    --low:  #55647A;
+
+    --shell: 24px;
+    --band:  18px;
+    --pill:  999px;
+
+    --font: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { max-width: 1240px; margin: 0 auto; padding: 40px 20px 80px; }
+
+  /* ------------------------------------------------------------------- intestazione */
+  .intro { max-width: 62ch; margin-bottom: 34px; }
+  .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--ink3); margin: 0 0 10px;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 40px); font-weight: 900; letter-spacing: -.02em;
+    margin: 0 0 14px; text-wrap: balance; line-height: 1.1;
+  }
+  .intro p { margin: 0 0 12px; color: var(--ink2); }
+  .intro strong { color: var(--ink); font-weight: 500; }
+
+  /* il riquadro che spiega — il viola compare solo per questo, come nell'app */
+  .teach {
+    background: var(--teach); color: var(--on-teach);
+    border-radius: var(--band); padding: 16px 18px; margin: 22px 0 0;
+    font-size: 14px;
+  }
+  .teach b { color: #fff; font-weight: 700; }
+
+  /* ------------------------------------------------------------------- i comandi */
+  .controls {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    margin: 30px 0 26px; padding: 14px; background: var(--core);
+    border-radius: var(--band);
+    position: sticky; top: 0; z-index: 20;
+    box-shadow: 0 10px 26px rgba(0,0,0,.34);
+  }
+  .controls .label {
+    font-size: 11px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink3); margin-right: 4px;
+  }
+  .seg { display: flex; gap: 6px; }
+  button {
+    font-family: var(--font); font-size: 13px; font-weight: 500;
+    border: 0; cursor: pointer; border-radius: var(--pill);
+    padding: 9px 15px; background: var(--bg); color: var(--ink2);
+    transition: background .16s ease, color .16s ease;
+  }
+  button:hover { background: var(--raised); color: var(--ink); }
+  button[aria-pressed="true"] { background: var(--elite); color: var(--on-accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--blue-arc); outline-offset: 2px; }
+
+  /* ------------------------------------------------------------------- i telefoni */
+  .decks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 1080px) { .decks { grid-template-columns: 1fr; max-width: 420px; margin: 0 auto; } }
+
+  .deck { display: flex; flex-direction: column; gap: 14px; }
+
+  .phone {
+    background: var(--bg);
+    border: 1px solid var(--line-strong);
+    border-radius: 30px;
+    padding: 10px;
+    box-shadow: 0 22px 44px rgba(0,0,0,.42);
+  }
+  .screen {
+    background: var(--bg); border-radius: 22px; overflow: hidden;
+    min-height: 620px; display: flex; flex-direction: column;
+  }
+
+  /* la barra blu in cima, che nell'app colora anche la barra di stato */
+  .statusbar {
+    background: var(--blue); color: #fff; padding: 7px 14px 8px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; font-weight: 500; letter-spacing: .04em;
+  }
+  .statusbar .dots { display: flex; gap: 4px; }
+  .statusbar .dots i { width: 4px; height: 4px; background: rgba(255,255,255,.75); border-radius: 50%; display: block; }
+
+  .appbar {
+    background: var(--blue); color: #fff; padding: 4px 14px 14px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .appbar .back { font-size: 19px; opacity: .9; }
+  .appbar .title { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+
+  .body { padding: 14px; flex: 1; display: flex; flex-direction: column; gap: 12px; }
+
+  /* ------------------------------------------------------------------- vocabolario */
+  .card { background: var(--core); border-radius: var(--band); }
+  .card.grad { background: linear-gradient(180deg, var(--core-top), var(--core)); }
+
+  .lab {
+    font-size: 10px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink3);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .rat-elite { color: var(--elite); }
+  .rat-good  { color: var(--good); }
+  .rat-mid   { color: var(--mid); }
+  .rat-low   { color: var(--low); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--bg); color: var(--ink2);
+    border-radius: var(--pill); padding: 4px 10px;
+    font-size: 11px; font-weight: 500;
+  }
+  .chip.strong { background: var(--raised); color: var(--ink); font-weight: 700; }
+  .chip.gold   { background: rgba(233,188,90,.14); color: var(--gamble); font-weight: 700; }
+  .chip.warn   { background: var(--alarm); color: var(--on-alarm); font-weight: 700; }
+
+  .hair { height: 1px; background: var(--line); }
+
+  .btn-primary {
+    display: block; width: 100%; text-align: center;
+    background: var(--elite); color: var(--on-accent);
+    border-radius: var(--pill); padding: 13px; font-size: 14px; font-weight: 700;
+  }
+  .btn-ghost {
+    display: block; width: 100%; text-align: center;
+    background: transparent; color: var(--ink2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--pill); padding: 12px; font-size: 14px; font-weight: 500;
+  }
+  .footer-actions { display: flex; gap: 9px; padding: 12px 14px 16px; }
+  .footer-actions > * { flex: 1; }
+
+  /* ============================================================== A — LA FIGURINA */
+  .fig-top {
+    position: relative; overflow: hidden;
+    background: linear-gradient(155deg, var(--blue-deep) 0%, #16307e 46%, var(--core) 100%);
+    border-radius: var(--band);
+    padding: 16px 16px 14px;
+  }
+  /* gli archi concentrici del riferimento, disegnati e non decorativi:
+     ancorano il ritratto e ripetono la testata delle altre schermate */
+  .fig-top .arcs { position: absolute; inset: auto -40px -110px auto; width: 260px; height: 260px; opacity: .5; }
+  .fig-top .arcs span {
+    position: absolute; border: 1px solid var(--blue-arc); border-radius: 50%; opacity: .34;
+  }
+  .fig-grid { position: relative; display: grid; grid-template-columns: 78px 1fr; gap: 14px; align-items: start; }
+
+  .ovr-block { text-align: center; }
+  .ovr-block .val {
+    font-size: 52px; font-weight: 900; line-height: .92; letter-spacing: -.04em;
+    font-variant-numeric: tabular-nums;
+  }
+  .ovr-block .cap { font-size: 10px; font-weight: 700; letter-spacing: .14em; color: rgba(255,255,255,.62); }
+  .ovr-block .role {
+    margin-top: 8px; background: rgba(255,255,255,.13); border-radius: 8px;
+    padding: 4px 0; font-size: 12px; font-weight: 700; letter-spacing: .06em;
+  }
+  /* il margine di crescita: un gradino sopra l'overall, non una barra lunga */
+  .upside-tab {
+    margin-top: 7px; border-radius: 8px; padding: 4px 0;
+    font-size: 12px; font-weight: 900; font-variant-numeric: tabular-nums;
+    background: rgba(233,188,90,.17); color: var(--gamble);
+  }
+  .upside-tab.done { background: rgba(188,205,255,.14); color: var(--elite); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+
+  .fig-name .given { font-size: 14px; font-weight: 400; color: rgba(255,255,255,.72); line-height: 1.2; }
+  .fig-name .sur   { font-size: 27px; font-weight: 900; letter-spacing: -.025em; line-height: 1.06; margin-top: 1px; }
+  .fig-meta { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .fig-meta .chip { background: rgba(255,255,255,.11); color: rgba(255,255,255,.86); }
+  .fig-meta .chip.badge { background: var(--gamble); color: #2A1C00; font-weight: 700; }
+
+  /* le sei barrette: piccole, pari, e leggibili di colpo */
+  .hexa { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 12px; padding: 14px; }
+  .hexa .cell { display: flex; flex-direction: column; gap: 4px; }
+  .hexa .cell .top { display: flex; justify-content: space-between; align-items: baseline; }
+  .hexa .cell .k { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--ink3); text-transform: uppercase; }
+  .hexa .cell .v { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .hexa .track { height: 3px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+  .hexa .fill { height: 3px; border-radius: 2px; }
+
+  .strip { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .strip .s { padding: 12px 8px; text-align: center; }
+  .strip .s + .s { border-left: 1px solid var(--line); }
+  .strip .s .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .strip .s .k { font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--ink3); text-transform: uppercase; margin-top: 2px; }
+
+  /* ============================================================== B — IL CRUSCOTTO */
+  .dash-head { display: flex; align-items: center; gap: 12px; padding: 14px; }
+  .dash-head .shirt {
+    width: 46px; height: 46px; border-radius: 14px; flex: none;
+    background: linear-gradient(160deg, var(--blue), #2A4EAF);
+    display: grid; place-items: center; font-size: 15px; font-weight: 900; color: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+  .dash-head .who { flex: 1; min-width: 0; }
+  .dash-head .who .n { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  .dash-head .who .m { font-size: 12px; color: var(--ink2); }
+  .dash-head .ovr { text-align: right; }
+  .dash-head .ovr .v { font-size: 30px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+  .dash-head .ovr .k { font-size: 9px; font-weight: 700; letter-spacing: .14em; color: var(--ink3); }
+
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .tile { background: var(--core); border-radius: 14px; padding: 11px 12px; }
+  .tile .k { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink3); }
+  .tile .v { font-size: 19px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .tile .s { font-size: 11px; color: var(--ink2); margin-top: 1px; }
+  .tile.wide { grid-column: 1 / -1; }
+
+  /* il potenziale come RIGA, non come barra: due numeri e una frase */
+  .upside-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .upside-row .from { font-size: 19px; font-weight: 700; color: var(--ink2); font-variant-numeric: tabular-nums; }
+  .upside-row .arrow { color: var(--ink3); font-size: 15px; }
+  .upside-row .to { font-size: 22px; font-weight: 900; color: var(--gamble); font-variant-numeric: tabular-nums; }
+  .upside-row .to.done { color: var(--elite); font-size: 15px; font-weight: 700; }
+  .know { display: flex; align-items: center; gap: 7px; margin-top: 8px; }
+  .know .pips { display: flex; gap: 3px; }
+  .know .pips i { width: 15px; height: 3px; border-radius: 2px; background: var(--bg); display: block; }
+  .know .pips i.on { background: var(--ink2); }
+  .know .t { font-size: 11px; color: var(--ink3); }
+
+  .rowlist .r { display: flex; align-items: center; gap: 10px; padding: 9px 12px; }
+  .rowlist .r .k { flex: 1; font-size: 13px; color: var(--ink2); }
+  .rowlist .r .v { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .rowlist .r .track { width: 62px; height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; flex: none; }
+  .rowlist .r .fill { height: 4px; border-radius: 2px; }
+
+  /* ================================================================ C — IL DOSSIER */
+  .dossier .band { padding: 15px 16px; }
+  .dossier .band + .band { border-top: 1px solid var(--line); }
+  .dossier .bighead { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .dossier .bighead .sur { font-size: 30px; font-weight: 900; letter-spacing: -.03em; line-height: 1; }
+  .dossier .bighead .given { font-size: 13px; color: var(--ink2); }
+  .dossier .bighead .ovr { font-size: 44px; font-weight: 900; line-height: .9; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+  .verdict { font-size: 15px; font-weight: 500; line-height: 1.45; }
+  .verdict em { font-style: normal; color: var(--gamble); font-weight: 700; }
+  .verdict b { color: var(--elite); font-weight: 700; }
+  .kv { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; }
+  .kv .k { font-size: 13px; color: var(--ink2); }
+  .kv .v { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .attr-inline { display: flex; flex-wrap: wrap; gap: 6px; }
+  .attr-inline .a {
+    display: flex; align-items: baseline; gap: 5px;
+    background: var(--bg); border-radius: 8px; padding: 5px 8px;
+  }
+  .attr-inline .a .k { font-size: 10px; font-weight: 700; letter-spacing: .07em; color: var(--ink3); text-transform: uppercase; }
+  .attr-inline .a .v { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .attr-inline .a.dim { opacity: .42; }
+
+  /* ------------------------------------------------------------------- le note */
+  .note { background: var(--core); border-radius: var(--band); padding: 16px 18px; }
+  .note h3 { margin: 0 0 4px; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  .note .kicker { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--elite); margin-bottom: 8px; }
+  .note p { margin: 0 0 9px; font-size: 13.5px; color: var(--ink2); line-height: 1.5; }
+  .note p:last-of-type { margin-bottom: 0; }
+  .note .cost { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 11px; }
+
+  .foot { margin-top: 34px; color: var(--ink3); font-size: 13px; max-width: 70ch; }
+  .foot b { color: var(--ink2); font-weight: 500; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="page">
+
+  <div class="intro">
+    <p class="eyebrow">MFoot · scheda giocatore · 24 agosto 2026</p>
+    <h1>Tre schede, un giocatore</h1>
+    <p>La barra grande se ne va. Al suo posto tre modi diversi di rispondere alla stessa
+       domanda — <strong>lo compro o no?</strong> — con gli stessi dati che il database
+       già manda al telefono.</p>
+    <p>Sono schermate vere in scala 1:1, con i colori di <strong>Theme.kt</strong>.
+       Cambia il giocatore col comando qui sotto: la scheda deve reggere sia il ragazzo
+       da scommessa sia il veterano arrivato, ed è esattamente lì che la barra di adesso
+       si rompe.</p>
+
+    <div class="teach">
+      <b>Perché la barra andava tolta.</b> Occupa la fascia più preziosa della scheda —
+      subito sotto il nome — per dire una cosa sola, e per metà dei giocatori quella cosa
+      è «niente da aggiungere». Su un maturo si riempie tutta e non informa; su un giovane
+      mostra un vuoto che sembra un difetto invece di una promessa.
+    </div>
+  </div>
+
+  <div class="controls">
+    <span class="label">Chi guardi</span>
+    <div class="seg">
+      <button type="button" data-who="giovane" aria-pressed="true">Ferrara · 19 anni</button>
+      <button type="button" data-who="veterano" aria-pressed="false">Volkov · 31 anni</button>
+    </div>
+  </div>
+
+  <div class="decks">
+
+    <!-- ============================================================ A — LA FIGURINA -->
+    <div class="deck">
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar">
+            <span class="num">21:14</span>
+            <span class="dots"><i></i><i></i><i></i></span>
+          </div>
+          <div class="appbar"><span class="back">‹</span><span class="title">Scheda</span></div>
+
+          <div class="body">
+            <div class="fig-top">
+              <div class="arcs">
+                <span style="inset:0;"></span>
+                <span style="inset:26px;"></span>
+                <span style="inset:52px;"></span>
+                <span style="inset:78px;"></span>
+              </div>
+              <div class="fig-grid">
+                <div class="ovr-block">
+                  <div class="val" data-f="ovr">71</div>
+                  <div class="cap">OVR</div>
+                  <div class="role" data-f="role">ATT</div>
+                  <div class="upside-tab" data-f="upsideTab">+13</div>
+                </div>
+                <div class="fig-name">
+                  <div class="given" data-f="given">Matteo</div>
+                  <div class="sur" data-f="sur">Ferrara</div>
+                  <div class="fig-meta">
+                    <span class="chip" data-f="flag">🇮🇹 19 anni</span>
+                    <span class="chip badge" data-f="badge">Rigorista</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="hexa" data-f="hexa"></div>
+            </div>
+
+            <div class="card">
+              <div class="strip">
+                <div class="s"><div class="v num" data-f="pres">14</div><div class="k">Presenze</div></div>
+                <div class="s"><div class="v num" data-f="gol">6</div><div class="k">Gol</div></div>
+                <div class="s"><div class="v num" data-f="voto">6,7</div><div class="k">Media</div></div>
+              </div>
+            </div>
+
+            <div class="card" style="padding:12px 14px;">
+              <div class="lab" style="margin-bottom:8px;">Come sta</div>
+              <div style="display:flex;gap:7px;flex-wrap:wrap;">
+                <span class="chip strong" data-f="stam">Stamina 88</span>
+                <span class="chip" data-f="mor">Morale 74</span>
+                <span class="chip" data-f="forma">In forma</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer-actions">
+            <span class="btn-ghost">Confronta</span>
+            <span class="btn-primary" data-f="cta">Compra · 34</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="kicker">Direzione A</div>
+        <h3>La figurina</h3>
+        <p>Il margine di crescita diventa <strong>un gradino sotto l'overall</strong>:
+           «71» e sotto «+13» in oro. Occupa quarantacinque pixel invece di centoventi,
+           e si legge nello stesso colpo d'occhio del numero grande.</p>
+        <p>Sei attributi in tre colonne, non dodici in due: solo quelli che il ruolo pesa
+           davvero. La testata ad archi è la stessa delle altre schermate, quindi la
+           scheda entra nell'app invece di sembrare un'altra app.</p>
+        <div class="cost">
+          <span class="chip strong">Registro alto</span>
+          <span class="chip">La più bella da guardare</span>
+          <span class="chip warn">La meno densa</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================== B — IL CRUSCOTTO -->
+    <div class="deck">
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar">
+            <span class="num">21:14</span>
+            <span class="dots"><i></i><i></i><i></i></span>
+          </div>
+          <div class="appbar"><span class="back">‹</span><span class="title">Scheda</span></div>
+
+          <div class="body">
+            <div class="card grad">
+              <div class="dash-head">
+                <div class="shirt" data-f="numero">9</div>
+                <div class="who">
+                  <div class="n"><span data-f="given2">Matteo</span> <b data-f="sur2">Ferrara</b></div>
+                  <div class="m"><span data-f="meta2">ATT · 19 anni · Italia</span></div>
+                </div>
+                <div class="ovr">
+                  <div class="v" data-f="ovr2">71</div>
+                  <div class="k">OVR</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="tiles">
+              <div class="tile wide">
+                <div class="k">Dove può arrivare</div>
+                <div class="upside-row" style="margin-top:4px;">
+                  <span class="from num" data-f="from">71 oggi</span>
+                  <span class="arrow">→</span>
+                  <span class="to num" data-f="to">79 – 88</span>
+                </div>
+                <div class="know">
+                  <span class="pips" data-f="pips"></span>
+                  <span class="t" data-f="knowt">lo conosci poco · 2 osservatori lo seguono</span>
+                </div>
+              </div>
+
+              <div class="tile">
+                <div class="k">Stamina</div>
+                <div class="v num" data-f="stam2">88</div>
+                <div class="s" data-f="stams">pronto per due partite</div>
+              </div>
+              <div class="tile">
+                <div class="k">Morale</div>
+                <div class="v num" data-f="mor2">74</div>
+                <div class="s" data-f="mors">contento di giocare</div>
+              </div>
+              <div class="tile">
+                <div class="k">Valore</div>
+                <div class="v num" data-f="val">34</div>
+                <div class="s">crediti</div>
+              </div>
+              <div class="tile">
+                <div class="k">Contratto</div>
+                <div class="v num" data-f="con">32</div>
+                <div class="s" data-f="cons">giornate</div>
+              </div>
+            </div>
+
+            <div class="card rowlist" data-f="rows"></div>
+          </div>
+
+          <div class="footer-actions">
+            <span class="btn-ghost">Metti in vendita</span>
+            <span class="btn-primary" data-f="cta2">Compra · 34</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="kicker">Direzione B</div>
+        <h3>Il cruscotto</h3>
+        <p>Il potenziale diventa <strong>una riga sola</strong> — «71 oggi → 79-88» — con
+           sotto i trattini di quanto lo conosci. Stessa informazione della barra, un
+           quinto dello spazio, e per la prima volta si legge <em>anche</em> quanto ti puoi
+           fidare della stima.</p>
+        <p>Tutto il resto sono tessere di misura uguale: stamina, morale, valore,
+           contratto. È la direzione che regge meglio i dati che arriveranno dopo — clausola,
+           incarichi, buonuscita — perché basta aggiungere una tessera.</p>
+        <div class="cost">
+          <span class="chip strong">La più informativa</span>
+          <span class="chip">Cresce senza rifarla</span>
+          <span class="chip warn">Meno teatro</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================= C — IL DOSSIER -->
+    <div class="deck">
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar">
+            <span class="num">21:14</span>
+            <span class="dots"><i></i><i></i><i></i></span>
+          </div>
+          <div class="appbar"><span class="back">‹</span><span class="title">Scheda</span></div>
+
+          <div class="body">
+            <div class="card dossier">
+              <div class="band">
+                <div class="bighead">
+                  <div>
+                    <div class="given" data-f="given3">Matteo</div>
+                    <div class="sur" data-f="sur3">Ferrara</div>
+                  </div>
+                  <div class="ovr" data-f="ovr3">71</div>
+                </div>
+                <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+                  <span class="chip strong" data-f="role3">ATT · Attaccante</span>
+                  <span class="chip" data-f="age3">19 anni</span>
+                </div>
+              </div>
+
+              <div class="band">
+                <div class="lab" style="margin-bottom:7px;">Il giudizio</div>
+                <div class="verdict" data-f="verdict">
+                  Può diventare <em>un titolare da 88</em>, ma non lo hai mai visto giocare:
+                  la forbice è larga nove punti e si stringe solo mandandoci un osservatore.
+                </div>
+              </div>
+
+              <div class="band">
+                <div class="lab" style="margin-bottom:5px;">I numeri che decidono</div>
+                <div class="kv"><span class="k">Vale sul mercato</span><span class="v" data-f="k1">34 crediti</span></div>
+                <div class="kv"><span class="k">Stipendio a giornata</span><span class="v" data-f="k2">3 crediti</span></div>
+                <div class="kv"><span class="k">Contratto</span><span class="v" data-f="k3">32 giornate</span></div>
+                <div class="kv"><span class="k">Stamina · morale</span><span class="v" data-f="k4">88 · 74</span></div>
+              </div>
+
+              <div class="band">
+                <div class="lab" style="margin-bottom:8px;">Attributi</div>
+                <div class="attr-inline" data-f="inline"></div>
+              </div>
+
+              <div class="band">
+                <div class="lab" style="margin-bottom:8px;">Tratti</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  <span class="chip gold" data-f="t1">Freddo dal dischetto</span>
+                  <span class="chip" data-f="t2">Cresce in fretta</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer-actions">
+            <span class="btn-ghost">Osserva</span>
+            <span class="btn-primary" data-f="cta3">Compra · 34</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="kicker">Direzione C</div>
+        <h3>Il dossier</h3>
+        <p>Nessun numero grande a parte l'overall: la scheda <strong>ti dice a parole</strong>
+           cosa sta guardando. «Può diventare un titolare da 88, ma non lo hai mai visto
+           giocare» è la frase che oggi il giocatore deve dedurre da una barra e da una
+           forbice.</p>
+        <p>È la direzione che regge meglio i giocatori noiosi — un gregario da 63 senza
+           margine — perché una frase può dire «serve solo a far rifiatare il titolare»,
+           mentre una barra piena dice sempre e solo la stessa cosa.</p>
+        <div class="cost">
+          <span class="chip strong">La più chiara</span>
+          <span class="chip">Insegna a giocare</span>
+          <span class="chip warn">Testo da scrivere in core</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="foot">
+    <b>Quello che nessuna delle tre fa più:</b> occupare un sesto dell'altezza per una
+    barra. Il posto liberato serve — capitano, rigorista, battitore d'angoli e le altre
+    caselle degli incarichi devono comparire proprio qui, sulla scheda dell'uomo a cui
+    li assegni.
+  </p>
+</div>
+
+<script>
+  // I due giocatori d'esempio. Numeri plausibili per un mondo generato da WorldGenerator:
+  // il giovane e' una scommessa con forbice larga, il veterano e' arrivato e in calo.
+  const DATI = {
+    giovane: {
+      given: "Matteo", sur: "Ferrara", ovr: 71, role: "ATT", roleLong: "ATT · Attaccante",
+      age: 19, flag: "🇮🇹 19 anni", nat: "Italia", numero: 9,
+      badge: "Rigorista", upsideTab: "+13", upside: true,
+      from: "71 oggi", to: "79 – 88",
+      know: 2, knowt: "lo conosci poco · 2 osservatori lo seguono",
+      stam: 88, mor: 74, forma: "In forma", val: 34, con: 32, wage: 3,
+      pres: 14, gol: 6, voto: "6,7",
+      stams: "pronto per due partite", mors: "contento di giocare",
+      verdict: 'Può diventare <em>un titolare da 88</em>, ma non lo hai mai visto giocare: la forbice è larga nove punti e si stringe solo mandandoci un osservatore.',
+      tratti: ["Freddo dal dischetto", "Cresce in fretta"],
+      attrs: [["Tiro",78],["Velocità",82],["Dribbling",74],["Tecnica",71],["Posiz.",69],["Fisico",66]],
+      altri: [["Passaggio",61],["Difesa",32]]
+    },
+    veterano: {
+      given: "Andrej", sur: "Volkov", ovr: 84, role: "DC", roleLong: "DC · Difensore centrale",
+      age: 31, flag: "🇷🇺 31 anni", nat: "Russia", numero: 4,
+      badge: "Capitano", upsideTab: "AL MAX", upside: false,
+      from: "84 oggi", to: "tetto raggiunto",
+      know: 4, knowt: "lo conosci bene · 96 partite viste",
+      stam: 62, mor: 55, forma: "Appannato", val: 41, con: 6, wage: 7,
+      pres: 96, gol: 4, voto: "7,1",
+      stams: "una partita e va gestito", mors: "il contratto lo preoccupa",
+      verdict: 'È <b>arrivato</b>: da qui in avanti cala di un punto a stagione. Sei giornate al contratto, e a 31 anni un rinnovo lungo pesa sul monte stipendi per anni.',
+      tratti: ["Leader dello spogliatoio", "Duro sulle gambe"],
+      attrs: [["Difesa",87],["Posiz.",85],["Intercett.",82],["Fisico",80],["Passaggio",66],["Velocità",58]],
+      altri: [["Tecnica",54],["Tiro",39]]
+    }
+  };
+
+  // La scala dei valori di MFootColors.rating: tre gradini netti, non una sfumatura.
+  function ratingClass(v) {
+    if (v >= 85) return "rat-elite";
+    if (v >= 70) return "rat-good";
+    if (v >= 55) return "rat-mid";
+    return "rat-low";
+  }
+  function ratingColor(v) {
+    if (v >= 85) return "var(--elite)";
+    if (v >= 70) return "var(--good)";
+    if (v >= 55) return "var(--mid)";
+    return "var(--low)";
+  }
+
+  const $ = (sel, root) => (root || document).querySelectorAll(sel);
+  const set = (name, html) => $('[data-f="' + name + '"]').forEach(el => { el.innerHTML = html; });
+
+  function render(chi) {
+    const d = DATI[chi];
+
+    // --- A: la figurina
+    set("ovr", d.ovr);
+    $('[data-f="ovr"]').forEach(el => el.style.color = ratingColor(d.ovr));
+    set("role", d.role);
+    set("given", d.given); set("sur", d.sur);
+    set("flag", d.flag); set("badge", d.badge);
+    const tab = $('[data-f="upsideTab"]')[0];
+    tab.textContent = d.upsideTab;
+    tab.className = "upside-tab" + (d.upside ? "" : " done");
+
+    const hexa = $('[data-f="hexa"]')[0];
+    hexa.innerHTML = d.attrs.map(([k, v]) => `
+      <div class="cell">
+        <div class="top"><span class="k">${k}</span><span class="v ${ratingClass(v)}">${v}</span></div>
+        <div class="track"><div class="fill" style="width:${v}%;background:${ratingColor(v)}"></div></div>
+      </div>`).join("");
+
+    set("pres", d.pres); set("gol", d.gol); set("voto", d.voto);
+    set("stam", "Stamina " + d.stam);
+    set("mor", "Morale " + d.mor);
+    set("forma", d.forma);
+    set("cta", "Compra · " + d.val);
+
+    // --- B: il cruscotto
+    set("numero", d.numero);
+    set("given2", d.given); set("sur2", d.sur);
+    set("meta2", `${d.role} · ${d.age} anni · ${d.nat}`);
+    set("ovr2", d.ovr);
+    $('[data-f="ovr2"]').forEach(el => el.style.color = ratingColor(d.ovr));
+    set("from", d.from);
+    const to = $('[data-f="to"]')[0];
+    to.textContent = d.to;
+    to.className = "to num" + (d.upside ? "" : " done");
+    $('[data-f="pips"]')[0].innerHTML =
+      [0,1,2,3].map(i => `<i class="${i < d.know ? "on" : ""}"></i>`).join("");
+    set("knowt", d.knowt);
+    set("stam2", d.stam); set("stams", d.stams);
+    set("mor2", d.mor);  set("mors", d.mors);
+    set("val", d.val);
+    set("con", d.con);
+    set("cons", d.con <= 8 ? "giornate — in scadenza" : "giornate");
+    $('[data-f="con"]').forEach(el => el.style.color = d.con <= 8 ? "var(--gamble)" : "var(--ink)");
+    $('[data-f="rows"]')[0].innerHTML = d.attrs.map(([k, v], i) => `
+      ${i ? '<div class="hair"></div>' : ""}
+      <div class="r">
+        <span class="k">${k}</span>
+        <span class="track"><span class="fill" style="width:${v}%;background:${ratingColor(v)}"></span></span>
+        <span class="v ${ratingClass(v)}">${v}</span>
+      </div>`).join("");
+    set("cta2", "Compra · " + d.val);
+
+    // --- C: il dossier
+    set("given3", d.given); set("sur3", d.sur);
+    set("ovr3", d.ovr);
+    $('[data-f="ovr3"]').forEach(el => el.style.color = ratingColor(d.ovr));
+    set("role3", d.roleLong);
+    set("age3", d.age + " anni");
+    set("verdict", d.verdict);
+    set("k1", d.val + " crediti");
+    set("k2", d.wage + " crediti");
+    set("k3", d.con + " giornate");
+    set("k4", d.stam + " · " + d.mor);
+    $('[data-f="inline"]')[0].innerHTML =
+      d.attrs.map(([k, v]) => `<span class="a"><span class="k">${k}</span><span class="v ${ratingClass(v)}">${v}</span></span>`).join("") +
+      d.altri.map(([k, v]) => `<span class="a dim"><span class="k">${k}</span><span class="v ${ratingClass(v)}">${v}</span></span>`).join("");
+    set("t1", d.tratti[0]); set("t2", d.tratti[1]);
+    set("cta3", "Compra · " + d.val);
+  }
+
+  $(".controls button").forEach(b => {
+    b.addEventListener("click", () => {
+      $(".controls button").forEach(x => x.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", "true");
+      render(b.dataset.who);
+    });
+  });
+
+  render("giovane");
+</script>

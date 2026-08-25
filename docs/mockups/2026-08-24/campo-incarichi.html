@@ -1,0 +1,455 @@
+<title>Undici uomini, cinque incarichi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap">
+
+<style>
+  :root {
+    --bg:#111D2B; --core:#0A1622; --core-top:#102030; --raised:#1C2836; --bar:#0C1520;
+    --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.14);
+    --elite:#BCCDFF; --on-accent:#12275C; --blue:#3F6ADD; --blue-deep:#0A1E86; --blue-arc:#69C0FF;
+    --ink:#F2F5FA; --ink2:#93A2B8; --ink3:#5E6E85;
+    --gamble:#E9BC5A; --alarm:#5D2725; --on-alarm:#FFCAC8; --teach:#4C0AC4; --on-teach:#D4B8FF;
+    --good:#E6ECF5; --mid:#8494AC; --low:#55647A;
+    --band:18px; --pill:999px;
+    --font:"Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font); font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .page { max-width:1240px; margin:0 auto; padding:40px 20px 80px; }
+
+  .eyebrow { font-size:11px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--ink3); margin:0 0 10px; }
+  h1 { font-size:clamp(28px,5vw,40px); font-weight:900; letter-spacing:-.02em; margin:0 0 14px; line-height:1.1; text-wrap:balance; }
+  .intro { max-width:64ch; }
+  .intro p { margin:0 0 12px; color:var(--ink2); }
+  .intro strong { color:var(--ink); font-weight:500; }
+  .teach { background:var(--teach); color:var(--on-teach); border-radius:var(--band); padding:16px 18px; margin-top:20px; font-size:14px; max-width:64ch; }
+  .teach b { color:#fff; font-weight:700; }
+
+  .lab { font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--ink3); }
+  .num { font-variant-numeric:tabular-nums; }
+  .rat-elite{color:var(--elite)} .rat-good{color:var(--good)} .rat-mid{color:var(--mid)} .rat-low{color:var(--low)}
+
+  /* --------------------------------------------------------------- moduli */
+  .moduli { display:flex; flex-wrap:wrap; gap:7px; margin:26px 0 22px; }
+  .moduli button {
+    font-family:var(--font); font-size:13px; font-weight:500; border:0; cursor:pointer;
+    border-radius:var(--pill); padding:9px 15px; background:var(--core); color:var(--ink2);
+    font-variant-numeric:tabular-nums; transition:background .16s ease,color .16s ease;
+  }
+  .moduli button:hover { background:var(--raised); color:var(--ink); }
+  .moduli button[aria-pressed="true"] { background:var(--elite); color:var(--on-accent); font-weight:700; }
+  .moduli button:focus-visible { outline:2px solid var(--blue-arc); outline-offset:2px; }
+  .moduli .nuovo::after { content:"nuovo"; margin-left:7px; font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--gamble); }
+  .moduli button[aria-pressed="true"].nuovo::after { color:var(--on-accent); opacity:.62; }
+
+  .stage { display:grid; grid-template-columns:minmax(300px,420px) 1fr; gap:24px; align-items:start; }
+  @media (max-width:900px) { .stage { grid-template-columns:1fr; max-width:460px; margin:0 auto; } }
+
+  /* --------------------------------------------------------------- il campo */
+  .pitch-wrap { background:var(--core); border-radius:var(--band); padding:12px; }
+  .pitch {
+    position:relative; width:100%; aspect-ratio:68/105; border-radius:12px; overflow:hidden;
+    background:linear-gradient(180deg,#0d2338,#0a1a2a);
+  }
+  .pitch .lines { position:absolute; inset:0; }
+  .pitch .lines * { position:absolute; border:1px solid rgba(105,192,255,.20); }
+  .spot {
+    position:absolute; transform:translate(-50%,-50%);
+    width:62px; display:flex; flex-direction:column; align-items:center; gap:3px;
+    cursor:pointer; background:none; border:0; font-family:var(--font); padding:0;
+  }
+  .spot .disc {
+    width:38px; height:38px; border-radius:50%;
+    background:var(--raised); border:1px solid var(--line-strong);
+    display:grid; place-items:center; font-size:13px; font-weight:900; color:var(--ink);
+    font-variant-numeric:tabular-nums; transition:transform .16s ease, box-shadow .16s ease;
+  }
+  .spot:hover .disc { transform:scale(1.07); }
+  .spot:focus-visible .disc { outline:2px solid var(--blue-arc); outline-offset:2px; }
+  .spot .nome { font-size:10px; font-weight:500; color:var(--ink2); text-align:center; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:62px; }
+  .spot .ruolo { position:absolute; top:-7px; right:6px; font-size:8px; font-weight:700; letter-spacing:.05em; background:var(--bg); color:var(--ink3); border-radius:5px; padding:1px 4px; }
+  .spot.gk .disc { background:linear-gradient(160deg,#2b3a4d,#1a2635); }
+  .spot.fuori .disc { box-shadow:0 0 0 2px var(--gamble); }
+  /* i distintivi degli incarichi, sul disco dell'uomo che li ha */
+  .spot .badges { position:absolute; bottom:15px; left:50%; transform:translateX(-50%); display:flex; gap:2px; }
+  .spot .badges i {
+    width:15px; height:15px; border-radius:50%; display:grid; place-items:center;
+    font-size:8px; font-weight:900; font-style:normal;
+    background:var(--elite); color:var(--on-accent); border:1.5px solid var(--core);
+  }
+
+  .riepilogo { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
+  .riepilogo .r { background:var(--bg); border-radius:12px; padding:10px 6px; text-align:center; }
+  .riepilogo .r .v { font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .riepilogo .r .k { font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink3); margin-top:2px; }
+
+  /* --------------------------------------------------------------- incarichi */
+  .col h2 { font-size:19px; font-weight:700; margin:0 0 3px; letter-spacing:-.01em; }
+  .col .sub { font-size:13px; color:var(--ink3); margin:0 0 14px; }
+
+  .task {
+    background:var(--core); border-radius:var(--band); padding:13px 14px; margin-bottom:9px;
+    display:flex; align-items:center; gap:12px; cursor:pointer; width:100%; text-align:left;
+    border:1px solid transparent; font-family:var(--font);
+    transition:border-color .16s ease, background .16s ease;
+  }
+  .task:hover { border-color:var(--line-strong); }
+  .task:focus-visible { outline:2px solid var(--blue-arc); outline-offset:2px; }
+  .task .mark {
+    width:34px; height:34px; border-radius:11px; flex:none; display:grid; place-items:center;
+    background:var(--raised); color:var(--elite); font-size:13px; font-weight:900;
+  }
+  .task .txt { flex:1; min-width:0; }
+  .task .txt .k { font-size:13.5px; font-weight:700; }
+  .task .txt .v { font-size:12px; color:var(--ink2); }
+  .task .txt .v b { color:var(--elite); font-weight:700; }
+  .task .why { font-size:11px; color:var(--ink3); text-align:right; flex:none; max-width:130px; line-height:1.3; }
+
+  .effetto { background:linear-gradient(180deg,var(--core-top),var(--core)); border-radius:var(--band); padding:15px 16px; margin-top:16px; border:1px solid var(--line-strong); }
+  .effetto .lab { margin-bottom:8px; display:block; }
+  .effetto p { margin:0 0 9px; font-size:13.5px; color:var(--ink2); line-height:1.5; }
+  .effetto p:last-child { margin-bottom:0; }
+  .effetto b { color:var(--ink); font-weight:700; }
+  .effetto .up { color:var(--gamble); font-weight:700; }
+  .effetto .down { color:var(--on-alarm); font-weight:700; }
+
+  /* --------------------------------------------------------------- il foglio */
+  .overlay { position:fixed; inset:0; background:rgba(5,10,17,.78); display:grid; place-items:center; padding:20px; z-index:50; }
+  .picker { background:var(--core-top); border-radius:22px; width:min(440px,100%); max-height:80vh; overflow:auto; padding:20px; }
+  .picker h3 { margin:0 0 3px; font-size:18px; font-weight:700; }
+  .picker .sub { font-size:13px; color:var(--ink2); margin:0 0 15px; }
+  .cand { display:flex; align-items:center; gap:11px; padding:11px 12px; border-radius:14px; background:var(--bg); margin-bottom:7px; cursor:pointer; width:100%; border:1px solid transparent; font-family:var(--font); text-align:left; }
+  .cand:hover { border-color:var(--line-strong); }
+  .cand:focus-visible { outline:2px solid var(--blue-arc); outline-offset:2px; }
+  .cand .pos { width:32px; text-align:center; background:var(--core); border-radius:7px; padding:3px 0; font-size:10px; font-weight:700; color:var(--ink2); flex:none; }
+  .cand .n { flex:1; font-size:14px; font-weight:500; }
+  .cand .attr { font-size:12px; color:var(--ink3); }
+  .cand .v { font-size:17px; font-weight:900; font-variant-numeric:tabular-nums; }
+  .cand.best { background:rgba(188,205,255,.10); }
+  .cand.best .n::after { content:"il migliore che hai"; display:block; font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--elite); }
+  .picker .chiudi { display:block; width:100%; text-align:center; background:transparent; color:var(--ink2); border:1px solid var(--line-strong); border-radius:var(--pill); padding:12px; font-size:14px; cursor:pointer; font-family:var(--font); margin-top:8px; }
+
+  .foot { margin-top:34px; color:var(--ink3); font-size:13px; max-width:72ch; }
+  .foot b { color:var(--ink2); font-weight:500; }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="page">
+
+  <div class="intro">
+    <p class="eyebrow">MFoot · formazione · 24 agosto 2026</p>
+    <h1>Undici uomini, cinque incarichi</h1>
+    <p>Dieci moduli invece di sei, e cinque incarichi da assegnare: <strong>capitano,
+       rigorista, angoli, punizioni, calci lunghi</strong>. Tocca un incarico per cambiare
+       l'uomo — e guarda in fondo cosa succede dentro il motore quando lo fai.</p>
+
+    <div class="teach">
+      <b>Un modulo non ha bonus propri.</b> È solo la lista degli undici ruoli da coprire:
+      la forza di ogni zona nasce da chi ci finisce dentro. Giocare a tre dietro indebolisce
+      le fasce da solo, senza numeri scritti a mano — ed è la ragione per cui quattro moduli
+      nuovi costano un pomeriggio invece di una riscrittura.
+    </div>
+  </div>
+
+  <div class="moduli" id="moduli"></div>
+
+  <div class="stage">
+    <div>
+      <div class="pitch-wrap">
+        <div class="pitch" id="pitch">
+          <div class="lines">
+            <span style="left:8%;right:8%;top:0;height:14%;border-top:0;"></span>
+            <span style="left:30%;right:30%;top:0;height:6%;border-top:0;"></span>
+            <span style="left:8%;right:8%;bottom:0;height:14%;border-bottom:0;"></span>
+            <span style="left:30%;right:30%;bottom:0;height:6%;border-bottom:0;"></span>
+            <span style="left:0;right:0;top:50%;height:0;border-width:1px 0 0 0;"></span>
+            <span style="left:31%;right:31%;top:39%;height:22%;border-radius:50%;"></span>
+          </div>
+        </div>
+        <div class="riepilogo">
+          <div class="r"><div class="v num" id="media">—</div><div class="k">Media undici</div></div>
+          <div class="r"><div class="v num" id="fuoriruolo">—</div><div class="k">Fuori ruolo</div></div>
+          <div class="r"><div class="v num" id="perso">—</div><div class="k">Punti persi</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h2>Gli incarichi</h2>
+      <p class="sub">Il cerchio giallo sul campo è un uomo schierato fuori ruolo. Le lettere
+         sui dischi sono gli incarichi che ha.</p>
+      <div id="tasks"></div>
+      <div class="effetto" id="effetto"></div>
+    </div>
+  </div>
+
+  <p class="foot">
+    <b>Perché gli incarichi non sono decorazione:</b> il rigorista lo usa già
+    <i>MatchEngine</i>, e la fascia da capitano si può già promettere in un colloquio a un
+    giocatore — a una fascia che oggi non esiste. Gli angoli invece vengono emessi e poi la
+    palla riparte: nessuno li batte, nessuno stacca, non esce mai un gol.
+  </p>
+</div>
+
+<div id="overlay"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------- la rosa
+  // Attributi nella stessa scala di Attributes.kt. Il "fit" e' semplificato rispetto a
+  // Player.positionalFitness, ma la penalita' resta quella: giocare fuori ruolo costa.
+  const ROSA = [
+    { n:"Sanna",    pos:"POR", ovr:74, eta:27, pres:88,  a:{PARATA:76,RIFLESSI:74,USCITA:70,POSIZ:72,PASS:52,TIRO:22,TEC:38,FIS:74} },
+    { n:"Baresi",   pos:"DC",  ovr:81, eta:30, pres:214, a:{DIF:85,POSIZ:84,INT:80,FIS:79,PASS:66,TIRO:41,TEC:55,VEL:58} },
+    { n:"Volkov",   pos:"DC",  ovr:78, eta:26, pres:96,  a:{DIF:81,POSIZ:77,INT:78,FIS:83,PASS:60,TIRO:39,TEC:50,VEL:64} },
+    { n:"Marchi",   pos:"TD",  ovr:73, eta:24, pres:61,  a:{DIF:70,VEL:82,FIS:68,INT:71,POSIZ:66,PASS:69,TIRO:48,TEC:64} },
+    { n:"Esposito", pos:"TS",  ovr:72, eta:22, pres:44,  a:{DIF:68,VEL:84,FIS:63,INT:68,POSIZ:64,PASS:71,TIRO:52,TEC:67} },
+    { n:"Okonkwo",  pos:"MED", ovr:79, eta:28, pres:151, a:{INT:83,PASS:78,FIS:81,DIF:76,POSIZ:78,TEC:70,TIRO:56,VEL:62} },
+    { n:"Osei",     pos:"CC",  ovr:77, eta:22, pres:52,  a:{PASS:84,TEC:80,FIS:66,INT:69,DRIB:74,POSIZ:71,TIRO:71,VEL:70} },
+    { n:"Lindqvist",pos:"CC",  ovr:75, eta:25, pres:73,  a:{PASS:79,TEC:76,FIS:70,INT:72,DRIB:68,POSIZ:70,TIRO:74,VEL:66} },
+    { n:"Rocha",    pos:"TRQ", ovr:76, eta:23, pres:58,  a:{TEC:83,PASS:80,DRIB:81,TIRO:76,VEL:72,POSIZ:66,FIS:58,INT:52} },
+    { n:"Ferrara",  pos:"ATT", ovr:71, eta:19, pres:14,  a:{TIRO:78,VEL:82,DRIB:74,TEC:71,POSIZ:69,FIS:66,PASS:61,INT:34} },
+    { n:"Brandt",   pos:"AD",  ovr:74, eta:26, pres:112, a:{DRIB:78,VEL:80,TEC:75,TIRO:69,PASS:73,POSIZ:64,FIS:62,INT:40} },
+    { n:"Solari",   pos:"AS",  ovr:72, eta:24, pres:80,  a:{DRIB:76,VEL:79,TEC:73,TIRO:66,PASS:74,POSIZ:62,FIS:60,INT:38} },
+    { n:"Duarte",   pos:"SP",  ovr:70, eta:29, pres:134, a:{TIRO:75,POSIZ:74,FIS:72,TEC:66,DRIB:62,VEL:68,PASS:58,INT:32} }
+  ];
+
+  // ---------------------------------------------------------------- i moduli
+  // I sei esistenti hanno le coordinate identiche a PitchLayout.of(). I quattro nuovi
+  // sono pronti da incollare li' dentro.
+  const MODULI = [
+    { id:"4-3-3", nuovo:false,
+      ruoli:["POR","TD","DC","DC","TS","MED","CC","CC","AD","ATT","AS"],
+      xy:[[.50,.06],[.86,.24],[.62,.20],[.38,.20],[.14,.24],[.50,.44],[.72,.52],[.28,.52],[.84,.78],[.50,.86],[.16,.78]] },
+    { id:"4-4-2", nuovo:false,
+      ruoli:["POR","TD","DC","DC","TS","AD","CC","CC","AS","ATT","SP"],
+      xy:[[.50,.06],[.86,.24],[.62,.20],[.38,.20],[.14,.24],[.86,.54],[.62,.48],[.38,.48],[.14,.54],[.62,.84],[.38,.84]] },
+    { id:"4-2-3-1", nuovo:false,
+      ruoli:["POR","TD","DC","DC","TS","MED","MED","AD","TRQ","AS","ATT"],
+      xy:[[.50,.06],[.86,.24],[.62,.20],[.38,.20],[.14,.24],[.62,.42],[.38,.42],[.84,.68],[.50,.66],[.16,.68],[.50,.88]] },
+    { id:"3-5-2", nuovo:false,
+      ruoli:["POR","DC","DC","DC","AD","MED","CC","CC","AS","ATT","SP"],
+      xy:[[.50,.06],[.72,.20],[.50,.18],[.28,.20],[.90,.52],[.50,.40],[.68,.54],[.32,.54],[.10,.52],[.62,.84],[.38,.84]] },
+    { id:"5-3-2", nuovo:false,
+      ruoli:["POR","TD","DC","DC","DC","TS","MED","CC","CC","ATT","SP"],
+      xy:[[.50,.06],[.90,.28],[.70,.18],[.50,.16],[.30,.18],[.10,.28],[.50,.44],[.70,.54],[.30,.54],[.62,.84],[.38,.84]] },
+    { id:"4-4-1-1", nuovo:false,
+      ruoli:["POR","TD","DC","DC","TS","AD","CC","CC","AS","TRQ","ATT"],
+      xy:[[.50,.06],[.86,.24],[.62,.20],[.38,.20],[.14,.24],[.86,.54],[.62,.48],[.38,.48],[.14,.54],[.50,.72],[.50,.90]] },
+
+    { id:"4-3-1-2", nuovo:true,
+      ruoli:["POR","TD","DC","DC","TS","MED","CC","CC","TRQ","ATT","SP"],
+      xy:[[.50,.06],[.86,.24],[.62,.20],[.38,.20],[.14,.24],[.50,.42],[.72,.50],[.28,.50],[.50,.68],[.62,.86],[.38,.86]] },
+    { id:"3-4-3", nuovo:true,
+      ruoli:["POR","DC","DC","DC","AD","CC","CC","AS","AD","ATT","AS"],
+      xy:[[.50,.06],[.72,.20],[.50,.18],[.28,.20],[.88,.50],[.62,.46],[.38,.46],[.12,.50],[.82,.80],[.50,.86],[.18,.80]] },
+    { id:"4-1-4-1", nuovo:true,
+      ruoli:["POR","TD","DC","DC","TS","MED","AD","CC","CC","AS","ATT"],
+      xy:[[.50,.06],[.86,.24],[.62,.20],[.38,.20],[.14,.24],[.50,.38],[.86,.60],[.62,.56],[.38,.56],[.14,.60],[.50,.88]] },
+    { id:"5-4-1", nuovo:true,
+      ruoli:["POR","TD","DC","DC","DC","TS","AD","CC","CC","AS","ATT"],
+      xy:[[.50,.06],[.90,.28],[.70,.18],[.50,.16],[.30,.18],[.10,.28],[.86,.56],[.62,.50],[.38,.50],[.14,.56],[.50,.88]] }
+  ];
+
+  const REPARTO = { POR:"P", TD:"D", DC:"D", TS:"D", MED:"C", CC:"C", TRQ:"C", AD:"A", AS:"A", ATT:"A", SP:"A" };
+  const VICINI = { TD:["TS","DC"], TS:["TD","DC"], DC:["TD","TS","MED"], MED:["CC","DC"], CC:["MED","TRQ"],
+                   TRQ:["CC","AD","AS","SP"], AD:["AS","ATT","CC"], AS:["AD","ATT","CC"], ATT:["SP","AD","AS"], SP:["ATT","TRQ"], POR:[] };
+
+  function fit(g, ruolo) {
+    if (g.pos === ruolo) return 1;
+    if (g.pos === "POR" || ruolo === "POR") return .45;
+    if ((VICINI[ruolo] || []).indexOf(g.pos) >= 0) return .92;
+    if (REPARTO[g.pos] === REPARTO[ruolo]) return .86;
+    return .74;
+  }
+  const ovrIn = (g, ruolo) => Math.round(g.ovr * fit(g, ruolo));
+
+  // ------------------------------------------------------------- gli incarichi
+  // Ogni incarico pesa attributi diversi: e' l'unica cosa che rende la scelta una scelta.
+  const INCARICHI = [
+    { id:"capitano", mark:"C", nome:"Capitano",
+      sub:"Tiene su la squadra quando si va sotto",
+      why:"esperienza e presenze",
+      score:g => Math.round(g.ovr * .5 + Math.min(g.eta, 33) * 1.1 + Math.min(g.pres, 220) / 12),
+      etichetta:"carisma" },
+    { id:"rigorista", mark:"R", nome:"Rigorista",
+      sub:"Chi va sul dischetto",
+      why:"tiro, e freddezza",
+      score:g => Math.round((g.a.TIRO || 30) * .78 + (g.a.TEC || 40) * .22),
+      etichetta:"dal dischetto" },
+    { id:"angoli", mark:"A", nome:"Battitore d'angoli",
+      sub:"Da chi parte il cross",
+      why:"passaggio e tecnica",
+      score:g => Math.round((g.a.PASS || 40) * .62 + (g.a.TEC || 40) * .38),
+      etichetta:"sul corner" },
+    { id:"punizioni", mark:"P", nome:"Battitore di punizioni",
+      sub:"Le palle ferme dal limite",
+      why:"tiro e tecnica",
+      score:g => Math.round((g.a.TIRO || 30) * .55 + (g.a.TEC || 40) * .45),
+      etichetta:"su punizione" },
+    { id:"lunghi", mark:"L", nome:"Uomo dei calci lunghi",
+      sub:"Rimesse e lanci da dietro",
+      why:"fisico e passaggio",
+      score:g => Math.round((g.a.FIS || 50) * .45 + (g.a.PASS || 40) * .55),
+      etichetta:"sul lancio" }
+  ];
+
+  // ------------------------------------------------------------------ stato
+  let modulo = MODULI[0];
+  let undici = [];        // { g, ruolo }
+  let scelte = {};        // incarico -> nome
+  let picker = null;
+
+  /* Schiera per ruolo naturale, poi riempie i buchi col migliore disponibile.
+     E' lo stesso principio di LineupFitter: mai lasciare una casella vuota. */
+  function schiera() {
+    const liberi = ROSA.slice();
+    undici = modulo.ruoli.map(r => ({ ruolo:r, g:null }));
+    undici.forEach(s => {
+      const i = liberi.findIndex(g => g.pos === s.ruolo);
+      if (i >= 0) s.g = liberi.splice(i, 1)[0];
+    });
+    undici.forEach(s => {
+      if (s.g) return;
+      let best = 0;
+      liberi.forEach((g, i) => { if (ovrIn(g, s.ruolo) > ovrIn(liberi[best], s.ruolo)) best = i; });
+      s.g = liberi.splice(best, 1)[0];
+    });
+    // gli incarichi restano a chi e' ancora in campo, altrimenti passano al migliore
+    INCARICHI.forEach(inc => {
+      const chi = scelte[inc.id];
+      if (!chi || !undici.some(s => s.g.n === chi)) scelte[inc.id] = migliore(inc).n;
+    });
+  }
+  const inCampo = () => undici.map(s => s.g);
+  const migliore = inc => inCampo().slice().sort((a, b) => inc.score(b) - inc.score(a))[0];
+  const peggiore = inc => inCampo().slice().sort((a, b) => inc.score(a) - inc.score(b))[0];
+  const giocatore = n => ROSA.find(g => g.n === n);
+
+  // ------------------------------------------------------------------ disegno
+  const el = id => document.getElementById(id);
+  const ratClass = v => v >= 85 ? "rat-elite" : v >= 70 ? "rat-good" : v >= 55 ? "rat-mid" : "rat-low";
+
+  function disegnaModuli() {
+    el("moduli").innerHTML = MODULI.map(m =>
+      '<button type="button" class="' + (m.nuovo ? "nuovo" : "") + '" data-mod="' + m.id + '" ' +
+      'aria-pressed="' + (m.id === modulo.id) + '">' + m.id + '</button>').join("");
+  }
+
+  function disegnaCampo() {
+    const pitch = el("pitch");
+    [...pitch.querySelectorAll(".spot")].forEach(n => n.remove());
+    undici.forEach((s, i) => {
+      const [x, y] = modulo.xy[i];
+      const v = ovrIn(s.g, s.ruolo);
+      const fuori = s.g.pos !== s.ruolo;
+      const mie = INCARICHI.filter(inc => scelte[inc.id] === s.g.n);
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "spot" + (s.ruolo === "POR" ? " gk" : "") + (fuori ? " fuori" : "");
+      // y va da 0 (propria porta) a 1 (porta avversaria): sullo schermo si ribalta
+      b.style.left = (x * 100) + "%";
+      b.style.bottom = (y * 100) + "%";
+      b.style.transform = "translate(-50%,50%)";
+      b.innerHTML =
+        '<span class="ruolo">' + s.ruolo + '</span>' +
+        '<span class="disc ' + ratClass(v) + '">' + v + '</span>' +
+        (mie.length ? '<span class="badges">' + mie.map(m => '<i>' + m.mark + '</i>').join("") + '</span>' : "") +
+        '<span class="nome">' + s.g.n + '</span>';
+      b.title = s.g.n + " — " + s.g.pos + " di ruolo, schierato " + s.ruolo;
+      pitch.appendChild(b);
+    });
+
+    const media = Math.round(undici.reduce((t, s) => t + ovrIn(s.g, s.ruolo), 0) / 11);
+    const fuori = undici.filter(s => s.g.pos !== s.ruolo).length;
+    const perso = undici.reduce((t, s) => t + (s.g.ovr - ovrIn(s.g, s.ruolo)), 0);
+    el("media").textContent = media;
+    el("media").className = "v num " + ratClass(media);
+    el("fuoriruolo").textContent = fuori;
+    el("fuoriruolo").style.color = fuori ? "var(--gamble)" : "var(--ink)";
+    el("perso").textContent = "−" + perso;
+    el("perso").style.color = perso > 12 ? "var(--on-alarm)" : "var(--ink2)";
+  }
+
+  function disegnaIncarichi() {
+    el("tasks").innerHTML = INCARICHI.map(inc => {
+      const g = giocatore(scelte[inc.id]);
+      const ottimo = migliore(inc).n === g.n;
+      return '<button type="button" class="task" data-task="' + inc.id + '">' +
+        '<span class="mark">' + inc.mark + '</span>' +
+        '<span class="txt"><span class="k">' + inc.nome + '</span>' +
+        '<span class="v"><b>' + g.n + '</b> · ' + inc.etichetta + ' ' + inc.score(g) + '</span></span>' +
+        '<span class="why">' + (ottimo ? "il migliore che hai" : "ne hai uno più adatto") + '</span>' +
+      '</button>';
+    }).join("");
+  }
+
+  function disegnaEffetto() {
+    const ang = INCARICHI.find(i => i.id === "angoli");
+    const rig = INCARICHI.find(i => i.id === "rigorista");
+    const cap = INCARICHI.find(i => i.id === "capitano");
+    const gAng = giocatore(scelte.angoli), gRig = giocatore(scelte.rigorista), gCap = giocatore(scelte.capitano);
+    const pAng = peggiore(ang), pRig = peggiore(rig);
+
+    // Numeri illustrativi, ma con la forma giusta: un incarico deve spostare una
+    // probabilita', altrimenti e' una casella da riempire per niente.
+    const occasioni = (ang.score(gAng) / 100 * 0.42 + 0.06);
+    const occasioniPeggio = (ang.score(pAng) / 100 * 0.42 + 0.06);
+    const rigore = Math.min(96, Math.round(58 + rig.score(gRig) * .34));
+    const rigorePeggio = Math.min(96, Math.round(58 + rig.score(pRig) * .34));
+    const tenuta = Math.round(cap.score(gCap) / 2.2);
+
+    el("effetto").innerHTML =
+      '<span class="lab">Cosa cambia dentro il motore</span>' +
+      '<p><b>Angoli.</b> Con ' + gAng.n + ' alla bandierina, <span class="up">' +
+        (occasioni * 100).toFixed(0) + '%</span> degli angoli diventa un tentativo vero. ' +
+        'Col peggiore che hai in campo sarebbe <span class="down">' + (occasioniPeggio * 100).toFixed(0) + '%</span>. ' +
+        'Oggi è zero per chiunque: l\'angolo viene emesso e la palla riparte.</p>' +
+      '<p><b>Rigori.</b> ' + gRig.n + ' segna il <span class="up">' + rigore + '%</span> dal dischetto, ' +
+        'contro il <span class="down">' + rigorePeggio + '%</span> del peggiore in campo. ' +
+        'Questa parte il motore la fa già — manca solo la schermata per scegliere.</p>' +
+      '<p><b>Capitano.</b> ' + gCap.n + ' assorbe circa <span class="up">' + tenuta + '%</span> del crollo ' +
+        'di morale quando si va sotto o si perdono partite di fila. E rende verificabile la ' +
+        'promessa della fascia, che oggi si può fare in un colloquio a una fascia che non esiste.</p>';
+  }
+
+  function disegna() { disegnaModuli(); disegnaCampo(); disegnaIncarichi(); disegnaEffetto(); }
+
+  function apriPicker(id) {
+    const inc = INCARICHI.find(i => i.id === id);
+    const ordinati = inCampo().slice().sort((a, b) => inc.score(b) - inc.score(a));
+    el("overlay").innerHTML =
+      '<div class="overlay"><div class="picker" role="dialog" aria-label="' + inc.nome + '">' +
+        '<h3>' + inc.nome + '</h3>' +
+        '<p class="sub">' + inc.sub + '. Ordinati per ' + inc.why + ', fra gli undici in campo.</p>' +
+        ordinati.map((g, i) =>
+          '<button type="button" class="cand ' + (i === 0 ? "best" : "") + '" data-pick="' + g.n + '">' +
+            '<span class="pos">' + g.pos + '</span>' +
+            '<span class="n">' + g.n + '</span>' +
+            '<span class="attr">' + inc.etichetta + '</span>' +
+            '<span class="v ' + ratClass(inc.score(g)) + '">' + inc.score(g) + '</span>' +
+          '</button>').join("") +
+        '<button type="button" class="chiudi" data-close="1">Chiudi</button>' +
+      '</div></div>';
+    picker = id;
+  }
+
+  document.addEventListener("click", e => {
+    const t = e.target.closest("[data-mod],[data-task],[data-pick],[data-close]");
+    if (!t) return;
+    if (t.dataset.mod)  { modulo = MODULI.find(m => m.id === t.dataset.mod); schiera(); disegna(); return; }
+    if (t.dataset.task) { apriPicker(t.dataset.task); return; }
+    if (t.dataset.pick) { scelte[picker] = t.dataset.pick; el("overlay").innerHTML = ""; picker = null; disegna(); return; }
+    if (t.dataset.close){ el("overlay").innerHTML = ""; picker = null; return; }
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && picker) { el("overlay").innerHTML = ""; picker = null; }
+  });
+
+  schiera();
+  disegna();
+})();
+</script>
