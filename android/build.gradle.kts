@@ -72,8 +72,8 @@ android {
         //
         // La versione compare in fondo al menu laterale, non in una schermata "info" che
         // nessuno apre.
-        versionCode = 23
-        versionName = "0.23.0"
+        versionCode = 24
+        versionName = "0.24.0"
 
         buildConfigField("String", "SUPABASE_URL", "\"${secret("supabase.url")}\"")
         buildConfigField("String", "SUPABASE_KEY", "\"${secret("supabase.key")}\"")
