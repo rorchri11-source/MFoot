@@ -72,6 +72,52 @@ enum class Formation(val label: String, val positions: List<Position>) {
             Position.AD, Position.CC, Position.CC, Position.AS,
             Position.TRQ, Position.ATT,
         ),
+    ),
+
+    /** Il rombo: due punte servite da un trequartista, e nessuno sulle fasce. */
+    F_4_3_1_2(
+        "4-3-1-2",
+        listOf(
+            Position.POR,
+            Position.TD, Position.DC, Position.DC, Position.TS,
+            Position.MED, Position.CC, Position.CC,
+            Position.TRQ,
+            Position.ATT, Position.SP,
+        ),
+    ),
+
+    /** Tridente e difesa a tre: il modulo che scopre le fasce difensive di proposito. */
+    F_3_4_3(
+        "3-4-3",
+        listOf(
+            Position.POR,
+            Position.DC, Position.DC, Position.DC,
+            Position.AD, Position.CC, Position.CC, Position.AS,
+            Position.AD, Position.ATT, Position.AS,
+        ),
+    ),
+
+    /** Il regista basso davanti alla difesa, con quattro in mezzo e una punta sola. */
+    F_4_1_4_1(
+        "4-1-4-1",
+        listOf(
+            Position.POR,
+            Position.TD, Position.DC, Position.DC, Position.TS,
+            Position.MED,
+            Position.AD, Position.CC, Position.CC, Position.AS,
+            Position.ATT,
+        ),
+    ),
+
+    /** Il fortino: cinque dietro, quattro in mezzo, uno davanti a raccogliere. */
+    F_5_4_1(
+        "5-4-1",
+        listOf(
+            Position.POR,
+            Position.TD, Position.DC, Position.DC, Position.DC, Position.TS,
+            Position.AD, Position.CC, Position.CC, Position.AS,
+            Position.ATT,
+        ),
     );
 
     init {
@@ -107,6 +153,17 @@ data class Lineup(
     val bench: List<Player> = emptyList(),
     val captainId: PlayerId? = null,
     val penaltyTakerId: PlayerId? = null,
+    /**
+     * Gli incarichi da palla ferma.
+     *
+     * Nullable e in coda perche' una formazione senza incarichi resta valida: chi non
+     * sceglie non deve essere bloccato, e [SetPieces.taker] mette in campo il piu' adatto
+     * al posto suo. La differenza fra scegliere e non scegliere si vede nei numeri della
+     * partita, non in un errore.
+     */
+    val cornerTakerId: PlayerId? = null,
+    val freeKickTakerId: PlayerId? = null,
+    val longBallTakerId: PlayerId? = null,
 ) {
 
     init {

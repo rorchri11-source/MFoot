@@ -282,12 +282,13 @@ object MatchEngine {
 
             // Un attacco che si spegne in area avversaria produce spesso un angolo.
             if (zone.isAttacking && rng.chance(engine.cornerChanceOnLostAttack)) {
+                val attackerSetup = if (possession == Side.CASA) home else away
                 emit(
                     minute, MatchEventType.ANGOLO, possession, zone = zone,
+                    player = SetPieces.taker(attackerSetup.lineup, MatchDuty.ANGOLI)?.id,
                     description = "Angolo per ${teamName(possession)}",
                 )
-                // Sul corner si resta in zona offensiva: la palla e' ancora pericolosa.
-                lastToucher = null
+                resolveCorner(minute, attackerSetup, defenderSetup)
                 return
             }
 
@@ -329,14 +330,103 @@ object MatchEngine {
                 player = offender,
                 description = "Fallo di ${nameOf(offender)}",
             )
+
+            // Fallo vicino all'area: si batte, e a batterla e' chi il manager ha
+            // designato. Prima di oggi un fallo in zona offensiva finiva qui, e le
+            // punizioni non esistevano nel gioco.
+            if (zone.isAttacking && rng.chance(engine.freeKickShotChance)) {
+                resolveFreeKick(minute, defenderSetup)
+            }
         }
 
         private fun resolveShot(minute: Int, shooter: PlayerId, defenderSetup: TeamSetup) {
             val player = playerOf(shooter) ?: return
+            resolveAttempt(minute, shooter, defenderSetup, expectedGoals(player, zone))
+        }
+
+        /**
+         * L'angolo, che fino al 2026-08-24 non produceva niente.
+         *
+         * Chi batte decide **se** il pallone arriva; chi stacca decide **cosa** ne esce.
+         * Sono due uomini diversi e due attributi diversi — passaggio e tecnica da una
+         * parte, fisico e posizionamento dall'altra — ed e' il motivo per cui l'incarico
+         * del battitore ha senso di esistere: senza, il corner sarebbe di nuovo una
+         * proprieta' della squadra invece che di una persona.
+         *
+         * L'assist va a chi ha crossato, come nel calcio.
+         */
+        private fun resolveCorner(minute: Int, attackerSetup: TeamSetup, defenderSetup: TeamSetup) {
+            // Senza nessuno in campo non c'e' angolo da battere: caso impossibile con il
+            // minimo regolamentare di sette, ma il motore non deve fidarsi di un invariante
+            // che vive in un'altra classe.
+            val battitore = SetPieces.taker(attackerSetup.lineup, MatchDuty.ANGOLI) ?: return
+            val qualita = SetPieces.aptitude(battitore, MatchDuty.ANGOLI)
+            val arriva = MathX.remap(
+                qualita, 40.0, 95.0,
+                engine.cornerConversionMin, engine.cornerConversionMax,
+            )
+
+            if (!rng.chance(arriva)) {
+                // Allontanata: la difesa spazza e riparte.
+                possession = possession.other()
+                zone = zone.mirror()
+                lastToucher = null
+                return
+            }
+
+            val incornatore = attackerSetup.lineup.outfield.maxWithOrNull(
+                compareBy<LineupSlot> { staccoDi(it.player) }.thenBy { it.player.id.value },
+            )?.player ?: return
+
+            // Sul corner si conclude sempre dal centro dell'area, chiunque abbia crossato.
+            zone = Zone.ATT_C
+            lastToucher = battitore.id.takeIf { it != incornatore.id }
+            resolveAttempt(minute, incornatore.id, defenderSetup, xgDiTesta(incornatore))
+        }
+
+        /**
+         * La punizione dal limite.
+         *
+         * Nasce da un fallo gia' emesso in zona offensiva: l'evento del fallo resta dov'e'
+         * e questa e' la conclusione che ne segue, cosi' la cronaca racconta i due momenti
+         * come li racconterebbe una radio.
+         */
+        private fun resolveFreeKick(minute: Int, defenderSetup: TeamSetup) {
+            val setup = if (possession == Side.CASA) home else away
+            val battitore = SetPieces.taker(setup.lineup, MatchDuty.PUNIZIONI) ?: return
+            val abilita = SetPieces.aptitude(battitore, MatchDuty.PUNIZIONI)
+            val xg = MathX.remap(abilita, 40.0, 95.0, engine.freeKickXgMin, engine.freeKickXgMax)
+
+            // Nessun assist su punizione diretta: il pallone lo mette dentro chi calcia.
+            lastToucher = null
+            resolveAttempt(minute, battitore.id, defenderSetup, xg)
+        }
+
+        /** Quanto uno vale in mischia: e' il colpo di testa, dedotto da cio' che esiste. */
+        private fun staccoDi(player: Player): Double =
+            player.attributes[Attr.FISICO] * 0.58 + player.attributes[Attr.POSIZIONAMENTO] * 0.42
+
+        private fun xgDiTesta(player: Player): Double {
+            val quality = MathX.remap(staccoDi(player), 40.0, 95.0, 0.55, 1.75)
+            return (engine.baseXgCentral * quality).coerceIn(0.01, 0.75)
+        }
+
+        /**
+         * Una conclusione, da qualunque cosa nasca: azione, angolo o punizione.
+         *
+         * Esiste separata da [resolveShot] perche' l'xG di un colpo di testa e quello di
+         * una punizione non si calcolano dal tiro del giocatore — e prima del 2026-08-24
+         * non esisteva nessun modo di concludere che non fosse un tiro in azione.
+         */
+        private fun resolveAttempt(
+            minute: Int,
+            shooter: PlayerId,
+            defenderSetup: TeamSetup,
+            xg: Double,
+        ) {
             val goalkeeper = defenderSetup.lineup.slots
                 .firstOrNull { it.position.isGoalkeeper }?.player
 
-            val xg = expectedGoals(player, zone)
             recordShot(xg)
             bump(shooter) { it.copy(shots = it.shots + 1) }
 
@@ -685,8 +775,27 @@ object MatchEngine {
                 isHome = isHome,
                 importance = importance,
                 engine = engine,
-                momentum = if (isHome) momentum else -momentum,
+                momentum = (if (isHome) momentum else -momentum) + resistenza(setup, isHome),
             )
+
+        /**
+         * Quanto il capitano tiene su la squadra, e **solo quando serve**.
+         *
+         * Passa dal canale dell'inerzia psicologica perche' e' la stessa cosa: una spinta
+         * che nasce dalla testa e non dalle gambe. Ma dove il momentum arriva dopo un gol
+         * a chiunque, questa arriva **solo a chi e' sotto** e solo a chi ha in campo un
+         * uomo capace di guidare: e' il costo di lasciare il capitano in panchina, ed e'
+         * cio' che rende la fascia una decisione invece di un titolo.
+         *
+         * Nessun malus per chi non ce l'ha: la squadra senza capitano designato gioca
+         * esattamente come prima del 2026-08-24, perche' [SetPieces.taker] le mette
+         * comunque in campo il piu' adatto fra gli undici.
+         */
+        private fun resistenza(setup: TeamSetup, isHome: Boolean): Double {
+            val scarto = if (isHome) homeGoals - awayGoals else awayGoals - homeGoals
+            if (scarto >= 0) return 0.0
+            return SetPieces.leadership(setup.lineup) * engine.captainResilience
+        }
 
         fun refreshStrengths() {
             homeStrength = computeStrength(home, isHome = true)
@@ -718,17 +827,17 @@ object MatchEngine {
             return rng.pickWeighted(candidates) { it.weight }.playerId
         }
 
-        private fun choosePenaltyTaker(setup: TeamSetup): PlayerId {
-            setup.lineup.penaltyTakerId?.let { designated ->
-                if (setup.lineup.contains(designated)) return designated
-            }
-            // Altrimenti il migliore fra chi e' in campo, con i rigoristi nati favoriti.
-            return setup.lineup.outfield.maxByOrNull { slot ->
-                val p = slot.player
-                (p.attributes[Attr.TIRO] * 0.6 + p.attributes[Attr.TECNICA] * 0.4) *
-                    p.traits.fold(1.0) { acc, t -> acc * t.penaltyTakerWeight }
-            }?.player?.id ?: setup.lineup.slots.first().player.id
-        }
+        /**
+         * Chi va sul dischetto.
+         *
+         * La scelta stava scritta qui dentro, e da qui non la vedeva nessuno: l'app non
+         * aveva modo di mostrare *chi* avrebbe calciato, e la stessa regola sarebbe
+         * dovuta esistere una seconda volta per scriverlo in una schermata. Adesso e' una
+         * funzione pura in [SetPieces], usata identica dal motore e dalla formazione.
+         */
+        private fun choosePenaltyTaker(setup: TeamSetup): PlayerId =
+            SetPieces.taker(setup.lineup, MatchDuty.RIGORISTA)?.id
+                ?: setup.lineup.slots.first().player.id
 
         private fun playerOf(id: PlayerId): Player? =
             home.lineup.playerById(id) ?: away.lineup.playerById(id)

@@ -66,6 +66,36 @@ object PitchLayout {
             0.50f to 0.72f,
             0.50f to 0.90f,
         )
+
+        Formation.F_4_3_1_2 -> listOf(
+            0.50f to 0.06f,
+            0.86f to 0.24f, 0.62f to 0.20f, 0.38f to 0.20f, 0.14f to 0.24f,
+            0.50f to 0.42f, 0.72f to 0.50f, 0.28f to 0.50f,
+            0.50f to 0.68f,
+            0.62f to 0.86f, 0.38f to 0.86f,
+        )
+
+        Formation.F_3_4_3 -> listOf(
+            0.50f to 0.06f,
+            0.72f to 0.20f, 0.50f to 0.18f, 0.28f to 0.20f,
+            0.88f to 0.50f, 0.62f to 0.46f, 0.38f to 0.46f, 0.12f to 0.50f,
+            0.82f to 0.80f, 0.50f to 0.86f, 0.18f to 0.80f,
+        )
+
+        Formation.F_4_1_4_1 -> listOf(
+            0.50f to 0.06f,
+            0.86f to 0.24f, 0.62f to 0.20f, 0.38f to 0.20f, 0.14f to 0.24f,
+            0.50f to 0.38f,
+            0.86f to 0.60f, 0.62f to 0.56f, 0.38f to 0.56f, 0.14f to 0.60f,
+            0.50f to 0.88f,
+        )
+
+        Formation.F_5_4_1 -> listOf(
+            0.50f to 0.06f,
+            0.90f to 0.28f, 0.70f to 0.18f, 0.50f to 0.16f, 0.30f to 0.18f, 0.10f to 0.28f,
+            0.86f to 0.56f, 0.62f to 0.50f, 0.38f to 0.50f, 0.14f to 0.56f,
+            0.50f to 0.88f,
+        )
     }
 
     /**

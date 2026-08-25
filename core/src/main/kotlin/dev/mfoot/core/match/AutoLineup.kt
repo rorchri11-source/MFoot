@@ -86,15 +86,16 @@ object AutoLineup {
             today = today,
         )
 
-        return Lineup(
-            formation = formation,
-            slots = slots,
-            bench = bench,
-            // Il piu' forte fra i piu' esperti: la fascia non cambia niente nel motore,
-            // ma vederla addosso a un diciottenne appena arrivato stona.
-            captainId = slots.maxByOrNull { it.player.overall + it.player.age }?.player?.id,
-            penaltyTakerId = slots.maxByOrNull { it.player.attributes[Attr.TIRO] }?.player?.id,
-        )
+        val base = Lineup(formation = formation, slots = slots, bench = bench)
+
+        // Gli incarichi li assegna [SetPieces], con gli stessi criteri che l'app mostra a
+        // chi sceglie a mano. Prima erano due righe scritte qui — «il piu' forte fra i
+        // piu' esperti», «chi ha il tiro piu' alto» — e vivevano solo dentro questa
+        // funzione: chi schierava dall'app non vedeva nessuna di quelle scelte, e il
+        // capitano non contava niente nel motore.
+        return MatchDuty.entries.fold(base) { lineup, duty ->
+            SetPieces.assign(lineup, duty, SetPieces.best(SetPieces.candidates(lineup, duty), duty)?.id)
+        }
     }
 
     /** La squadra pronta a giocare. Null se non c'e' modo di scendere in campo. */
