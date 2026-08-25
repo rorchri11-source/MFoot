@@ -1,8 +1,10 @@
 # MFoot — stato del progetto
 
-**Aggiornato:** 2026-08-23
-**Test:** 654 verdi, 0 falliti
-**Verificato:** su emulatore Android e su Supabase, non solo nei test
+**Aggiornato:** 2026-08-25
+**Test:** 716 verdi, 0 falliti
+**Verificato:** `core:test` completo e `android:assembleDebug`. **Il blocco del 2026-08-25
+— mercato, incarichi, AI, intervallo — non è ancora girato su un database vero**: le
+migrazioni `0027`-`0030` vanno applicate prima di installare l'APK
 
 ---
 
@@ -86,6 +88,13 @@ gradlew :android:assembleDebug
 | 42 | **`docs/REGOLE.md`** | Le decisioni del proprietario in un posto solo, e un `CLAUDE.md` che le fa leggere a ogni sessione |
 | 43 | **L'app si aggiorna da sola** | Giro leggero ogni 30s, giro pieno quando serve. Non sbianca lo schermo e non tocca il lavoro in corso |
 | 44 | **Interfaccia rifatta** | Pelle nuova sul riferimento scelto dal proprietario: blu notte, barra blu, pulsanti lavanda, schede più scure del fondo, icone disegnate. Vedi [`docs/DESIGN-SYSTEM.md`](docs/DESIGN-SYSTEM.md) |
+| 45 | **La scheda è una figurina** | Via la barra del potenziale: il margine è un gradino sotto l'overall, sei attributi in tre colonne, e rientrano conoscenza e contratto |
+| 46 | **Cinque incarichi e dieci moduli** | Capitano, rigorista, angoli, punizioni, calci lunghi — ognuno pesa nel motore. Gli angoli producono occasioni vere, il capitano frena il crollo quando si va sotto |
+| 47 | **Gli ordini condizionali si vedono** | Erano completi in `core` dal primo giorno e non c'era nessuna schermata. Ora si scrivono, si salvano e il tick li applica |
+| 48 | **Il mercato senza aste** | Listino a prezzo fisso, acquisto immediato, e una finestra di dodici ore in cui l'acquisto si contesta: **solo la contestazione apre un'asta** |
+| 49 | **Le AI si muovono davvero** | Comprano a listino, contestano gli affari troppo buoni, offrono crediti per i tuoi giocatori e propongono in prestito i loro giovani |
+| 50 | **La finestra dell'intervallo** | Il tick ferma la partita al 45', apre i minuti dei cambi e poi gioca il secondo tempo con la formazione aggiornata |
+| 51 | **Lo strumento dell'admin** | Assegna, toglie e corregge i crediti di qualsiasi club. Senza registro pubblico: scelta del proprietario, e per questo le operazioni possibili sono tre e strette |
 
 ### La riprogettazione del 2026-08-23
 
@@ -181,19 +190,38 @@ Non è un riempitivo. Ogni difetto grosso corretto finora — il mercato bloccat
 che si mantenevano da sole, gli orari sbagliati di due ore in tre file diversi — è stato
 trovato perché **qualcuno ha guardato**, non perché una prova ha fallito.
 
+### Visto sull'emulatore il 2026-08-25, e non chiuso
+
+**«Metti all'asta» non compare più nel piede della scheda giocatore.** Alla primissima
+apertura dopo l'installazione c'era; riaprendo la stessa scheda più tardi non c'è più, su
+uno svincolato, con zero aste aperte e il club regolarmente presente — cioè con
+`canAuction` che dovrebbe essere vero.
+
+Non è stato riprodotto in modo pulito e **non è chiaro se dipenda dalle modifiche del
+2026-08-25**: il calcolo di `canAuction` in `MainActivity` non è stato toccato. L'unica
+differenza osservata fra il caso che funziona e quello che non funziona è che nel secondo
+era già passato almeno un giro leggero (`aggiornaLeggero`), che da oggi rilegge anche
+listino, acquisti e intervalli. È il primo posto dove guardare.
+
+Sta scritto qui invece che nella lista delle cose fatte perché **è stato visto e non
+capito**, e un difetto visto e taciuto è il modo più rapido di ritrovarselo fra un mese
+senza sapere da dove è arrivato.
+
 ### Il prossimo blocco, in ordine di valore
 
-1. **Giocare una stagione vera, con gli amici.** Prima di costruire altro.
-2. **La finestra dell'intervallo.** `MatchEngine` la simula e la configurazione la prevede,
-   ma la partita si guarda già finita: cambiare formazione al 45' non è ancora possibile.
-3. **Il mercato dello staff.** `start_auction` accetta `target_type = 'staff'` e nessuna
-   schermata lo usa: allenatori, preparatori e osservatori si assegnano solo alla
-   generazione del mondo.
-4. **Provare gli obiettivi su una stagione vera.** La regola e i verdetti hanno
+1. **Giocare una stagione vera, con gli amici.** Prima di costruire altro. Vale doppio
+   adesso: il blocco del 2026-08-25 ha aggiunto un mercato, una finestra dentro la partita
+   e quattro mosse nuove alle AI, e **niente di tutto questo ha ancora girato su un
+   database vero**. I test dicono che le regole sono giuste; non dicono che alla dodicesima
+   giornata non succeda una cosa stupida che nessuno aveva previsto.
+2. **Guardare la prima finestra di contestazione dal vivo.** È il pezzo con più parti in
+   movimento — SQL, tick e app che si scambiano crediti impegnati — e l'unico dove un
+   errore lascia crediti bloccati su un'asta che non esiste più.
+3. **Provare gli obiettivi su una stagione vera.** La regola e i verdetti hanno
    ventisei test in `core`, ma il giro completo — assegnazione, stagione, chiusura,
    premio accreditato — non è mai girato su un database vero. È il punto 1 di questo
    elenco visto da un'altra angolazione.
-5. **Il tick impiega otto minuti a giro, e il grosso non è la build.**
+4. **Il tick impiega otto minuti a giro, e il grosso non è la build.**
    Misurato il 2026-08-23 dal registro pubblico delle esecuzioni: un giro riuscito dura
    **8 min 24 s**, di cui 50 secondi di build e circa **sette minuti e mezzo di
    elaborazione**. Portare il cron a dieci minuti non è bastato: sulle ultime cento
@@ -267,6 +295,17 @@ Nell'SQL Editor di Supabase, in ordine. Sono tutte rieseguibili.
 | `supabase/migrations/0023_chi_ha_offerto.sql` | La cronologia pubblica delle aste aperte |
 | `supabase/migrations/0024_obiettivi.sql` | Gli obiettivi di stagione e i premi |
 | `supabase/migrations/0025_entrare_sapendo_dove.sql` | `peek_league`: che lega apre un codice, prima di entrarci |
+| `supabase/migrations/0026_chi_apre_ha_offerto.sql` | Chi apre un'asta per comprare parte in testa |
+| `supabase/migrations/0027_incarichi_e_ordini.sql` | Le tre colonne degli incarichi da palla ferma |
+| `supabase/migrations/0028_listino_e_contestazione.sql` | `listings`, `purchases`, e le funzioni del mercato immediato |
+| `supabase/migrations/0029_finestra_intervallo.sql` | `resume_at` e `first_half`: la partita si ferma al 45' |
+| `supabase/migrations/0030_admin_svincoli_staff.sql` | Svincolo annunciato, staff sul listino, gli strumenti dell'admin |
+
+**`0028` e `0030` vanno applicate insieme, e prima dell'APK.** Non per abitudine: l'app
+chiede `listings.target_type` — senza, PostgREST rifiuta l'intera query e il listino resta
+vuoto per sempre. La colonna nasce dentro `0028` proprio perché `players` e `staff` hanno
+sequenze di id separate, e un listino che non distingue i due vende un allenatore a chi
+crede di prendere un centrocampista.
 
 **`0014` va applicata prima di installare l'APK.** Aggiunge una colonna a `competitions`,
 e una colonna nuova dentro una SELECT condivisa non è un'aggiunta: PostgREST rifiuta

@@ -39,10 +39,66 @@ riciclaggio.
 
 ## Il mercato
 
-**Lo staff si vince all'asta.**
-Allenatori, preparatori e osservatori non si assegnano solo alla generazione del mondo.
-*Chiesta all'inizio del progetto, implementata con `0019_staff_e_scouting.sql`. È la
-richiesta che ha fatto nascere questo file.*
+> Le voci che seguono sono state decise il **2026-08-24** e implementate nella stessa
+> sessione. Il ragionamento completo, con le alternative scartate — che è la parte che
+> questo file non può contenere senza diventare illeggibile — sta in
+> [`DESIGN-GAMEPLAY.md`](DESIGN-GAMEPLAY.md).
+
+**Si compra a prezzo fisso, e il giocatore è tuo nello stesso istante.**
+Niente asta, niente attesa, niente tick. L'asta come rito obbligatorio costava un giorno
+reale per ogni gregario: una rosa da diciotto uomini erano tre settimane. Peggiorato dal
+fatto che il tick passa ogni venti-quaranta minuti, non ogni dieci.
+*Detta il 2026-08-24 · `core/market/Listing.kt`, `0028_listino_e_contestazione.sql`, `MarketRepository`*
+
+**L'asta esiste solo se qualcuno contesta, entro dodici ore.**
+Per dodici ore dall'acquisto chiunque può opporsi, e solo allora nasce un'asta; passate
+quelle, il giocatore è definitivamente di chi l'ha comprato. Chi ha comprato **è già in
+testa** al prezzo che ha pagato, e se perde riprende i crediti interi. Una sola asta per
+acquisto: il secondo che contesta entra in quella. L'asta **scade insieme alla finestra**,
+così chi compra conosce dal primo istante l'ora in cui il giocatore è suo per sempre.
+*Detta il 2026-08-24 · `ContestRules`, `contest_purchase`, `TickRunner.closeContestation`*
+
+**Contestare è già un'offerta.**
+Si dichiara subito il proprio massimo, che deve superare il prezzo pagato, e i crediti si
+impegnano in quel momento. Non esiste contestare per dispetto: se vinci, paghi.
+*Detta il 2026-08-24 · `ContestRules.rejection`, `contest_purchase`*
+
+**Nelle dodici ore il giocatore gioca.**
+È già in rosa a tutti gli effetti. Se poi lo si perde in asta, le partite giocate restano
+dove sono.
+*Detta il 2026-08-24 · `buy_player` sposta il contratto subito*
+
+**Sul listino ci vanno gli svincolati e chi il proprietario mette in vendita, al prezzo
+che vuole lui.**
+Nessuna clausola su tutti: non si deve poter svuotare la rosa di chi dorme. Il prezzo è
+libero da un credito a tutto il budget, e il correttivo al favore fra amici è la
+contestazione — un prezzo fuori mercato è la definizione stessa dell'affare troppo buono,
+e chiunque ha dodici ore per portarlo all'asta.
+*Detta il 2026-08-24 · `list_player`, `ListingRules`*
+
+**Svincolare è gratuito, e pubblico.**
+Non si paga nessuna buonuscita: il giocatore torna svincolato e chiunque può prenderselo a
+listino il minuto dopo, compreso il rivale diretto. Ogni svincolo è annunciato a tutta la
+lega. *Scartato nella stessa sessione* il divieto di ricomprare chi si è svincolato: resta
+quindi possibile riscrivere un contratto svincolando e ricomprando.
+*Detta il 2026-08-24 · `release_player` in `0030_admin_svincoli_staff.sql`*
+
+**L'admin può aggiungere e togliere giocatori a qualsiasi club, senza registro pubblico.**
+Serve a riparare le leghe rotte. Il registro visibile a tutti è stato proposto e scartato:
+si regge sulla fiducia del gruppo. Resta vero il motivo per cui era stato proposto —
+l'admin è uno dei concorrenti, ed è la ragione per cui gli obiettivi li decide una regola
+in `core` e non lui: questo strumento è l'unico punto del gioco dove quella separazione
+non c'è, e va tenuto stretto.
+*Detta il 2026-08-24 · `admin_assign_player`, `admin_release_player`, `admin_adjust_credits`*
+
+**Lo staff si compra come i giocatori.**
+Allenatori, preparatori e osservatori non si assegnano solo alla generazione del mondo:
+stanno sul listino a prezzo fisso e si contestano nelle stesse dodici ore. `start_auction`
+accetta `target_type = 'staff'` da `0019` e nessuna schermata lo usa ancora.
+*Chiesta all'inizio del progetto — è la richiesta che ha fatto nascere questo file — e
+implementata all'asta con `0019_staff_e_scouting.sql`. Il 2026-08-24 la regola è passata
+dall'asta al listino insieme a quella dei giocatori: «si vince all'asta» vale ora solo
+quando qualcuno contesta.*
 
 **Chi apre un'asta per comprare ha già offerto il prezzo base.**
 L'ha aperta perché lo vuole: parte in testa. Chi invece mette all'asta **un proprio**
@@ -74,6 +130,19 @@ un'asta invece di controllare il telefono ogni ora.
 
 ## Le partite
 
+**Gli ordini condizionali si vedono e si scrivono.**
+«Se sono sotto dal 60', dentro la punta», «se scende sotto 40 di stamina, cambialo». Sono
+completi in `core` dal principio, il database ha la colonna `orders` che li aspetta, e
+nell'app non compaiono da nessuna parte. Sono il modo in cui chi alle 21 lavora ha
+comunque voce in capitolo.
+*Detta il 2026-08-24 · `core/match/ConditionalOrder.kt`, `core/match/OrderJson.kt`, `ui/screens/Campo.kt`*
+
+**Al 45' si può intervenire.**
+La finestra dell'intervallo: `MatchEngine` simula già primo e secondo tempo separati e la
+configurazione la prevede, ma la partita si guarda solo finita. È l'unico momento in cui
+una partita asincrona diventa una partita che si guarda.
+*Confermata il 2026-08-24 · `WorldTick.halfTimesDue`, `TickRunner.giocaPrimoTempo`, `0029_finestra_intervallo.sql`*
+
 **Gli orari li sceglie chi gioca.**
 Non fasce predefinite: l'ora si scrive. Vale per le competizioni e per le amichevoli.
 *Detta il 2026-08-19 · `core/calendar/KickoffRules.kt`*
@@ -83,10 +152,49 @@ Non un errore dopo aver premuto: il pulsante è spento. Con un margine di quindi
 perché una partita fra trenta secondi è nel futuro ed è inutilizzabile lo stesso.
 *Detta il 2026-08-19 · `KickoffRules.MARGINE_MINUTI`*
 
+**Si assegnano cinque incarichi, e ognuno pesa nel motore.**
+Capitano, rigorista, battitore d'angoli, battitore di punizioni, uomo dei calci lunghi. Un
+incarico che non cambia un numero è una casella da riempire per niente. Gli angoli oggi
+vengono emessi e la palla riparte: devono produrre un tentativo, deciso da chi batte
+(passaggio, tecnica) e da chi salta in area (fisico, posizionamento — nessun attributo
+nuovo, aggiungerlo rigenererebbe il mondo).
+*Detta il 2026-08-24 · `core/match/SetPieces.kt`, `MatchEngine.resolveCorner`,
+`0027_incarichi_e_ordini.sql`, `ui/screens/Campo.kt`*
+
+**Il capitano tiene in piedi la squadra.**
+Quando si va sotto o si perdono partite di fila, frena il crollo di morale e prestazione;
+conta chi è, non solo quanto vale. Rende verificabile la promessa della fascia, che si può
+già fare in un colloquio a una fascia che non esiste.
+*Detta il 2026-08-24 · `core/match/SetPieces.kt`, `MatchEngine.resistenza`*
+
+**I moduli sono dieci.**
+Ai sei di adesso si aggiungono 4-3-1-2, 3-4-3, 4-1-4-1 e 5-4-1. Non costano niente al
+motore: un modulo è solo la lista degli undici ruoli da coprire, e la forza delle zone
+nasce da chi ci finisce dentro. Scartato il campo libero con gli undici trascinabili.
+*Detta il 2026-08-24 · `core/match/Formation.kt`, `PitchLayout.kt`*
+
 **Gli orari sono ore di lega, non del telefono.**
 Un appuntamento fissato alle nove deve restare alle nove anche per chi lo guarda da un
 altro paese.
 *`CalendarConfig.timeZone`*
+
+---
+
+## Le squadre del computer
+
+**Le AI devono fare quattro cose di loro iniziativa, tutte rivolte a chi gioca.**
+Comprare a listino appena la rosa è corta — è quello che scioglie il riempimento lento
+delle rose; **offrire crediti** per i tuoi giocatori, cosa che oggi non sanno fare (sanno
+proporre solo giocatore contro giocatore); **chiedere a parole** — «il mio attaccante non
+gioca mai, lo prendi in prestito?»; e **reagire a quello che fai** — contestare se compri
+il loro obiettivo, rinforzarsi se le batti 5-0, farsi avanti quando metti in vendita.
+*Detta il 2026-08-24 · `core/ai/AiMarket.kt`, `AiInitiative.playerToLoanOut`, `AiTurn`*
+
+**Restano scaglionate.**
+«Più reattive» non deve mai voler dire venticinque notifiche in due secondi: l'anti-sciame
+di `AiScheduler` e i tetti di azioni giornaliere non si toccano. È il difetto che quel file
+esiste per impedire.
+*Confermata il 2026-08-24*
 
 ---
 
@@ -128,6 +236,18 @@ lavanda, bianco freddo, grigio, grigio spento. La proprietà che conta resta que
 sempre — **si deve poter leggere una scheda senza leggere un numero** — e i gradini sono
 sempre tre e netti.
 *Detta il 2026-08-23 · `MFootColors.rating`*
+
+**La barra grande del potenziale sparisce, e la scheda giocatore è una figurina.**
+La barra occupava la fascia più preziosa — subito sotto il nome — per dire una cosa sola, e
+per metà dei giocatori quella cosa era «niente da aggiungere»: su un maturo si riempiva
+tutta senza informare, su un giovane mostrava un vuoto che sembra un difetto invece di una
+promessa. Al suo posto un **gradino sotto l'overall**: «71», e sotto «+13» in oro; chi è
+arrivato legge «AL MAX» in lavanda, perché la maturità è un traguardo. Sei attributi in tre
+colonne invece di dodici in due, e la testata ad archi delle altre schermate. Vanno tenute
+dentro due cose che la figurina non aveva: **quanto conosci** quel giocatore e il
+**contratto**. Lo spazio liberato serve agli incarichi.
+*Scelta il 2026-08-24 fra tre mockup · [`mockups/2026-08-24/schede-giocatore.html`](mockups/2026-08-24/schede-giocatore.html)
+· `ui/PlayerDetail.kt`*
 
 **Del riferimento si copia anche la navigazione, non solo l'aspetto.**
 Chiesto per intero. Barra in basso con i cinque posti nell'ordine e con le icone del
