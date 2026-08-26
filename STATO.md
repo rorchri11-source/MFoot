@@ -81,6 +81,46 @@ Le correzioni, in ordine di peso:
    funzione era già lì e sembrava gratis. Adesso listino, aste aperte e acquisti
    contestabili restano in memoria finché qualcuno non scrive.
 
+### La misura dopo le correzioni, il 2026-08-26
+
+Quattordici giri consecutivi con le correzioni applicate (messaggio Telegram unico, cache
+del mercato, N+1 tolti). Durata di ognuno:
+
+```
+7:08  6:52  4:56  7:09  7:57  4:07  6:28  5:14  6:20  6:36  5:15  7:04  5:05  4:52
+```
+
+Media **6 minuti**, contro gli **11:29** del giro 393. E **zero annullati** su quattordici,
+contro tredici su venti prima del timeout a venti minuti.
+
+La diagnosi era giusta: il grosso dei minuti mancanti era Telegram, non il database.
+
+**Quello che resta.** Tolti il minuto di costruzione del jar e i sedici secondi di
+preparazione, il corpo del tick sta ancora fra i quattro e i cinque minuti. Per arrivare
+sotto i due servono le altre due parti del progetto.
+
+**E una cosa che i numeri non dicevano.** La cadenza vera, misurata sugli stessi
+quattordici giri: 48, 56, 39, 34, 40, 26, 31, 31, 69, 43, 51, 92, 108 minuti. Media
+**52 minuti** — peggio di prima. Non e' il tick: e' il pianificatore di GitHub, ed e' la
+ragione per cui l'orologio passa dentro Supabase.
+
+### Il vincolo che nessuno aveva guardato: l'egress
+
+Il piano gratuito di Supabase da' **5 GB di traffico in uscita** al mese. Al 2026-08-26 ne
+erano stati consumati **1,22 GB**, con il tick che gira una trentina di volte al giorno.
+
+Portare la cadenza a cinque minuti significa **288 giri al giorno**, cioe' quasi dieci
+volte tanto: la stessa lettura del mondo ripetuta dieci volte piu' spesso sfonderebbe il
+tetto in una settimana.
+
+Non e' un argomento contro i cinque minuti — e' il requisito che li rende possibili: **la
+maggior parte dei giri non ha niente da fare**, e deve accorgersene leggendo quasi niente e
+uscendo in due secondi. Un giro che non ha partite da giocare, aste da chiudere e AI da
+svegliare non ha motivo di caricare milleduecento giocatori.
+
+Vale anche per la velocita': un giro che esce subito quando non c'e' niente da fare e' il
+modo piu' diretto di portare la media sotto i due minuti.
+
 ### Come si leggono i tempi, senza scaricare i registri di GitHub
 
 Il riepilogo per fase finisce in **`tick_state.last_run_notes`**, che si apre dal Table

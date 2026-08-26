@@ -185,3 +185,42 @@ decisione di gioco.
 | Ogni quanto si muove il mondo | ~39 min | **5 min** |
 | Giri annullati dal cronometro | 13 su 20 | 0 |
 | Viaggi verso il database per giro | migliaia | decine |
+
+---
+
+## Aggiornamento del 2026-08-26: due misure che cambiano il piano
+
+### Le correzioni hanno funzionato, e non bastano
+
+Quattordici giri consecutivi con il messaggio Telegram unico e la cache del mercato:
+
+```
+7:08  6:52  4:56  7:09  7:57  4:07  6:28  5:14  6:20  6:36  5:15  7:04  5:05  4:52
+```
+
+Media **6 minuti** contro gli 11:29 del giro 393, e **zero annullati** su quattordici. La
+diagnosi era giusta. Tolto il minuto di costruzione, il corpo sta ancora fra i quattro e i
+cinque minuti: servono le altre due parti del progetto.
+
+### Il vincolo che mancava: l'egress
+
+Supabase, piano gratuito: **5 GB di traffico in uscita al mese**. Consumati 1,22 GB con una
+trentina di giri al giorno.
+
+A cinque minuti sarebbero **288 giri al giorno**, quasi dieci volte tanto. Il tetto
+salterebbe in una settimana.
+
+**Questo aggiunge un requisito al punto 3 del progetto**, e lo rende piu' preciso invece di
+contraddirlo:
+
+> **La maggior parte dei giri non ha niente da fare, e deve accorgersene leggendo quasi
+> niente.**
+
+Un giro senza partite in scadenza, senza aste da chiudere, senza AI sveglie e senza
+finestre di contestazione scadute deve rispondere in due secondi con una manciata di
+`select count(*)`, e uscire. Solo quando c'e' qualcosa da fare si carica lo stato della
+lega.
+
+E' lo stesso lavoro di prima — «carica una volta, scrivi in blocco» — con davanti una
+guardia. Serve a due cose insieme: tiene l'egress dentro il piano gratuito, e porta la
+**media** dei giri sotto i due minuti anche se quelli pieni ne durano tre.
