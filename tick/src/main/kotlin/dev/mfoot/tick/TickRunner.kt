@@ -149,6 +149,8 @@ class TickRunner(
     private val connection: Connection,
     private val env: TickEnvironment,
     private val notifier: Notifier = Notifier(env),
+    /** Le notifiche sul telefono. Spento se manca la chiave: vedi [Push]. */
+    private val push: Push = Push(env.fcmKey),
     /**
      * Il tempo che questo giro ha prima di essere ucciso da fuori. Vedi [TickBudget]:
      * senza, il tick veniva interrotto a transazione aperta e perdeva tutto.
@@ -1405,10 +1407,17 @@ class TickRunner(
      * ritardo di cinque minuti e' incomparabilmente meglio di una persa.
      */
     private fun consegnaLeNotifiche(league: LeagueRow, riepilogo: Boolean): List<String> {
-        if (!notifier.enabled) return emptyList()
         if (env.dryRun) return emptyList()
 
         val note = mutableListOf<String>()
+
+        // Il telefono per primo, ed e' il canale che conta: Telegram nel gruppo del
+        // proprietario non lo usa nessuno, detto da lui il 2026-08-26.
+        if (push.enabled && league.config.notifications.immediateEnabled) {
+            note += mandaSuiTelefoni(league)
+        }
+
+        if (!notifier.enabled) return note
 
         /*
          * LE IMMEDIATE PARTONO INSIEME, NON UNA PER UNA
@@ -1470,6 +1479,115 @@ class TickRunner(
             note += "riepilogo mandato (${arretrate.size} righe)"
         }
         return note
+    }
+
+    /**
+     * Le notifiche immediate, sul telefono di chi le riguarda.
+     *
+     * ## Un messaggio per persona, non uno per evento
+     *
+     * E' la stessa lezione pagata con Telegram, applicata prima di sbagliarla di nuovo:
+     * cinque cose successe nello stesso giro sono **un** messaggio con cinque righe, non
+     * cinque messaggi. Chi riceve cinque vibrazioni di fila silenzia l'app, e a quel punto
+     * il canale e' morto come lo era prima.
+     *
+     * ## Chi riceve cosa
+     *
+     * Una notifica con un club dentro va **al proprietario di quel club**: una proposta di
+     * scambio riguarda chi la riceve, non tutta la lega. Una notifica senza club — una
+     * giornata giocata, il mercato che apre — va a tutti gli iscritti.
+     *
+     * Le Row Level Security non c'entrano qui: il tick gira come proprietario del
+     * database. E' questa query a decidere chi vede cosa, ed e' il motivo per cui il testo
+     * non viene mai mandato a chi non lo riguarda.
+     *
+     * ## Cosa succede se non c'e' nessuno da avvisare
+     *
+     * La riga viene segnata consegnata lo stesso. Nessuno ha registrato un telefono, quindi
+     * non c'e' niente da riprovare: lasciarla in attesa vorrebbe dire riprovarla a ogni
+     * giro per sempre, e la tabella crescerebbe senza che nessuno la legga.
+     */
+    private fun mandaSuiTelefoni(league: LeagueRow): List<String> {
+        val immediate = caricaDaConsegnare(league.id, "immediata", limite = 40)
+        if (immediate.isEmpty()) return emptyList()
+
+        val testi = immediate.associate { it.id to it.perIlGruppo() }
+
+        // gettone -> gli id delle notifiche che quel telefono deve ricevere
+        val perTelefono = mutableMapOf<String, MutableList<Long>>()
+
+        connection.prepareStatement(
+            """
+            select n.id, d.token
+            from notifications n
+            join clubs c on c.id = n.club_id
+            join device_tokens d on d.user_id = c.owner_user_id
+            where n.id = any(?)
+            union
+            select n.id, d.token
+            from notifications n
+            join league_members m on m.league_id = n.league_id
+            join device_tokens d on d.user_id = m.user_id
+            where n.id = any(?) and n.club_id is null
+            """.trimIndent(),
+        ).use { st ->
+            val ids = connection.createArrayOf("bigint", immediate.map { it.id }.toTypedArray())
+            st.setArray(1, ids)
+            st.setArray(2, ids)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    perTelefono.getOrPut(rs.getString("token")) { mutableListOf() } += rs.getLong("id")
+                }
+            }
+        }
+
+        val consegnate = mutableSetOf<Long>()
+        var telefoni = 0
+
+        perTelefono.forEach { (gettone, quali) ->
+            val righe = quali.mapNotNull { testi[it] }
+            if (righe.isEmpty()) return@forEach
+
+            val testo = if (righe.size == 1) righe.first() else righe.joinToString("\n") { "• $it" }
+
+            if (push.manda(gettone, league.name, testo)) {
+                consegnate += quali
+                telefoni++
+            }
+        }
+
+        // Chi non ha nessun telefono registrato non riceve niente, e non c'e' niente da
+        // riprovare: si segna e si va avanti.
+        val senzaDestinatario = immediate.map { it.id }
+            .filterNot { id -> perTelefono.values.any { id in it } }
+        consegnate += senzaDestinatario
+
+        consegnate.forEach(::segnaConsegnata)
+        pulisciGettoniMorti()
+
+        return if (telefoni > 0) {
+            listOf("${consegnate.size} notifiche mandate a $telefoni telefoni.")
+        } else {
+            emptyList()
+        }
+    }
+
+    /**
+     * Toglie i gettoni che Firebase ha dichiarato morti.
+     *
+     * App disinstallata, dati cancellati, gettone ruotato: sono le tre cose normali della
+     * vita di un telefono, e un gettone morto ritentato a ogni giro e' una chiamata HTTPS
+     * sprecata per sempre.
+     */
+    private fun pulisciGettoniMorti() {
+        if (push.gettoniMorti.isEmpty()) return
+
+        connection.prepareStatement("delete from device_tokens where token = any(?)").use { st ->
+            st.setArray(1, connection.createArrayOf("text", push.gettoniMorti.toTypedArray()))
+            val quanti = st.executeUpdate()
+            if (quanti > 0) log("$quanti gettoni morti tolti dal database.")
+        }
+        push.gettoniMorti.clear()
     }
 
     private inner class NotificaDaMandare(

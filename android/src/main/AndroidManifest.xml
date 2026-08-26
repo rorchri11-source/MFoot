@@ -4,6 +4,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
+      Da Android 13 le notifiche si chiedono, non si danno per scontate.
+
+      Senza questo permesso il sistema scarta ogni notifica **in silenzio**: nessun errore,
+      nessun avviso, semplicemente non compare niente. E' il tipo di guasto che si scopre
+      solo notando che non arriva mai niente — cioe' esattamente il problema da cui nasce
+      tutto questo lavoro.
+
+      Sui telefoni piu' vecchi il permesso non esiste e viene ignorato.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
       L'icona va dichiarata, o Android ne mette una di sistema.
 
       Era proprio questo il motivo per cui l'app compariva senza icona: i file
@@ -28,6 +40,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Chi riceve i messaggi del server.
+
+          `exported="false"`: lo chiama solo il servizio di Google installato sul telefono,
+          non un'altra applicazione.
+        -->
+        <service
+            android:name=".push.MFootMessaging"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
     </application>
 

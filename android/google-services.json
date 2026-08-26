@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "595628748169",
+    "project_id": "mfoot-aaa",
+    "storage_bucket": "mfoot-aaa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:595628748169:android:742346c97c60636bce4558",
+        "android_client_info": {
+          "package_name": "com.christianrocco.mfoot"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBStISwStzBoSTDPkYnHbnYVgVXLQHOBlU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

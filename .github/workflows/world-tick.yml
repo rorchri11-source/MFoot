@@ -114,6 +114,9 @@ jobs:
           MFOOT_DB_PASSWORD: ${{ secrets.MFOOT_DB_PASSWORD }}
           MFOOT_TELEGRAM_TOKEN: ${{ secrets.MFOOT_TELEGRAM_TOKEN }}
           MFOOT_TELEGRAM_CHAT: ${{ secrets.MFOOT_TELEGRAM_CHAT }}
+          # Il file JSON dell'account di servizio Firebase, incollato per intero.
+          # Senza, le notifiche sul telefono restano spente e il tick lo dice all'avvio.
+          MFOOT_FCM_KEY: ${{ secrets.MFOOT_FCM_KEY }}
           MFOOT_DRY_RUN: ${{ inputs.dry_run }}
           # Nove minuti contro i venti di timeout-minutes. Il margine copre lo
           # scaricamento, l'avvio della JVM e — nel caso peggiore — il ripiego che

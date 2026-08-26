@@ -53,11 +53,18 @@ fun main() {
      * Una riga a ogni avvio costa niente e trasforma «non funziona» in «manca questo».
      */
     if (!config.notificationsEnabled) {
-        val quali = listOfNotNull(
-            "MFOOT_TELEGRAM_TOKEN".takeIf { config.telegramToken == null },
-            "MFOOT_TELEGRAM_CHAT".takeIf { config.telegramChat == null },
-        ).joinToString(" e ")
-        log("NOTIFICHE SPENTE: manca $quali. Il gioco non avvisera' nessuno di niente.")
+        log(
+            "NOTIFICHE SPENTE: nessun canale configurato. Serve MFOOT_FCM_KEY per le " +
+                "notifiche sul telefono, oppure MFOOT_TELEGRAM_TOKEN e MFOOT_TELEGRAM_CHAT " +
+                "per il gruppo. Il gioco non avvisera' nessuno di niente.",
+        )
+    } else {
+        log(
+            "Canali attivi: " + listOfNotNull(
+                "telefono".takeIf { config.pushEnabled },
+                "Telegram".takeIf { config.telegramEnabled },
+            ).joinToString(" e "),
+        )
     }
 
     // Il tempo che questo giro ha prima che GitHub lo ammazzi. Vedi [TickBudget]: senza,
@@ -119,10 +126,32 @@ data class TickEnvironment(
     val dbPassword: String? = null,
     val telegramToken: String? = null,
     val telegramChat: String? = null,
+    /**
+     * Il file JSON dell'account di servizio Firebase, per intero.
+     *
+     * E' un segreto vero, al contrario di `google-services.json`: vive nei segreti di
+     * GitHub e non tocca mai il repository. Senza, le notifiche push restano spente e il
+     * gioco funziona identico, solo silenzioso.
+     */
+    val fcmKey: String? = null,
     val dryRun: Boolean = false,
 ) {
-    val notificationsEnabled: Boolean
+    /** Il bot di Telegram e' configurato. */
+    val telegramEnabled: Boolean
         get() = telegramToken != null && telegramChat != null
+
+    /** Le notifiche sul telefono sono configurate. */
+    val pushEnabled: Boolean get() = fcmKey != null
+
+    /**
+     * C'e' **almeno un** modo di avvisare qualcuno.
+     *
+     * Due canali indipendenti: chi ha il gruppo Telegram lo usa, chi non ce l'ha riceve
+     * sul telefono. Nessuno dei due e' obbligatorio, ma se mancano tutti e due il gioco
+     * diventa muto — ed e' esattamente la condizione in cui era finito senza che nessuna
+     * riga del registro lo dicesse.
+     */
+    val notificationsEnabled: Boolean get() = telegramEnabled || pushEnabled
 
     companion object {
         fun fromEnv(getenv: (String) -> String? = System::getenv): TickEnvironment {
@@ -158,6 +187,7 @@ data class TickEnvironment(
                 dbUser = user,
                 dbPassword = password,
                 telegramToken = optional("MFOOT_TELEGRAM_TOKEN"),
+                fcmKey = optional("MFOOT_FCM_KEY"),
                 telegramChat = optional("MFOOT_TELEGRAM_CHAT"),
                 dryRun = getenv("MFOOT_DRY_RUN")?.equals("true", ignoreCase = true) ?: false,
             )

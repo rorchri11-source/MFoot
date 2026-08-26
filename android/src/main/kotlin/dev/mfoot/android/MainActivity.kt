@@ -1,8 +1,16 @@
 package dev.mfoot.android
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import dev.mfoot.android.data.PushRepository
+import kotlinx.coroutines.launch
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -70,7 +78,66 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
+        chiediLeNotifiche()
+        registraIlTelefono()
+
         setContent { MFootTheme { MFootApp() } }
+    }
+
+    /**
+     * Il permesso di avvisare, chiesto una volta.
+     *
+     * ## Perche' serve chiederlo
+     *
+     * Da Android 13 le notifiche sono un permesso come la fotocamera. Senza, il sistema
+     * **scarta ogni notifica in silenzio**: nessun errore, nessun avviso, semplicemente non
+     * compare niente. E' il tipo di guasto che si scopre solo notando che non arriva mai
+     * niente — cioe' esattamente il problema da cui nasce tutto questo lavoro.
+     *
+     * ## Perche' qui e non dietro una schermata di benvenuto
+     *
+     * Perche' la schermata che spiega perche' servono le notifiche costerebbe piu' della
+     * cosa che spiega. Il sistema chiede una volta sola: se dici di no, non lo richiede
+     * piu' e il gioco funziona identico, solo silenzioso.
+     */
+    private fun chiediLeNotifiche() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
+        val gia = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!gia) chiediPermesso.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /**
+     * Il richiedente, registrato **alla costruzione dell'attivita'**.
+     *
+     * Non e' pignoleria: `registerForActivityResult` va chiamato prima che l'attivita' sia
+     * avviata, perche' deve poter ricevere una risposta anche se Android nel frattempo
+     * distrugge e ricrea la schermata. Chiamarlo dentro un `if`, al momento del bisogno,
+     * funziona quasi sempre e fallisce proprio nel caso che conta.
+     *
+     * Il risultato non si guarda: se l'utente dice di no non c'e' niente da fare se non
+     * continuare. Il gioco resta identico, solo senza campanello.
+     */
+    private val chiediPermesso =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /**
+     * Il telefono si presenta al server, a ogni avvio.
+     *
+     * Non solo la prima volta: Firebase ruota i gettoni quando gli pare — dopo una
+     * reinstallazione, dopo una cancellazione dei dati, o senza motivo apparente — e un
+     * gettone vecchio non da' errore, smette semplicemente di consegnare. Vedi
+     * [PushRepository].
+     *
+     * Fuori dal thread principale e senza bloccare niente: se Firebase non risponde,
+     * l'app parte identica.
+     */
+    private fun registraIlTelefono() {
+        lifecycleScope.launch { runCatching { PushRepository.registra() } }
     }
 }
 

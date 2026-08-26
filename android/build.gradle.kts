@@ -9,6 +9,33 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+
+    /*
+     * Firebase, solo per far suonare il telefono.
+     *
+     * ## Perche' era stato scartato, e perche' adesso entra
+     *
+     * All'inizio del progetto le push erano state escluse con una motivazione buona: «un
+     * account Google, un progetto da configurare, un file di credenziali da tenere fuori da
+     * un repository pubblico, e un servizio di qualcun altro acceso a nome tuo». Il canale
+     * scelto era Telegram, gratis e senza niente da installare.
+     *
+     * Il 2026-08-26 il proprietario ha detto la cosa che quel ragionamento non prevedeva:
+     * **nel suo gruppo Telegram non lo usa nessuno**. Un canale che nessuno ha aperto non
+     * e' un canale, e per un gioco asincrono restare senza mezzo di avviso significa
+     * dipendere dal fatto che qualcuno si ricordi di aprire l'app.
+     *
+     * Cloud Messaging **non ha un piano a pagamento**: nessuna quota, nessuna carta. Il
+     * resto di Firebase — Functions, Firestore, Storage — non si tocca, perche' e' il tick
+     * a mandare i messaggi.
+     *
+     * ## `google-services.json` sta nel repository, ed e' voluto
+     *
+     * Non e' un segreto: viene incluso dentro ogni APK, quindi chiunque installi l'app ce
+     * l'ha gia'. E' il file dell'**account di servizio** a essere segreto, e quello vive
+     * nei segreti di GitHub e non tocca mai il repository.
+     */
+    alias(libs.plugins.google.services)
 }
 
 /**
@@ -72,8 +99,8 @@ android {
         //
         // La versione compare in fondo al menu laterale, non in una schermata "info" che
         // nessuno apre.
-        versionCode = 27
-        versionName = "0.25.1"
+        versionCode = 28
+        versionName = "0.26.0"
 
         buildConfigField("String", "SUPABASE_URL", "\"${secret("supabase.url")}\"")
         buildConfigField("String", "SUPABASE_KEY", "\"${secret("supabase.key")}\"")
@@ -150,4 +177,23 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
+
+    // Solo Cloud Messaging: niente Analytics, niente Crashlytics, niente che mandi dati
+    // di nascosto. La BOM decide le versioni, che e' il motivo per cui qui non ce ne sono.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+
+    /*
+     * Non si usa, e serve lo stesso.
+     *
+     * Firebase si trascina dietro `androidx.fragment:1.1.0`, del 2019, che ha un difetto
+     * noto: non chiama `super.onRequestPermissionsResult` e usa codici di richiesta non
+     * validi. MFoot non ha un solo Fragment — e' Compose puro — ma la versione presente
+     * sulla classpath decide comunque come si comportano le API dei permessi, e `lint`
+     * rifiuta di costruire il rilascio finche' resta quella.
+     *
+     * Dichiararla qui la alza per tutti. Non aggiunge peso apprezzabile: il codice dei
+     * Fragment non viene mai eseguito, semplicemente non e' piu' rotto.
+     */
+    implementation(libs.androidx.fragment)
 }

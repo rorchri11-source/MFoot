@@ -7,6 +7,18 @@ lifecycle = "2.11.0"
 coreKtx = "1.19.0"
 postgresql = "42.7.4"
 
+# Firebase, solo per le notifiche push. Vedi `MFootMessaging` e `PushRepository`.
+#
+# La BOM decide da sola le versioni delle librerie Firebase: dichiararle a mano e' il modo
+# piu' rapido di ritrovarsi due pezzi dello stesso SDK a versioni incompatibili.
+firebaseBom = "34.18.0"
+googleServices = "4.5.0"
+
+# Firebase si porta dietro fragment 1.1.0, del 2019, che ha un difetto noto sulle risposte
+# ai permessi: non chiama super.onRequestPermissionsResult e usa codici non validi. Il
+# progetto non usa i Fragment, ma la versione sulla classpath conta lo stesso.
+fragment = "1.8.5"
+
 # minSdk 26 e' il minimo per java.time senza desugaring, che core usa ovunque
 # per le date del calendario.
 minSdk = "26"
@@ -30,8 +42,14 @@ compose-material3 = { module = "androidx.compose.material3:material3" }
 
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 
+firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
+# Senza versione: la decide la BOM qui sopra.
+firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
+androidx-fragment = { module = "androidx.fragment:fragment", version.ref = "fragment" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }

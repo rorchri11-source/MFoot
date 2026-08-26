@@ -4184,3 +4184,92 @@ $$;
 revoke execute on function sveglia_il_tick() from public;
 revoke execute on function sveglia_il_tick() from anon, authenticated;
 grant  execute on function sveglia_il_tick() to postgres;
+
+
+-- =====================================================================================
+--  9. LE NOTIFICHE SUL TELEFONO
+--
+--  PERCHE' ESISTE QUESTA SEZIONE
+--
+--  Per mesi il gioco ha scritto diligentemente ogni evento in `notifications` e non lo ha
+--  mai detto a nessuno. Il canale previsto era Telegram, e il 2026-08-26 il proprietario
+--  ha detto la cosa che quel progetto non prevedeva: **nel suo gruppo Telegram non lo usa
+--  nessuno**. Un canale che nessuno ha aperto non e' un canale.
+--
+--  Per un gioco asincrono e' il difetto peggiore possibile: tutto funziona, e nessuno se
+--  ne accorge. Un'asta chiude alle 23 e lo scopri domani; arriva una proposta di scambio e
+--  resta li'.
+--
+--  Da qui il telefono si registra, e il tick sa dove bussare.
+--
+--  PERCHE' UNA TABELLA E NON UNA COLONNA SU `league_members`
+--
+--  Perche' una persona puo' avere due telefoni, e perche' il gettone di Firebase non
+--  appartiene all'utente ma **all'installazione**: cambia se reinstalli l'app, se cancelli
+--  i dati, o quando Firebase decide di ruotarlo. Una riga per installazione si cancella e
+--  si riscrive senza toccare nient'altro.
+-- =====================================================================================
+
+create table if not exists device_tokens (
+    -- Il gettone di Firebase: identifica **questa installazione su questo telefono**.
+    token      text primary key,
+    user_id    uuid not null references auth.users(id) on delete cascade,
+    -- A cosa serve: un gettone che nessuno rinfresca da mesi e' quasi certamente morto.
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_device_tokens_user on device_tokens(user_id);
+
+alter table device_tokens enable row level security;
+
+drop policy if exists read_own_devices on device_tokens;
+
+/*
+ * Si vedono solo i propri.
+ *
+ * Non e' pignoleria: l'elenco dei gettoni altrui direbbe quante persone giocano davvero e
+ * da quanti telefoni, che non e' un'informazione di gioco. E un gettone in mano a un
+ * estraneo non serve a niente da solo — servirebbe anche la chiave del progetto Firebase —
+ * ma non c'e' motivo di regalarlo.
+ */
+create policy read_own_devices on device_tokens for select
+    using (user_id = auth.uid());
+
+/*
+ * Il telefono si presenta.
+ *
+ * L'app la chiama a ogni avvio, non solo la prima volta: Firebase ruota i gettoni quando
+ * gli pare, e un gettone vecchio non da' errore — smette semplicemente di consegnare. Una
+ * chiamata a ogni apertura costa una riga scritta e toglie di mezzo tutta quella classe di
+ * guasti silenziosi.
+ *
+ * `on conflict` sul gettone e non sull'utente: se reinstalli l'app ne nasce uno nuovo, e
+ * quello vecchio resta finche' non lo pulisce il tick. Meglio un gettone morto in tabella
+ * che una notifica persa perche' abbiamo cancellato quello giusto.
+ */
+create or replace function register_device(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_user uuid := auth.uid();
+begin
+    if v_user is null then
+        raise exception 'Serve un accesso valido.' using errcode = '28000';
+    end if;
+    if p_token is null or length(p_token) < 20 then
+        return jsonb_build_object('ok', false, 'reason', 'Gettone non valido.');
+    end if;
+
+    insert into device_tokens (token, user_id, updated_at)
+    values (p_token, v_user, now())
+    on conflict (token) do update
+      set user_id = excluded.user_id, updated_at = now();
+
+    return jsonb_build_object('ok', true);
+end;
+$$;
+
+grant execute on function register_device(text) to authenticated, anon;
