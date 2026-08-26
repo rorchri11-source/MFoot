@@ -4119,4 +4119,22 @@ exception when others then
 end;
 $$;
 
-grant execute on function sveglia_il_tick() to postgres;
+/*
+ * LA SVEGLIA LA PUO' SUONARE SOLO IL DATABASE
+ *
+ * `grant execute ... to postgres` da solo **non basta**, ed e' esattamente l'errore che
+ * questo file spiega venti righe piu' su a proposito di `set_player_morale`: in PostgreSQL
+ * `execute` su una funzione e' concesso a `public` per impostazione predefinita, quindi
+ * aggiungere un permesso a un ruolo non ne toglie a nessun altro.
+ *
+ * Verificato il 2026-08-26 subito dopo averla installata: una richiesta anonima a
+ * `/rest/v1/rpc/sveglia_il_tick` rispondeva **200**. Senza questa revoca, dal giorno in cui
+ * il token esiste chiunque conosca l'indirizzo del progetto puo' far partire giri del
+ * server a raffica — bruciando minuti di Actions e martellando il database.
+ *
+ * Qui la revoca e' quella giusta perche' toglie a `public`, non a un ruolo: dopo questa
+ * riga la funzione la chiama solo chi gira come `postgres`, cioe' `pg_cron`.
+ */
+revoke execute on function sveglia_il_tick() from public;
+revoke execute on function sveglia_il_tick() from anon, authenticated;
+grant  execute on function sveglia_il_tick() to postgres;

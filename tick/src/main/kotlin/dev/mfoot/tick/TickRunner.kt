@@ -262,10 +262,157 @@ class TickRunner(
      */
     private fun tempiDelGiro(): String = "tempi: ${cronometro.riepilogo()}"
 
+    // --------------------------------------------------------- c'e' qualcosa da fare?
+
+    /**
+     * Tredici domande in una query sola.
+     *
+     * Ognuna e' un `exists`, e Postgres si ferma alla prima che risponde di si': su un
+     * giro a vuoto costa una manciata di millisecondi e restituisce **una riga con un
+     * booleano**, che in traffico e' nulla.
+     *
+     * L'elenco copre tutto cio' che puo' richiedere lavoro. Vale la pena leggerlo come
+     * indice di quello che il tick fa davvero:
+     */
+    private fun qualcosaDaFare(league: LeagueRow, now: Instant, state: TickStateRow): Boolean {
+        val oggi = league.currentMatchDay
+
+        // Il riepilogo giornaliero non ha una riga da guardare: e' l'orologio a deciderlo.
+        // Si controlla in Kotlin per non infilare la logica dell'orario dentro la query.
+        val riepilogoDovuto = state.lastDigestAt == null ||
+            java.time.Duration.between(state.lastDigestAt, now).toHours() >= 20
+
+        if (riepilogoDovuto && notifier.enabled) return true
+
+        return connection.prepareStatement(
+            """
+            select
+                -- 1. una partita da cominciare
+                exists (select 1 from fixtures
+                        where league_id = ? and not played and resume_at is null
+                          and kickoff is not null and kickoff <= now())
+                -- 2. o una da riprendere dopo l'intervallo
+             or exists (select 1 from fixtures
+                        where league_id = ? and not played and resume_at is not null
+                          and resume_at <= now())
+                -- 3. un'asta scaduta
+             or exists (select 1 from auctions
+                        where league_id = ? and status = 'APERTA' and ends_at <= now())
+                -- 4. una finestra di contestazione chiusa
+             or exists (select 1 from purchases
+                        where league_id = ? and status = 'IN_FINESTRA'
+                          and contestable_until <= now())
+                -- 5. un'AI con l'orario arrivato
+             or exists (select 1 from ai_states
+                        where league_id = ? and next_wake_at <= now())
+                -- 6. un osservatore rientrato
+             or exists (select 1 from scouting_missions
+                        where league_id = ? and status = 'IN_CORSO' and ready_at <= now())
+                -- 7. una proposta che aspetta la risposta di un club del computer
+             or exists (select 1 from trades t join clubs c on c.id = t.to_club
+                        where t.league_id = ? and t.status = 'PROPOSTA' and c.is_ai)
+                -- 8. una trattativa scaduta
+             or exists (select 1 from negotiations
+                        where league_id = ? and status in ('IN_ATTESA', 'CONTROPROPOSTA')
+                          and expires_at <= now())
+                -- 9. un contratto in scadenza
+             or exists (select 1 from contracts where league_id = ? and expires_on <= ?)
+                -- 10. un prestito da restituire
+             or exists (select 1 from loans where league_id = ? and active and ends_on <= ?)
+                -- 11. un ragazzo che non si e' ancora allenato in questa giornata
+             or exists (select 1 from contracts co join clubs cl on cl.id = co.club_id
+                        where co.league_id = ? and cl.parent_club_id is not null
+                          and coalesce(co.trained_on, -1) < ?)
+                -- 12. un colloquio aperto che tocca a un club del computer chiudere
+             or exists (select 1 from conversations cv join clubs c on c.id = cv.club_id
+                        where cv.league_id = ? and cv.status = 'APERTA' and c.is_ai)
+                -- 13. uno svincolato che non e' ancora a listino
+             or exists (select 1 from players p
+                        where p.league_id = ? and p.age >= ?
+                          and not exists (select 1 from contracts c where c.player_id = p.id)
+                          and not exists (select 1 from listings l
+                                          where l.player_id = p.id and l.target_type = 'player'
+                                            and l.status = 'APERTO'))
+            """.trimIndent(),
+        ).use { st ->
+            var i = 1
+            repeat(8) { st.setLong(i++, league.id) }
+            st.setLong(i++, league.id); st.setInt(i++, oggi)   // 9
+            st.setLong(i++, league.id); st.setInt(i++, oggi)   // 10
+            st.setLong(i++, league.id); st.setInt(i++, oggi)   // 11
+            st.setLong(i++, league.id)                          // 12
+            st.setLong(i++, league.id); st.setInt(i++, ETA_MINIMA_A_LISTINO) // 13
+            st.executeQuery().use { rs -> rs.next() && rs.getBoolean(1) }
+        }
+    }
+
+    /**
+     * Segna che il giro e' passato e non ha trovato niente.
+     *
+     * **Non tocca `last_processed_at`**, di proposito: se la guardia avesse dimenticato un
+     * caso, avanzare la finestra lo perderebbe per sempre. Cosi' invece il primo giro che
+     * trova qualcos'altro da fare recupera tutto l'intervallo, come fa gia' con i giri che
+     * GitHub salta.
+     */
+    private fun segnaGiroAVuoto(leagueId: Long) {
+        connection.prepareStatement(
+            """
+            insert into tick_state (league_id, last_run_at, last_run_notes)
+            values (?, now(), 'niente da fare')
+            on conflict (league_id) do update
+              set last_run_at = now(), last_run_notes = 'niente da fare'
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeUpdate()
+        }
+    }
+
     // ------------------------------------------------------------------- una lega
 
     private fun runLeague(league: LeagueRow, now: Instant): LeagueSummary {
         val state = loadTickState(league.id)
+
+        /*
+         * PRIMA DI TUTTO: C'E' QUALCOSA DA FARE?
+         *
+         * ## Perche' questa domanda vale piu' di qualunque ottimizzazione
+         *
+         * Perche' la risposta e' quasi sempre no. Fra una partita e l'altra passano ore, e
+         * un'AI si sveglia qualche volta al giorno: su un giro ogni cinque minuti — la
+         * cadenza decisa il 2026-08-25 — la stragrande maggioranza non trova niente da
+         * fare. Eppure caricava comunque milleduecento giocatori, i contratti, le aste, le
+         * formazioni, gli stati delle AI, e poi scopriva che il piano era vuoto.
+         *
+         * Due conseguenze, e la seconda e' quella che ha imposto questa guardia:
+         *
+         * 1. **Il tempo.** Un giro a vuoto costava quanto un giro pieno. Con la guardia
+         *    esce in un paio di secondi, e la media dei giri scende sotto i due minuti
+         *    anche se quelli pieni ne durano tre.
+         *
+         * 2. **Il traffico.** Supabase, piano gratuito: cinque gigabyte in uscita al mese.
+         *    Con una trentina di giri al giorno ne erano gia' andati 1,22. A 288 giri —
+         *    cioe' uno ogni cinque minuti — la stessa lettura ripetuta dieci volte piu'
+         *    spesso sfonderebbe il tetto in una settimana. La cadenza veloce e' possibile
+         *    **solo** se i giri a vuoto costano quasi niente.
+         *
+         * ## Cosa succede se questa domanda sbaglia
+         *
+         * Sbagliare per eccesso — dire «c'e' qualcosa» quando non c'e' — costa un giro
+         * normale, cioe' niente.
+         *
+         * Sbagliare per difetto — dimenticare un caso — **non perde** quel lavoro: lo
+         * rimanda al primo giro che trova qualcos'altro da fare, e `last_processed_at` non
+         * avanza, quindi la finestra si recupera per intero. E' la stessa proprieta' per
+         * cui il tick sopravvive ai giri saltati da GitHub.
+         *
+         * Per questo la guardia non avanza `last_processed_at`: segna solo di essere
+         * passata.
+         */
+        if (!cronometro.fase("guardia") { qualcosaDaFare(league, now, state) }) {
+            segnaGiroAVuoto(league.id)
+            return LeagueSummary(league.id, league.name, 0, 0, 0, listOf("niente da fare"))
+        }
 
         // Le finestre di contestazione scadute senza opposizioni si chiudono da sole,
         // prima di ogni altra cosa: da quel momento quei giocatori sono definitivi, e
