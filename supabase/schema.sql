@@ -4073,12 +4073,53 @@ security definer
 set search_path = public, extensions
 as $$
 declare
+    -- Le due ore che decidono tutto. Si cambiano qui, e basta rieseguire questa funzione.
+    -- Sveglio dalle 9; l'ultimo giro parte alle 21:55 e finisce prima delle 22.
+    ora_sveglia constant integer := 9;
+    ora_riposo  constant integer := 21;
+
     v_token text;
     v_id    bigint;
+    v_ora   integer;
 begin
+    /*
+     * DI NOTTE IL MONDO DORME
+     *
+     * ## Perche' l'orario si decide qui e non nel cron
+     *
+     * Perche' `pg_cron` interpreta gli orari nel fuso del **server**, che su Supabase e'
+     * UTC. Scrivere `*/5 9-21 * * *` pensando «dalle nove del mattino» significa in realta'
+     * «dalle undici», perche' d'estate l'Italia e' due ore avanti. E a fine ottobre
+     * diventerebbe un'ora, perche' l'ora legale finisce: lo stesso cron si sposterebbe da
+     * solo senza che nessuno lo tocchi.
+     *
+     * Scritto qui dentro, `Europe/Rome` fa il conto giusto tutto l'anno, cambio dell'ora
+     * compreso. Il cron continua a bussare ogni cinque minuti e per meta' giornata questa
+     * funzione risponde «no» in microsecondi, senza chiamare GitHub e senza consumare un
+     * byte di traffico.
+     *
+     * ## Le ore, decise dal proprietario il 2026-08-26
+     *
+     * Sveglio **dalle 9 alle 21:59**, ora italiana. Le partite si programmano quando si
+     * vuole, ma dentro quella fascia: una partita delle 21 fa in tempo a finire, intervallo
+     * compreso.
+     *
+     * Quello che scade di notte non si perde: il tick non chiede «cosa succede adesso» ma
+     * «cosa sarebbe dovuto succedere da quando sono passato», quindi il primo giro del
+     * mattino recupera la notte intera in un colpo. Un'asta che scadeva alle 3 viene
+     * assegnata alle 9, con lo stesso vincitore.
+     */
+    v_ora := extract(hour from (now() at time zone 'Europe/Rome'))::integer;
+
+    if v_ora < ora_sveglia or v_ora > ora_riposo then
+        return format('Sono le %s in Italia: il mondo dorme fino alle %s.', v_ora, ora_sveglia);
+    end if;
+
     select decrypted_secret into v_token
     from vault.decrypted_secrets
-    where name = 'github_tick_token';
+    where name = 'github_tick_token'
+    order by created_at desc
+    limit 1;
 
     if v_token is null or v_token = '' then
         return 'Nessun token: metti il segreto github_tick_token nel Vault. ' ||
