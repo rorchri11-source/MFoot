@@ -42,6 +42,7 @@
 --      5. le viste
 --      6. le funzioni che l'app chiama
 --      7. i permessi di esecuzione
+--      8. l'orologio che sveglia il server ogni cinque minuti
 --
 -- =====================================================================================
 
@@ -857,6 +858,34 @@ select
 from players;
 
 /*
+ * E la vista deve girare con i permessi di **chi la interroga**, non del proprietario.
+ *
+ * ## Perche' questa riga vale piu' di quanto sembri
+ *
+ * Una vista, di regola, gira con i permessi di chi l'ha creata: quindi **non applica** la
+ * policy `read_players`. Senza questa riga un membro di una lega qualsiasi puo' leggere i
+ * giocatori di **tutte le altre**. Non e' mai stato un problema pratico — l'app chiede
+ * sempre `league_id=eq.…` — ma e' una porta aperta.
+ *
+ * Era gia' stata chiusa nella vecchia migrazione `0023`. **Unificando le trentuno
+ * migrazioni in questo file l'ho persa**: la mia estrazione prendeva l'ultima
+ * `create view` di ognuna e questa correzione arrivava da un `alter view` separato, che
+ * non e' finito in nessun filtro. Il linter di Supabase l'ha ritrovata come `ERROR`
+ * il 2026-08-25, ed e' esattamente il tipo di difetto che rende pericolosa una
+ * unificazione fatta a macchina: quello che nessuno controlla perche' "c'era gia'".
+ *
+ * `security_invoker` esiste da PostgreSQL 15. Se il database fosse piu' vecchio la riga
+ * fallisce da sola e non porta giu' il resto del file.
+ */
+do $$
+begin
+    execute 'alter view players_public set (security_invoker = true)';
+exception when others then
+    raise notice 'players_public: security_invoker non applicato (%).', sqlerrm;
+end;
+$$;
+
+/*
  * Chi ha offerto su un'asta, e quanto ha reso pubblico.
  *
  * `max_amount` non c'e': quello resta segreto finche' l'asta e' aperta, o il rilancio
@@ -866,6 +895,20 @@ from players;
  * `security_barrier` impedisce che una condizione scritta dal client venga valutata
  * **prima** del filtro sull'appartenenza alla lega: senza, si potrebbe far trapelare per
  * differenza il contenuto di righe che non si dovrebbero vedere.
+ *
+ * ## Perche' qui `security_invoker` NON si mette, al contrario di `players_public`
+ *
+ * Il linter di Supabase segnala anche questa come `ERROR`, e qui la segnalazione va
+ * respinta invece che accolta. La policy `read_own_bids` permette di leggere **solo le
+ * proprie** offerte finche' l'asta e' aperta: farla applicare a questa vista la
+ * svuoterebbe, e la trasparenza dell'asta — chi ha offerto, e a che prezzo pubblico e'
+ * arrivato — sparirebbe proprio mentre serve.
+ *
+ * Scavalcare quella policy e' l'unico scopo per cui questa vista esiste, e lo fa
+ * mostrando **soltanto** `public_price`. Il massimo dichiarato non compare in nessuna
+ * colonna: quello resta segreto fino alla chiusura, o il rilancio automatico non avrebbe
+ * piu' senso. Il filtro sull'appartenenza alla lega e' scritto a mano nel `where`, ed e'
+ * la ragione per cui `security_barrier` c'e'.
  */
 drop view if exists auction_bids_public;
 create view auction_bids_public
@@ -1195,6 +1238,10 @@ create or replace function mfoot_attr_cost(
 returns integer
 language plpgsql
 immutable
+-- Nessuna tabella, nessuno schema: il percorso di ricerca si blocca perche. una funzione
+-- senza `search_path` fissato puo. essere dirottata da chi ne crea una omonima in uno
+-- schema davanti. Segnalato dal linter di Supabase il 2026-08-25.
+set search_path = pg_catalog
 as $$
 declare
     v_cost  integer := 0;
@@ -3767,6 +3814,8 @@ create or replace function mfoot_remap(
 returns double precision
 language sql
 immutable
+-- Solo aritmetica: vedi la nota su mfoot_attr_cost.
+set search_path = pg_catalog
 as $$
     select case
         when in_max = in_min then out_min
@@ -3914,6 +3963,160 @@ grant execute on function unlist_player(bigint) to authenticated, anon;
 grant execute on function update_league_config(bigint, jsonb) to authenticated;
 grant execute on function withdraw_trade(bigint) to authenticated;
 grant select on auction_bids_public to authenticated;
-revoke execute on function set_player_morale(bigint, integer) from authenticated;
-revoke execute on function set_squad(bigint, text) from authenticated;
+/*
+ * QUI C'ERANO DUE REVOKE CHE NON REVOCAVANO NIENTE
+ *
+ *     revoke execute on function set_player_morale(bigint, integer) from authenticated;
+ *     revoke execute on function set_squad(bigint, text) from authenticated;
+ *
+ * Erano state scritte credendo che quelle due funzioni servissero solo al tick. Non e'
+ * vero: le chiama l'app, da `PlayerRepository`, per il morale dopo un colloquio e per
+ * spostare un giovane fra prima squadra e Primavera.
+ *
+ * Non rompevano niente per un motivo che vale la pena sapere: **in PostgreSQL `execute` su
+ * una funzione e' concesso a `public` per impostazione predefinita**, quindi togliere il
+ * permesso a un ruolo solo non toglie niente a nessuno. Erano due righe che dichiaravano
+ * una protezione inesistente — e se un giorno avessero funzionato davvero, avrebbero rotto
+ * il colloquio e la Primavera.
+ *
+ * La protezione vera e' dentro le funzioni, dove deve stare: tutte e due cercano il
+ * contratto del giocatore in un club di `auth.uid()` e rifiutano se non lo trovano. E' la
+ * stessa regola di tutte le altre, ed e' il motivo per cui il linter di Supabase segnala
+ * novanta funzioni «eseguibili da chiunque» senza che nessuna di quelle segnalazioni sia
+ * un difetto: le tabelle sono in sola lettura, si scrive solo passando di qui, e ognuna
+ * controlla da sola chi sta chiamando.
+ */
 
+
+
+-- =====================================================================================
+--  8. L'OROLOGIO
+--
+--  IL PROBLEMA, MISURATO
+--
+--  Il file del World Tick chiede a GitHub un giro ogni dieci minuti. Misurato il
+--  2026-08-25 sugli ultimi quattordici giri, i minuti fra un avvio e il successivo erano:
+--
+--      34  22  51  50  47  53  44  44  31  29  32  73  2
+--
+--  Uno ogni **trentanove minuti**. Sul piano gratuito GitHub ritarda o salta i lavori
+--  pianificati, e nessuna riga di codice del progetto puo' influenzarlo. E' la ragione per
+--  cui il mondo sembrava fermo anche quando il tick funzionava: non era lento, era in
+--  ritardo.
+--
+--  LA CORREZIONE
+--
+--  L'orologio sta qui dentro. `pg_cron` e' puntuale, e ogni cinque minuti chiede a GitHub
+--  di far partire un giro. Il cron di GitHub resta acceso come **rete di sicurezza**: se
+--  questa chiamata smette di funzionare — token scaduto, estensione disattivata — il mondo
+--  torna lento invece di fermarsi.
+--
+--  PERCHE' QUI E NON IN UN SERVIZIO A PARTE
+--
+--  Il vincolo del progetto e' «costo zero, niente di proprio lasciato acceso». Supabase e'
+--  gia' acceso: e' il database del gioco. Un orologio dentro qualcosa che c'e' gia' non
+--  aggiunge niente da tenere in vita.
+--
+--  COSA SERVE FARE A MANO, UNA VOLTA SOLA
+--
+--  1. Su GitHub: Settings > Developer settings > Personal access tokens > Fine-grained.
+--     Un token sul solo repository di MFoot, con il permesso **Actions: Read and write**.
+--  2. Su Supabase, nell'SQL Editor:
+--
+--         select vault.create_secret('IL_TOKEN', 'github_tick_token');
+--
+--  Il token resta dentro il Vault del database. Non entra mai nell'APK, non finisce nel
+--  repository, e non lo vede nessun giocatore: le funzioni che lo leggono sono
+--  `security definer` e nessuna lo restituisce.
+--
+--  Finche' il segreto non c'e', `sveglia_il_tick()` non fallisce: dice che manca e non fa
+--  niente. Il gioco continua a girare con la cadenza lenta di GitHub.
+-- =====================================================================================
+
+/*
+ * Le due estensioni, senza far fallire tutto se non ci sono.
+ *
+ * Su un progetto Supabase dove non sono state abilitate dal pannello, `create extension`
+ * puo' rifiutare. Senza questa protezione l'intero `schema.sql` si fermerebbe qui, e un
+ * database che non ha l'orologio e' molto meglio di un database che non ha le tabelle.
+ */
+do $$
+begin
+    create extension if not exists pg_net with schema extensions;
+exception when others then
+    raise notice 'pg_net non disponibile (%): la sveglia resta spenta.', sqlerrm;
+end;
+$$;
+
+do $$
+begin
+    create extension if not exists pg_cron;
+exception when others then
+    raise notice 'pg_cron non disponibile (%): l''orologio resta spento.', sqlerrm;
+end;
+$$;
+
+/*
+ * Chiede a GitHub di far partire un giro del World Tick.
+ *
+ * Restituisce una riga di testo che dice cosa e' successo: serve a chiamarla a mano
+ * dall'SQL Editor per provarla, senza dover andare a guardare la tab Actions.
+ *
+ * La chiamata e' **asincrona**: `net.http_post` mette la richiesta in coda e torna subito.
+ * Non aspetta la risposta di GitHub, e non deve — questa funzione la chiama un cron, e un
+ * cron che si blocca su una rete lenta e' un cron che salta il giro dopo.
+ */
+create or replace function sveglia_il_tick()
+returns text
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_token text;
+    v_id    bigint;
+begin
+    select decrypted_secret into v_token
+    from vault.decrypted_secrets
+    where name = 'github_tick_token';
+
+    if v_token is null or v_token = '' then
+        return 'Nessun token: metti il segreto github_tick_token nel Vault. ' ||
+               'Il mondo continua a girare con il cron di GitHub, che e'' lento.';
+    end if;
+
+    select net.http_post(
+        url := 'https://api.github.com/repos/rorchri11-source/MFoot/actions/workflows/world-tick.yml/dispatches',
+        headers := jsonb_build_object(
+            'Authorization', 'Bearer ' || v_token,
+            'Accept', 'application/vnd.github+json',
+            'X-GitHub-Api-Version', '2022-11-28',
+            'User-Agent', 'mfoot-orologio',
+            'Content-Type', 'application/json'
+        ),
+        body := jsonb_build_object('ref', 'main')
+    ) into v_id;
+
+    return 'Sveglia mandata (richiesta ' || v_id || ').';
+end;
+$$;
+
+/*
+ * Ogni cinque minuti.
+ *
+ * Scelto dal proprietario il 2026-08-25 fra due, cinque e dieci: con un giro da due minuti
+ * non si accavallano mai, e le partite partono al massimo cinque minuti dopo l'orario.
+ *
+ * `cron.schedule` con lo stesso nome **sostituisce** il lavoro precedente invece di
+ * aggiungerne un secondo, quindi rieseguire questo file non produce due sveglie.
+ */
+do $$
+begin
+    perform cron.schedule('mfoot-orologio', '*/5 * * * *', 'select sveglia_il_tick()');
+    raise notice 'Orologio impostato: una sveglia ogni cinque minuti.';
+exception when others then
+    raise notice 'Orologio non impostato (%): resta il cron di GitHub.', sqlerrm;
+end;
+$$;
+
+grant execute on function sveglia_il_tick() to postgres;

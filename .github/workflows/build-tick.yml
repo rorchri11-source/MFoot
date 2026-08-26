@@ -1,0 +1,90 @@
+name: Costruisci il tick
+
+# Costruisce il programma del server **una volta**, quando cambia il codice, e lo pubblica
+# come allegato di una Release.
+#
+# ## Perche' esiste
+#
+# Perche' prima ogni giro del World Tick ricompilava tutto da capo: cinquantanove secondi
+# misurati, identici, buttati. Su un giro che deve stare sotto i due minuti sono metà del
+# budget spesi per riprodurre un file che non e' cambiato.
+#
+# ## Perche' una Release e non il jar dentro il repository
+#
+# Il repository e' pubblico, e ogni modifica al tick aggiungerebbe una decina di megabyte
+# binari alla storia di git: cresce e non si puo' piu' rimpicciolire. Una Release tiene
+# solo l'ultima copia.
+#
+# ## Perche' la tag e' sempre la stessa
+#
+# `tick-latest` non e' una versione, e' un **puntatore all'ultimo costruito**. Le versioni
+# del gioco le porta l'APK; qui serve solo che il server esegua il codice di adesso.
+
+on:
+  push:
+    branches: [main]
+    # Solo quando cambia qualcosa che finisce dentro il jar. Un ritocco all'app o a un
+    # documento non deve far ripartire niente.
+    paths:
+      - 'core/**'
+      - 'tick/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - '*.gradle.kts'
+      - '.github/workflows/build-tick.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-tick
+  cancel-in-progress: true
+
+jobs:
+  costruisci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Qui la cache si scrive davvero, al contrario del World Tick: e' l'unico posto dove
+      # si compila, quindi e' l'unico che ha qualcosa di nuovo da salvare.
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Rendi eseguibile il wrapper
+        run: chmod +x ./gradlew
+
+      # Le prove girano qui, non nel giro del server: un tick non deve mai eseguire codice
+      # che non ha passato i test, e non deve mai spendere tempo a scoprirlo.
+      - name: Le prove
+        run: ./gradlew :core:test :tick:test --no-daemon
+
+      - name: Costruisci il jar
+        run: ./gradlew :tick:fatJar --no-daemon
+
+      - name: Pubblica l'ultimo costruito
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # `create` fallisce se la Release esiste gia': in quel caso si sovrascrive
+          # l'allegato. Due comandi invece di cancellare e ricreare, perche' cancellare
+          # lascia una finestra in cui il World Tick non troverebbe niente da scaricare.
+          gh release create tick-latest \
+            --title "Il tick, ultimo costruito" \
+            --notes "Costruito da ${GITHUB_SHA}. Lo scarica il World Tick a ogni giro." \
+            --prerelease \
+            tick/build/dist/world-tick.jar \
+          || gh release upload tick-latest tick/build/dist/world-tick.jar --clobber
+
+          gh release edit tick-latest \
+            --notes "Costruito da ${GITHUB_SHA} il $(date -u +'%Y-%m-%d %H:%M UTC')."

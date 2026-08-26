@@ -5,19 +5,23 @@ name: World Tick
 # Fa avanzare il gioco anche quando nessuno sta giocando: simula le partite in orario,
 # chiude le aste scadute, fa scadere contratti e prestiti, sveglia le squadre AI.
 #
-# Il cron di GitHub non e' puntuale e ogni tanto salta un giro: non e' un problema.
-# Il tick non chiede "cosa succede adesso" ma "cosa sarebbe dovuto succedere fra
-# l'ultimo giro e adesso", quindi recupera da solo gli intervalli persi.
+# Il tick non chiede "cosa succede adesso" ma "cosa sarebbe dovuto succedere fra l'ultimo
+# giro e adesso", quindi recupera da solo gli intervalli persi.
 
 on:
-  schedule:
-    # Ogni 10 minuti.
-    #
-    # GitHub ritarda comunque i lavori pianificati sul piano gratuito: la cadenza vera
-    # misurata sul registro delle esecuzioni sta fra i trenta e i cinquanta minuti. Dieci
-    # descrive l'intenzione senza fingere una precisione che non c'e'.
-    - cron: '*/10 * * * *'
-  # Permette di lanciarlo a mano dalla tab Actions, utile per provare.
+  # LA SVEGLIA VERA ARRIVA DA SUPABASE
+  #
+  # Misurato il 2026-08-25 sugli ultimi quattordici giri, minuti fra un avvio e il
+  # successivo: 34 22 51 50 47 53 44 44 31 29 32 73 2.
+  #
+  # Il cron qui sotto chiede un giro ogni dieci minuti. GitHub ne consegna uno ogni
+  # **trentanove**: sul piano gratuito i lavori pianificati vengono ritardati o saltati, e
+  # non c'e' niente nel progetto che possa influenzarlo.
+  #
+  # Per questo l'orologio vero sta dentro il database — `pg_cron` chiama qui ogni cinque
+  # minuti, vedi `sveglia_il_tick()` in `supabase/schema.sql`. Il cron di GitHub resta
+  # acceso come **rete di sicurezza**: se il database non riesce a chiamare (token scaduto,
+  # estensione disattivata) il mondo torna lento invece di fermarsi.
   workflow_dispatch:
     inputs:
       dry_run:
@@ -25,35 +29,48 @@ on:
         type: boolean
         default: false
 
-# Due tick in parallelo scriverebbero sugli stessi dati. Meglio saltarne uno che
-# rischiare una corsa critica: quello dopo recupera comunque.
+  schedule:
+    - cron: '*/10 * * * *'
+
+  # E appena il codice nuovo e' costruito, si gira subito con quello: cosi' non esiste una
+  # finestra in cui il server esegue la versione precedente.
+  workflow_run:
+    workflows: ["Costruisci il tick"]
+    types: [completed]
+
+# Due tick in parallelo scriverebbero sugli stessi dati. Meglio saltarne uno che rischiare
+# una corsa critica: quello dopo recupera comunque.
 concurrency:
   group: world-tick
   cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   tick:
     runs-on: ubuntu-latest
 
-    # VENTI MINUTI, E IL MOTIVO PER CUI DIECI ERANO UN DIFETTO GRAVE
+    # Non girare dopo una costruzione fallita: eseguirebbe il jar precedente, che e' quello
+    # che gia' gira, quindi sarebbe solo un giro in piu' senza motivo.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    # VENTI MINUTI, E PERCHE' DIECI ERANO UN DIFETTO GRAVE
     #
-    # Misurato il 2026-08-25 sulle ultime venti esecuzioni: **tredici** finivano
-    # `cancelled` a dieci minuti e venti secondi esatti dall'avvio. Non era GitHub che
-    # annullava per concorrenza — era questo cronometro che uccideva il processo.
+    # Misurato il 2026-08-25: su venti esecuzioni consecutive, **tredici** finivano
+    # `cancelled` a dieci minuti e venti secondi esatti. Non era GitHub che annullava per
+    # concorrenza, era questo cronometro che uccideva il processo — e il processo ucciso
+    # non lasciava niente, perche' il tick fa `commit` solo alla fine di ogni lega.
     #
-    # E il processo ucciso non lasciava niente. Il tick elabora una lega per transazione e
-    # fa `commit` solo alla fine: staccare la spina a meta' significa che Postgres annulla
-    # tutto. Partite simulate, acquisti delle AI, stipendi, colloqui — tutto indietro.
-    #
-    # E' la spiegazione di «le AI comprano una volta al giorno»: non erano lente, due volte
-    # su tre il loro acquisto veniva cancellato da questo numero.
-    #
-    # Venti minuti e' il tetto duro. Il tetto vero e' MFOOT_BUDGET_SECONDS qui sotto, che
-    # e' piu' basso: il tick si ferma da solo **prima**, chiude la transazione e salva.
-    # I due numeri vanno tenuti insieme, e per questo stanno nello stesso file.
+    # Il tetto vero e' MFOOT_BUDGET_SECONDS piu' sotto, che e' piu' basso: il tick si ferma
+    # da solo **prima**, chiude la transazione e salva. I due numeri vanno tenuti insieme,
+    # e per questo stanno nello stesso file.
     timeout-minutes: 20
 
     steps:
+      # Serve solo al ripiego: se lo scaricamento fallisce, si costruisce da sorgente.
       - uses: actions/checkout@v4
 
       - name: Java 21
@@ -62,24 +79,33 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          # Il tick non cambia a ogni giro, quindi non c'e' niente di nuovo da salvare in
-          # cache: il passo "Post Gradle" ci metteva ventisei secondi a riscrivere quello
-          # che c'era gia'. In sola lettura la cache si usa e non si riscrive.
-          #
-          # Quando il codice del tick cambia davvero, il primo giro dopo il push ricostruisce
-          # da capo e ci mette qualche secondo in piu': una volta, non a ogni giro.
-          cache-read-only: true
+      # IL JAR SI SCARICA, NON SI COSTRUISCE
+      #
+      # Costruirlo costava cinquantanove secondi misurati, a ogni giro, per riprodurre un
+      # file identico a quello del giro prima. Lo costruisce `build-tick.yml` una volta,
+      # quando il codice cambia, e qui si scarica in due o tre secondi.
+      - name: Scarica il tick gia' costruito
+        id: scarica
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          if gh release download tick-latest --pattern world-tick.jar --dir dist; then
+            echo "pronto=si" >> "$GITHUB_OUTPUT"
+            ls -la dist/
+          else
+            echo "pronto=no" >> "$GITHUB_OUTPUT"
+            echo "Nessun jar pubblicato: lo costruisco da sorgente."
+          fi
 
-      # Rete di sicurezza: il repository viene aggiornato da Windows, dove il permesso
-      # di esecuzione non esiste. Se si perde di nuovo, qui non se ne accorge nessuno.
-      - name: Rendi eseguibile il wrapper
-        run: chmod +x ./gradlew
-
-      - name: Costruisci il tick
-        run: ./gradlew :tick:fatJar --no-daemon
+      # Il ripiego. Un minuto in piu' e' incomparabilmente meglio di un giro saltato: senza
+      # questo, un problema nella pubblicazione fermerebbe il mondo invece di rallentarlo.
+      - name: Costruisci da sorgente, se necessario
+        if: steps.scarica.outputs.pronto == 'no'
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :tick:fatJar --no-daemon
+          cp tick/build/dist/world-tick.jar dist/
 
       - name: Esegui il tick
         env:
@@ -89,8 +115,8 @@ jobs:
           MFOOT_TELEGRAM_TOKEN: ${{ secrets.MFOOT_TELEGRAM_TOKEN }}
           MFOOT_TELEGRAM_CHAT: ${{ secrets.MFOOT_TELEGRAM_CHAT }}
           MFOOT_DRY_RUN: ${{ inputs.dry_run }}
-          # Quindici minuti contro i venti di timeout-minutes. Nei cinque di scarto ci
-          # stanno la costruzione del jar (che avviene prima che il cronometro parta) e il
-          # margine perche' il tick decida di fermarsi invece di essere ammazzato.
-          MFOOT_BUDGET_SECONDS: '900'
-        run: java -jar tick/build/dist/world-tick.jar
+          # Nove minuti contro i venti di timeout-minutes. Il margine copre lo
+          # scaricamento, l'avvio della JVM e — nel caso peggiore — il ripiego che
+          # costruisce da sorgente.
+          MFOOT_BUDGET_SECONDS: '540'
+        run: java -jar dist/world-tick.jar
