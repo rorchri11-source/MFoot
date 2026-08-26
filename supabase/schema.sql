@@ -4088,10 +4088,15 @@ begin
      * ## Perche' l'orario si decide qui e non nel cron
      *
      * Perche' `pg_cron` interpreta gli orari nel fuso del **server**, che su Supabase e'
-     * UTC. Scrivere `*/5 9-21 * * *` pensando «dalle nove del mattino» significa in realta'
-     * «dalle undici», perche' d'estate l'Italia e' due ore avanti. E a fine ottobre
-     * diventerebbe un'ora, perche' l'ora legale finisce: lo stesso cron si sposterebbe da
-     * solo senza che nessuno lo tocchi.
+     * UTC. Mettere «dalle 9 alle 21» dentro la riga del cron significa in realta' «dalle 11
+     * alle 23», perche' d'estate l'Italia e' due ore avanti. E a fine ottobre diventerebbe
+     * un'ora, perche' l'ora legale finisce: lo stesso cron si sposterebbe da solo senza che
+     * nessuno lo tocchi.
+     *
+     * (Una nota per chi scrivera' commenti qui dentro: una riga di cron con la barra
+     * inclinata dopo un asterisco **chiude il commento** e fa fallire l'intero file. E'
+     * gia' successo il 2026-08-26, ed e' il motivo per cui qui la riga e' descritta a
+     * parole invece che citata.)
      *
      * Scritto qui dentro, `Europe/Rome` fa il conto giusto tutto l'anno, cambio dell'ora
      * compreso. Il cron continua a bussare ogni cinque minuti e per meta' giornata questa
