@@ -34,6 +34,28 @@ sprecati a riscrivere una cache identica a quella che c'era già.
 È la spiegazione di «le AI comprano una volta al giorno»: non erano lente, due volte su tre
 il loro acquisto veniva cancellato da un numero in un file YAML.
 
+### Correzione del 2026-08-26: la diagnosi qui sotto era sbagliata
+
+Quello che segue — «i minuti mancanti erano Telegram» — **non regge**, e va letto sapendolo.
+
+Il proprietario ha segnalato che *«il gioco non dà nessuna, NESSUNA notifica mai»*. Se è
+così, i due segreti `MFOOT_TELEGRAM_TOKEN` e `MFOOT_TELEGRAM_CHAT` non sono impostati,
+`notificationsEnabled` è falso, e `consegnaLeNotifiche` **esce alla prima riga**: non ha
+mai mandato una richiesta HTTP, quindi non può aver consumato niente.
+
+**Dove andavano davvero i minuti**: il tick lavorava su **quindici leghe**, cosa che ho
+scoperto solo il giorno dopo leggendo il registro. Il conto che non tornava — «millecento
+viaggi verso il database fanno meno di un minuto, ne mancano cinque» — torna
+perfettamente moltiplicato per quindici: sedicimila viaggi, quattordici minuti.
+
+Il miglioramento misurato (da 10:09 a ~6 minuti) è quindi merito delle **cache del
+mercato** e degli N+1 tolti, non del messaggio Telegram unico — che resta una correzione
+giusta, ma per il giorno in cui le notifiche verranno accese.
+
+La lezione è la stessa di prima, applicata a me: avevo un numero che non tornava e ho
+riempito il buco con l'ipotesi più comoda invece di cercare il dato mancante. Il dato
+mancante era in cima al registro, e diceva quindici nomi di lega.
+
 ### Dove finivano davvero i sei minuti e tre quarti
 
 Il conto delle andate e ritorno verso il database non torna. Partite, mercato delle AI,

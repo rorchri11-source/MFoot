@@ -38,6 +38,28 @@ fun main() {
     log("MFoot World Tick - avvio $startedAt")
     if (config.dryRun) log("MODALITÀ DI PROVA: nessuna scrittura sul database.")
 
+    /*
+     * SE LE NOTIFICHE SONO SPENTE, VA DETTO
+     *
+     * `notificationsEnabled` e' vero solo se ci sono **tutti e due** i segreti di Telegram.
+     * Se ne manca uno, `consegnaLeNotifiche` esce alla prima riga e non succede niente —
+     * in silenzio. Il tick continua ad accumulare righe in `notifications` che non legge
+     * nessuno, e da fuori il gioco sembra semplicemente non avvisare mai.
+     *
+     * Segnalato dal proprietario il 2026-08-26: «il gioco non da' nessuna, NESSUNA
+     * notifica mai». Non era un difetto di consegna: era il canale spento, e nessuna riga
+     * del registro lo diceva.
+     *
+     * Una riga a ogni avvio costa niente e trasforma «non funziona» in «manca questo».
+     */
+    if (!config.notificationsEnabled) {
+        val quali = listOfNotNull(
+            "MFOOT_TELEGRAM_TOKEN".takeIf { config.telegramToken == null },
+            "MFOOT_TELEGRAM_CHAT".takeIf { config.telegramChat == null },
+        ).joinToString(" e ")
+        log("NOTIFICHE SPENTE: manca $quali. Il gioco non avvisera' nessuno di niente.")
+    }
+
     // Il tempo che questo giro ha prima che GitHub lo ammazzi. Vedi [TickBudget]: senza,
     // due giri su tre venivano interrotti a transazione aperta e perdevano tutto.
     val budget = TickBudget.fromEnv(startedAt)
