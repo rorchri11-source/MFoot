@@ -66,6 +66,7 @@ import dev.mfoot.android.ui.screens.CampoScreen
 import dev.mfoot.android.ui.screens.DashboardScreen
 import dev.mfoot.android.ui.screens.MercatiScreen
 import dev.mfoot.android.ui.screens.MieLegheScreen
+import dev.mfoot.android.ui.screens.NovitaScreen
 import dev.mfoot.android.ui.screens.ObiettiviScreen
 import dev.mfoot.android.ui.screens.PartecipantiScreen
 import dev.mfoot.android.ui.screens.ProfiloLegaScreen
@@ -168,6 +169,9 @@ fun Router(
     lineup: LineupEdit,
     onLineupChange: (LineupEdit) -> Unit,
     onLineupSave: () -> Unit,
+    /** Cosa e' successo mentre non guardavi. Vedi `NovitaScreen`. */
+    novita: dev.mfoot.android.app.NovitaState,
+    onLoadNovita: () -> Unit,
 ) {
     when (val route = state.route) {
         is Route.Casa -> DashboardScreen(
@@ -365,6 +369,8 @@ fun Router(
 
         // Rara e da admin: resta a schermo pieno, aperta dal menu.
         is Route.Competizioni -> DaFare("Competizioni", "Si apre da qui a schermo pieno.")
+        is Route.Novita -> NovitaScreen(state, novita, onLoadNovita)
+
         is Route.RegistroAdmin -> {
             LaunchedEffect(state.lega.league.id) { onLoadTick() }
             RegistroScreen(desk)

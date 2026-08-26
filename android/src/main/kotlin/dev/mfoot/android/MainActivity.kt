@@ -161,6 +161,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
     val obiettivi by viewModel.obiettivi.collectAsStateWithLifecycle()
     val quanteLeghe by viewModel.quanteLeghe.collectAsStateWithLifecycle()
     val ultimoAggiornamento by viewModel.ultimoAggiornamento.collectAsStateWithLifecycle()
+    val novita by viewModel.novita.collectAsStateWithLifecycle()
 
     // L'app davanti o dietro.
     //
@@ -298,6 +299,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         }
                     },
                     quanteLeghe = quanteLeghe,
+                    novita = novita.nonLette,
                     ultimoAggiornamento = ultimoAggiornamento,
                     onRefresh = viewModel::aggiornaAdesso,
                     onLeaveLeague = viewModel::lasciaLega,
@@ -379,6 +381,8 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         lineup = lineup,
                         onLineupChange = viewModel::modificaFormazione,
                         onLineupSave = viewModel::salvaFormazione,
+                        novita = novita,
+                        onLoadNovita = viewModel::caricaNovita,
                     )
                 }
 

@@ -102,6 +102,8 @@ fun Shell(
     drawerOpen: Boolean,
     /** In quante leghe risulta iscritto chi guarda. Uno e' il caso normale. */
     quanteLeghe: Int,
+    /** Quante novita' non lette: il numero acceso accanto alla voce del menu. */
+    novita: Int,
     /** L'ultima lettura andata a buon fine, o null se non ce n'e' ancora stata nessuna. */
     ultimoAggiornamento: java.time.Instant?,
     onToggleDrawer: () -> Unit,
@@ -204,6 +206,7 @@ fun Shell(
                 leagueName = title,
                 isAdmin = isAdmin,
                 route = route,
+                novita = novita,
                 // Solo `onNavigate`, senza chiudere il menu a mano.
                 //
                 // Qui c'era `{ onNavigate(it); onToggleDrawer() }`, e il menu **restava
@@ -435,6 +438,7 @@ private fun Menu(
     leagueName: String,
     isAdmin: Boolean,
     route: Route,
+    novita: Int,
     onNavigate: (Route) -> Unit,
     onLeaveLeague: () -> Unit,
 ) {
@@ -549,6 +553,11 @@ private fun Menu(
         }
 
         Gruppo("Gioca")
+
+        // Per prima, e con il numero acceso: e' l'unica voce che risponde alla domanda che
+        // ci si fa aprendo l'app dopo qualche ora, cioe' «cosa mi sono perso».
+        Voce("Novità", MFootIcons.campanella, Route.Novita, route, onNavigate, badge = novita)
+
         // Il listino prima degli svincolati: dal 2026-08-24 e' il modo normale di
         // comprare, e una voce di menu che non c'e' e' una funzionalita' che non c'e'.
         Voce(
@@ -639,6 +648,14 @@ private fun Voce(
     target: Route,
     current: Route,
     onNavigate: (Route) -> Unit,
+    /**
+     * Quante cose nuove ci sono dietro questa voce.
+     *
+     * Serve a una sola: senza un numero acceso accanto, una schermata che racconta cosa e'
+     * successo non la apre nessuno — non perche' non interessi, ma perche' non c'e' modo
+     * di sapere se dentro c'e' qualcosa.
+     */
+    badge: Int = 0,
 ) {
     val acceso = when {
         target is Route.Regolamento && current is Route.Regolamento ->
@@ -666,6 +683,20 @@ private fun Voce(
             color = if (acceso) MFootColors.elite else MFootColors.ink,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
+
+        if (badge > 0) {
+            Spacer(Modifier.weight(1f))
+            Text(
+                if (badge > 99) "99+" else "$badge",
+                style = MFootType.label,
+                color = MFootColors.onAccent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(MFootColors.gamble)
+                    .padding(horizontal = 7.dp, vertical = 2.dp),
+            )
+        }
     }
 }

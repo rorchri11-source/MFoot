@@ -14,6 +14,7 @@ import dev.mfoot.android.data.LeagueRepository
 import dev.mfoot.android.data.LeagueSnapshot
 import dev.mfoot.android.data.MatchRepository
 import dev.mfoot.android.data.MyLeaguesRepository
+import dev.mfoot.android.data.NotificationRepository
 import dev.mfoot.android.data.DivisionRepository
 import dev.mfoot.android.data.LineupRepository
 import dev.mfoot.android.data.ListingView
@@ -604,6 +605,13 @@ class AppViewModel : ViewModel() {
             // leggero esiste per far comparire.
             val listino = MarketRepository.listings(leagueId)
             val acquisti = MarketRepository.purchases(leagueId)
+
+            // E il numero acceso sul menu.
+            //
+            // Senza, la schermata delle novita' sarebbe una voce come le altre e nessuno
+            // andrebbe a controllarla: non perche' non interessi, ma perche' non c'e' modo
+            // di sapere da fuori se dentro c'e' qualcosa.
+            contaNovita()
 
             // La finestra dell intervallo dura pochi minuti: se non la si vede nel giro
             // leggero, non la si vede mai.
@@ -2262,6 +2270,60 @@ class AppViewModel : ViewModel() {
 
     private val _staff = MutableStateFlow(StaffState())
     val staff: StateFlow<StaffState> = _staff
+
+    // ------------------------------------------------------------------------- novita'
+
+    private val _novita = MutableStateFlow(NovitaState())
+    val novita: StateFlow<NovitaState> = _novita
+
+    /**
+     * Legge cosa e' successo, e segna che l'hai visto.
+     *
+     * ## Perche' la soglia si legge prima e si scrive dopo
+     *
+     * `nuovaDopo` deve valere **il momento della visita precedente**, non questo. Se si
+     * scrivesse la data nuova prima di costruire lo stato, il pallino sarebbe gia' spento
+     * su tutto quando la schermata compare, e non si vedrebbe mai cosa era arrivato.
+     *
+     * Quindi: si prende la soglia vecchia, si costruisce l'elenco con quella, e solo dopo
+     * si sposta la soglia a adesso.
+     */
+    fun caricaNovita() {
+        val dentro = statoCorrente() ?: return
+        val soglia = Session.ultimaLetturaNotifiche
+
+        viewModelScope.launch {
+            _novita.value = when (val esito = NotificationRepository.recent(dentro.lega.league.id)) {
+                is ApiResult.Error -> NovitaState(letto = true, errore = esito.message)
+                is ApiResult.Ok -> NovitaState(
+                    righe = esito.value,
+                    letto = true,
+                    nuovaDopo = soglia,
+                )
+            }
+            Session.ultimaLetturaNotifiche = java.time.Instant.now()
+        }
+    }
+
+    /**
+     * Quante novita' ci sono, per il pallino sul menu.
+     *
+     * Si chiama a ogni giro leggero, insieme al resto: e' la stessa lettura del registro,
+     * e senza il pallino nessuno andrebbe a cercare una schermata che non dice di avere
+     * qualcosa dentro.
+     */
+    fun contaNovita() {
+        val dentro = statoCorrente() ?: return
+        val soglia = Session.ultimaLetturaNotifiche
+
+        viewModelScope.launch {
+            val righe = (NotificationRepository.recent(dentro.lega.league.id) as? ApiResult.Ok)
+                ?.value ?: return@launch
+            // Solo il conteggio: l'elenco lo ricostruisce `caricaNovita` quando si apre la
+            // schermata, con la soglia giusta.
+            _novita.value = _novita.value.copy(righe = righe, nuovaDopo = soglia)
+        }
+    }
 
     fun caricaStaff() {
         val dentro = statoCorrente() ?: return

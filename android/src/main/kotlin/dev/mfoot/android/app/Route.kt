@@ -94,6 +94,7 @@ sealed interface Route {
             is Lega -> tab.label
             ProfiloLega -> "Profilo lega"
             Partecipanti -> "Partecipanti"
+            Novita -> "Novità"
             MieLeghe -> "Le mie leghe"
             Obiettivi -> "Obiettivi e premi"
             Opzioni -> "Regolamento e opzioni"
@@ -173,6 +174,15 @@ sealed interface Route {
 
     data object ProfiloLega : Route
     data object Partecipanti : Route
+
+    /**
+     * Cosa è successo mentre non guardavi.
+     *
+     * Il registro delle notifiche esisteva da mesi nel database e non lo leggeva nessuna
+     * schermata: l'unica uscita prevista era Telegram, che nel gruppo del proprietario non
+     * usa nessuno. Vedi `NovitaScreen`.
+     */
+    data object Novita : Route
 
     /**
      * Tutte le leghe di cui si fa parte, con quella aperta adesso in evidenza.

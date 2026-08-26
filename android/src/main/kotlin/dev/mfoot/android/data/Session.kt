@@ -3,6 +3,7 @@ package dev.mfoot.android.data
 import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONObject
+import java.time.Instant
 
 /**
  * L'identita' dell'utente, salvata su disco.
@@ -33,6 +34,7 @@ object Session {
     private const val KEY_LEAGUE = "league_id"
     private const val KEY_CLUB = "club_id"
     private const val KEY_NICKNAME = "nickname"
+    private const val KEY_LETTE = "notifiche_lette_al"
 
     /**
      * Margine sulla scadenza.
@@ -121,6 +123,27 @@ object Session {
         get() = prefs?.getString(KEY_NICKNAME, null)
         set(value) {
             prefs?.edit()?.putString(KEY_NICKNAME, value)?.commit()
+        }
+
+    /**
+     * L'ultima volta che si e' aperto il registro di cosa e' successo.
+     *
+     * ## Perche' sta sul telefono e non nel database
+     *
+     * Perche' «letto» e' una proprieta' di **questo telefono**, non del giocatore: le
+     * stesse notizie possono essere gia' state lette sul tablet e non ancora sul telefono,
+     * e nessuna delle due e' sbagliata. Metterlo nel database vorrebbe dire una tabella in
+     * piu', una scrittura a ogni apertura di schermata, e una domanda in piu' a ogni giro.
+     *
+     * Il costo di tenerlo qui: cambiando telefono il pallino torna acceso una volta. E' il
+     * prezzo giusto.
+     */
+    var ultimaLetturaNotifiche: Instant?
+        get() = prefs?.getLong(KEY_LETTE, 0L)?.takeIf { it > 0 }?.let(Instant::ofEpochSecond)
+        set(value) {
+            prefs?.edit()?.apply {
+                if (value == null) remove(KEY_LETTE) else putLong(KEY_LETTE, value.epochSecond)
+            }?.commit()
         }
 
     /**
