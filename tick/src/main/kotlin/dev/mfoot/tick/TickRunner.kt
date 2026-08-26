@@ -202,6 +202,27 @@ class TickRunner(
     private var clubInCache: List<ClubId>? = null
     private val eDelComputer = HashMap<Long, Boolean>()
 
+    /**
+     * Questo errore vale la pena riprovarlo?
+     *
+     * I due codici di PostgreSQL per «due transazioni si sono pestate i piedi»:
+     * `40P01` e' il blocco incrociato, `40001` il fallimento di serializzazione. Sono gli
+     * unici due che si risolvono da soli riprovando — tutto il resto (un vincolo violato,
+     * una colonna che non c'e') si ripeterebbe identico.
+     *
+     * Si guarda anche la causa: JDBC incarta spesso l'errore vero dentro un altro.
+     */
+    private fun eUnIntoppoDiConcorrenza(e: Throwable?): Boolean {
+        var corrente = e
+        var passi = 0
+        while (corrente != null && passi++ < 5) {
+            val stato = (corrente as? java.sql.SQLException)?.sqlState
+            if (stato == "40P01" || stato == "40001") return true
+            corrente = corrente.cause
+        }
+        return false
+    }
+
     /** Qualcuno ha scritto sul mercato: le liste in memoria non valgono piu'. */
     private fun mercatoCambiato() {
         listinoInCache = null
@@ -239,6 +260,39 @@ class TickRunner(
                 if (env.dryRun) connection.rollback() else connection.commit()
             } catch (e: Exception) {
                 connection.rollback()
+
+                /*
+                 * UN INTOPPO FRA DUE PROCESSI NON E' UN GUASTO
+                 *
+                 * Visto il 2026-08-26, giro 425: `deadlock detected`. Il tick stava
+                 * scrivendo su una lega mentre qualcun altro — un telefono che compra, il
+                 * database che chiude qualcosa — toccava le stesse tabelle nell'ordine
+                 * opposto. Postgres ne sceglie uno e lo annulla: e' come deve funzionare,
+                 * non e' un errore del gioco.
+                 *
+                 * La lega era gia' tornata indietro per intero e sarebbe stata ripresa al
+                 * giro dopo. Ma il giro dopo, sul piano gratuito, puo' voler dire
+                 * quaranta minuti — e nel frattempo quel campionato sta fermo mentre gli
+                 * altri quattordici vanno avanti.
+                 *
+                 * Un solo tentativo in piu': l'altro processo ha finito, l'ordine di
+                 * blocco non si ripete quasi mai, e se si ripete allora e' un problema
+                 * vero e va segnalato come tale.
+                 */
+                if (eUnIntoppoDiConcorrenza(e) && !env.dryRun) {
+                    log("Lega ${league.id}: intoppo fra due processi, riprovo subito.")
+                    try {
+                        summaries += runLeague(league, now)
+                        connection.commit()
+                        continue
+                    } catch (secondo: Exception) {
+                        connection.rollback()
+                        failures += "lega ${league.id} '${league.name}': ${secondo.message}"
+                        log("Lega ${league.id} annullata anche al secondo tentativo: ${secondo.message}")
+                        continue
+                    }
+                }
+
                 failures += "lega ${league.id} '${league.name}': ${e.message}"
                 log("Lega ${league.id} annullata e riportata indietro: ${e.message}")
             }

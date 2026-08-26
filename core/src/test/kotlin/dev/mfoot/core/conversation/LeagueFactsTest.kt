@@ -203,6 +203,72 @@ class LeagueFactsTest {
         }
     }
 
+    // ------------------------------------ con chi si e' appena parlato non si riparla
+
+    /**
+     * Il difetto misurato il 2026-08-26 sul registro del server: «40 colloqui aperti nello
+     * spogliatoio, 40 colloqui gestiti dai club del computer», **a ogni giro, in ogni
+     * lega**. Il tick apriva quaranta colloqui, l'AI li chiudeva nello stesso giro, e al
+     * giro dopo si riapriva tutto da capo.
+     *
+     * `lastConversationOn` c'era, chi chiama lo calcolava e lo passava, e dentro `trigger`
+     * non lo leggeva nessuno: l'attesa valeva solo per la convocazione a mano.
+     */
+    @Test
+    fun `con chi si e appena parlato non si riapre un colloquio`() {
+        val storia = storia(
+            recent = listOf(panchina(19), panchina(18), panchina(17)),
+            lastConversationOn = oggi,
+        )
+        assertNull(LeagueFacts.trigger(giocatore(morale = 60), storia, oggi))
+    }
+
+    @Test
+    fun `passata l attesa, il discorso si riapre`() {
+        val recente = listOf(panchina(19), panchina(18), panchina(17))
+        val dopo = MatchDay(oggi.value + LeagueFacts.ATTESA_FRA_CONVOCAZIONI)
+
+        assertNull(
+            LeagueFacts.trigger(
+                giocatore(morale = 60),
+                storia(recent = recente, lastConversationOn = oggi),
+                oggi,
+            ),
+        )
+        assertEquals(
+            ConversationTopic.PANCHINA_PROLUNGATA,
+            LeagueFacts.trigger(
+                giocatore(morale = 60),
+                storia(recent = recente, lastConversationOn = oggi),
+                dopo,
+            )?.topic,
+        )
+    }
+
+    /**
+     * Vale **anche** per la promessa tradita, che e' la cosa piu' urgente che possa
+     * capitare in uno spogliatoio. Urgente vuol dire *subito*, non *di nuovo fra cinque
+     * minuti*: un torto di cui si torna a discutere a ogni giro non e' un torto che pesa,
+     * e' un promemoria che si impara a ignorare.
+     */
+    @Test
+    fun `nemmeno una promessa tradita riapre un colloquio appena chiuso`() {
+        val storia = storia(brokenPromise = true, lastConversationOn = oggi)
+        assertNull(LeagueFacts.trigger(giocatore(morale = 60), storia, oggi))
+    }
+
+    @Test
+    fun `chi non ha mai parlato non aspetta niente`() {
+        val storia = storia(
+            recent = listOf(panchina(19), panchina(18), panchina(17)),
+            lastConversationOn = null,
+        )
+        assertEquals(
+            ConversationTopic.PANCHINA_PROLUNGATA,
+            LeagueFacts.trigger(giocatore(morale = 60), storia, oggi)?.topic,
+        )
+    }
+
     // ------------------------------------------------------------------------- strumenti
 
     private val regole = dev.mfoot.core.config.ConfigPresets.classica().rules

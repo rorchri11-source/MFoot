@@ -100,6 +100,35 @@ object LeagueFacts {
      * andarsene. I complimenti vengono per ultimi, perche' possono aspettare.
      */
     fun trigger(player: Player, history: PlayerHistory, today: MatchDay): ConversationTrigger? {
+        /*
+         * CON CHI SI E' APPENA PARLATO NON SI RIPARLA
+         *
+         * ## Il difetto, misurato il 2026-08-26
+         *
+         * Questa riga non c'era, e `lastConversationOn` — che chi chiama calcola,
+         * riempie e passa da sempre — non la leggeva **nessuno** dentro `trigger`.
+         * L'attesa esisteva solo per la convocazione a mano, dalla schermata dello
+         * spogliatoio, dove il manager preme un pulsante.
+         *
+         * Il risultato, letto nel registro del server: «40 colloqui aperti nello
+         * spogliatoio, 40 colloqui gestiti dai club del computer», **a ogni giro, in ogni
+         * lega**. Il tick apriva quaranta colloqui, l'AI li chiudeva nello stesso giro, e
+         * al giro dopo si riapriva tutto da capo. Per sempre.
+         *
+         * Non era solo lavoro sprecato — anche se era il 50% del tempo di un giro, la voce
+         * piu' grossa di tutte. Era il morale di ogni giocatore del computer spostato ogni
+         * cinque minuti da una conversazione che non era mai successa davvero.
+         *
+         * ## Perche' vale anche per la promessa tradita
+         *
+         * Verrebbe da lasciar passare almeno quella, che e' la cosa piu' urgente che possa
+         * capitare in uno spogliatoio. Ma «urgente» vuol dire *subito*, non *di nuovo fra
+         * cinque minuti*: se ne parla una volta, e quella conversazione e' la risposta. Un
+         * torto di cui si torna a discutere a ogni giro non e' un torto che pesa, e' un
+         * promemoria che si ignora.
+         */
+        if (attesaResidua(history.lastConversationOn?.value, today.value) > 0) return null
+
         if (history.brokenPromise) {
             return ConversationTrigger(
                 ConversationTopic.PROMESSA_TRADITA,
