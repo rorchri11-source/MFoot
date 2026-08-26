@@ -46,6 +46,14 @@ concurrency:
 
 permissions:
   contents: read
+  # Serve per farsi riconoscere da Google **senza chiavi**: GitHub firma un gettone che
+  # dimostra «sono questo repository, in esecuzione su questo workflow», e Google lo
+  # scambia con un permesso che dura un'ora.
+  #
+  # E' la strada che Google impone sui progetti nuovi, dove il pulsante «genera chiave
+  # privata» risponde «non consentito». Non e' un ripiego: una chiave privata dentro un
+  # file e' un segreto che non scade mai e che nessuno si accorge se esce.
+  id-token: write
 
 jobs:
   tick:
@@ -107,6 +115,22 @@ jobs:
           ./gradlew :tick:fatJar --no-daemon
           cp tick/build/dist/world-tick.jar dist/
 
+      # IL PERMESSO PER FIREBASE, SENZA NESSUNA CHIAVE
+      #
+      # `continue-on-error` non e' pigrizia: se la federazione non e' configurata, o se un
+      # giorno smette di funzionare, il mondo deve continuare a girare **senza le
+      # notifiche** invece di fermarsi. Il tick lo dice all'avvio: «NOTIFICHE SPENTE».
+      - name: Fatti riconoscere da Google
+        id: google
+        continue-on-error: true
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: mfoot-aaa
+          workload_identity_provider: projects/595628748169/locations/global/workloadIdentityPools/github/providers/github
+          service_account: firebase-adminsdk-fbsvc@mfoot-aaa.iam.gserviceaccount.com
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/firebase.messaging
+
       - name: Esegui il tick
         env:
           MFOOT_DB_URL: ${{ secrets.MFOOT_DB_URL }}
@@ -114,8 +138,13 @@ jobs:
           MFOOT_DB_PASSWORD: ${{ secrets.MFOOT_DB_PASSWORD }}
           MFOOT_TELEGRAM_TOKEN: ${{ secrets.MFOOT_TELEGRAM_TOKEN }}
           MFOOT_TELEGRAM_CHAT: ${{ secrets.MFOOT_TELEGRAM_CHAT }}
-          # Il file JSON dell'account di servizio Firebase, incollato per intero.
-          # Senza, le notifiche sul telefono restano spente e il tick lo dice all'avvio.
+          # Le notifiche sul telefono, per la strada senza chiavi: il permesso lo ha
+          # appena ottenuto il passo qui sopra e dura un'ora, quindi non e' un segreto da
+          # custodire — e' gia' scaduto prima che serva a qualcuno.
+          MFOOT_FCM_TOKEN: ${{ steps.google.outputs.access_token }}
+          MFOOT_FCM_PROJECT: mfoot-aaa
+          # La strada con la chiave resta possibile, per chi ha un progetto Google dove
+          # generarne una e' ancora permesso. Se c'e', vince questa.
           MFOOT_FCM_KEY: ${{ secrets.MFOOT_FCM_KEY }}
           MFOOT_DRY_RUN: ${{ inputs.dry_run }}
           # Nove minuti contro i venti di timeout-minutes. Il margine copre lo

@@ -134,6 +134,15 @@ data class TickEnvironment(
      * gioco funziona identico, solo silenzioso.
      */
     val fcmKey: String? = null,
+    /**
+     * Il permesso d'accesso a Firebase, gia' ottenuto da GitHub.
+     *
+     * E' la strada senza chiavi: vedi [Push]. Dura un'ora, quindi non e' un segreto da
+     * custodire — e' gia' scaduto prima che serva a qualcuno.
+     */
+    val fcmToken: String? = null,
+    /** Il progetto Firebase, quando non arriva dalla chiave. */
+    val fcmProject: String? = null,
     val dryRun: Boolean = false,
 ) {
     /** Il bot di Telegram e' configurato. */
@@ -141,7 +150,8 @@ data class TickEnvironment(
         get() = telegramToken != null && telegramChat != null
 
     /** Le notifiche sul telefono sono configurate. */
-    val pushEnabled: Boolean get() = fcmKey != null
+    val pushEnabled: Boolean
+        get() = fcmKey != null || (fcmToken != null && fcmProject != null)
 
     /**
      * C'e' **almeno un** modo di avvisare qualcuno.
@@ -188,6 +198,8 @@ data class TickEnvironment(
                 dbPassword = password,
                 telegramToken = optional("MFOOT_TELEGRAM_TOKEN"),
                 fcmKey = optional("MFOOT_FCM_KEY"),
+                fcmToken = optional("MFOOT_FCM_TOKEN"),
+                fcmProject = optional("MFOOT_FCM_PROJECT"),
                 telegramChat = optional("MFOOT_TELEGRAM_CHAT"),
                 dryRun = getenv("MFOOT_DRY_RUN")?.equals("true", ignoreCase = true) ?: false,
             )

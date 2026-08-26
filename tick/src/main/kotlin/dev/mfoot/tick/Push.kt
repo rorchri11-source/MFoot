@@ -51,7 +51,32 @@ import java.util.Base64
  * sta nel database e ci resta. Se Firebase non risponde, quella riga resta da consegnare e
  * ci si riprova al giro dopo.
  */
-class Push(private val chiaveJson: String?) {
+class Push(
+    private val chiaveJson: String?,
+    /**
+     * Il permesso d'accesso gia' pronto, quando arriva da fuori.
+     *
+     * ## Perche' esistono due strade
+     *
+     * La prima — una chiave privata dell'account di servizio nei segreti di GitHub — e' la
+     * classica, e Google la sta chiudendo: sui progetti nuovi il pulsante «genera chiave»
+     * risponde *«la creazione di chiavi non e' consentita»*. Non e' un guasto, e' una
+     * policy: una chiave privata dentro un file e' un segreto che **non scade mai**, e se
+     * esce non se ne accorge nessuno.
+     *
+     * La seconda non ha nessuna chiave. GitHub dimostra a Google di essere **questo
+     * repository** con un gettone firmato da GitHub stessa, e Google gli restituisce un
+     * permesso che dura un'ora. Niente da custodire, niente che possa uscire per sbaglio —
+     * e la lezione del token di Telegram incollato in chat, il 2026-08-26, dice quanto
+     * valga.
+     *
+     * Il tick non deve sapere quale delle due e' in uso: se il permesso c'e' gia' lo usa,
+     * altrimenti se lo firma da solo.
+     */
+    private val permessoDaFuori: String? = null,
+    /** L'identificativo del progetto Firebase. Nella prima strada sta dentro la chiave. */
+    private val progettoDaFuori: String? = null,
+) {
 
     private val http = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
@@ -59,7 +84,11 @@ class Push(private val chiaveJson: String?) {
 
     private val credenziali: Credenziali? by lazy { leggiCredenziali() }
 
-    val enabled: Boolean get() = credenziali != null
+    /** Il progetto a cui mandare, da qualunque delle due strade arrivi. */
+    private val progetto: String? get() = credenziali?.progetto ?: progettoDaFuori
+
+    val enabled: Boolean
+        get() = credenziali != null || (permessoDaFuori != null && progettoDaFuori != null)
 
     /** Chi siamo, per Google. */
     private data class Credenziali(
@@ -99,7 +128,7 @@ class Push(private val chiaveJson: String?) {
      * @return true se Firebase l'ha accettato. False significa «riprova», non «perso».
      */
     fun manda(gettone: String, titolo: String, testo: String): Boolean {
-        val c = credenziali ?: return false
+        val progettoOra = progetto ?: return false
         val accesso = permesso() ?: return false
 
         val corpo = JsonWriter(1024).apply {
@@ -122,7 +151,7 @@ class Push(private val chiaveJson: String?) {
 
         return runCatching {
             val richiesta = HttpRequest.newBuilder()
-                .uri(URI.create("https://fcm.googleapis.com/v1/projects/${c.progetto}/messages:send"))
+                .uri(URI.create("https://fcm.googleapis.com/v1/projects/$progettoOra/messages:send"))
                 .timeout(Duration.ofSeconds(15))
                 .header("Authorization", "Bearer $accesso")
                 .header("Content-Type", "application/json")
@@ -156,6 +185,10 @@ class Push(private val chiaveJson: String?) {
 
     /** Il permesso d'accesso, chiesto solo quando serve. */
     private fun permesso(): String? {
+        // Se GitHub se l'e' gia' fatto dare, non c'e' niente da firmare: e' la strada
+        // senza chiavi, e dura quanto dura il giro del server.
+        permessoDaFuori?.let { return it }
+
         val valido = permesso
         if (valido != null && Instant.now().isBefore(permessoScadeIl)) return valido
 

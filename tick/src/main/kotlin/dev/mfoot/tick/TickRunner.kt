@@ -150,7 +150,7 @@ class TickRunner(
     private val env: TickEnvironment,
     private val notifier: Notifier = Notifier(env),
     /** Le notifiche sul telefono. Spento se manca la chiave: vedi [Push]. */
-    private val push: Push = Push(env.fcmKey),
+    private val push: Push = Push(env.fcmKey, env.fcmToken, env.fcmProject),
     /**
      * Il tempo che questo giro ha prima di essere ucciso da fuori. Vedi [TickBudget]:
      * senza, il tick veniva interrotto a transazione aperta e perdeva tutto.
