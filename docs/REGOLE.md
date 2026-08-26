@@ -174,6 +174,18 @@ nuovo, aggiungerlo rigenererebbe il mondo).
 *Detta il 2026-08-24 · `core/match/SetPieces.kt`, `MatchEngine.resolveCorner`,
 `lineups.corner_taker_id` e sorelle, `ui/screens/Campo.kt`*
 
+**Con chi si è appena parlato non si riparla per tre giornate. Nemmeno se ha ragione.**
+L'attesa esisteva già per la convocazione a mano — un manager deve poter parlare a chi
+vuole, ma non ogni cinque minuti, o sarebbe di nuovo il pulsante «alza morale» con un altro
+nome. Non valeva per i colloqui che nascono da soli: il dato c'era, il server lo calcolava
+e lo passava, e la regola non lo leggeva.
+Si vedeva nel registro del server: *«40 colloqui aperti nello spogliatoio, 40 colloqui
+gestiti dai club del computer»*, a ogni giro, in ogni lega. Il morale di ogni giocatore del
+computer si spostava ogni cinque minuti per una conversazione che non era mai successa.
+Vale **anche per la promessa tradita**, che è la cosa più urgente che possa capitare in uno
+spogliatoio: urgente vuol dire *subito*, non *di nuovo fra cinque minuti*.
+*Corretta il 2026-08-26 · `LeagueFacts.trigger`, `ATTESA_FRA_CONVOCAZIONI`*
+
 **Il capitano tiene in piedi la squadra.**
 Quando si va sotto o si perdono partite di fila, frena il crollo di morale e prestazione;
 conta chi è, non solo quanto vale. Rende verificabile la promessa della fascia, che si può

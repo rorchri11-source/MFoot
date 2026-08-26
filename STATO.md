@@ -121,6 +121,54 @@ svegliare non ha motivo di caricare milleduecento giocatori.
 Vale anche per la velocita': un giro che esce subito quando non c'e' niente da fare e' il
 modo piu' diretto di portare la media sotto i due minuti.
 
+### Dove finiva il tempo davvero, letto il 2026-08-26
+
+Il cronometro per fase, alla sua prima lettura utile:
+
+```
+colloqui AI 119728ms · mercato AI 62045ms · partite 10926ms · scambi 10278ms
+colloqui 9766ms · listino 3153ms · osservatori 2452ms · scouting 2232ms
+promesse 1442ms · contestazioni 1101ms · primavera 1008ms · promozioni 1007ms
+```
+
+**Metà del giro in «colloqui AI»**, e non era dove nessuno avrebbe guardato. Il registro
+spiegava perché: ogni lega scriveva *«40 colloqui aperti nello spogliatoio / 40 colloqui
+gestiti dai club del computer»*, **a ogni giro**. Il tick ne apriva quaranta, l'AI li
+chiudeva nello stesso giro, e al giro dopo si riapriva tutto.
+
+Una riga mancante in `LeagueFacts.trigger`: `lastConversationOn` esiste da sempre, il tick
+lo calcola con una query apposta e lo passa — e dentro la regola non lo leggeva nessuno.
+L'attesa fra due colloqui valeva solo per la convocazione a mano.
+
+Non era solo lavoro sprecato: era il morale di ogni giocatore del computer spostato ogni
+cinque minuti da una conversazione che non era mai successa. Un difetto di gioco travestito
+da lentezza. Vedi [`REGOLE.md`](docs/REGOLE.md).
+
+**È anche la lezione sul metodo.** Avevo previsto che il tempo stesse nelle partite o nel
+mercato. Stava altrove, e l'ho scoperto solo perché il giro prima avevo messo un cronometro
+invece di continuare a ottimizzare a intuito.
+
+### Quindici leghe, quattordici delle quali non le gioca nessuno
+
+Il registro dello stesso giro elenca: *Lega di prova*, *Lega Vera*, *Punto Legha* (cinque
+volte), *Milioni*, *Test*, *VERIFICA-20-AGOSTO*, *Gli*, *Carabina Series*, *Prova Scambi*…
+
+Il tick le elabora **tutte**, perché `loadActiveLeagues` prende ogni lega in stato
+`mercato` o `in_corso`. Quindici leghe moltiplicano ogni fase per quindici.
+
+Non è una cosa da correggere nel codice: è l'admin che decide quali leghe sono vive.
+Portare una lega a `conclusa` la toglie dal giro, ed è reversibile.
+
+### Il fallimento del giro 425: `deadlock detected`
+
+Il tick scriveva su una lega mentre un altro processo toccava le stesse tabelle
+nell'ordine opposto. Postgres ne annulla uno: è come deve funzionare, non è un errore del
+gioco. La lega tornava indietro per intero e sarebbe stata ripresa al giro dopo — ma il
+giro dopo, sul piano gratuito, può voler dire quaranta minuti.
+
+Adesso si riprova **subito, una volta sola**. Se l'intoppo si ripete allora è un problema
+vero e il giro resta rosso.
+
 ### Come si leggono i tempi, senza scaricare i registri di GitHub
 
 Il riepilogo per fase finisce in **`tick_state.last_run_notes`**, che si apre dal Table
