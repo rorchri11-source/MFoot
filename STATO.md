@@ -169,6 +169,42 @@ giro dopo, sul piano gratuito, può voler dire quaranta minuti.
 Adesso si riprova **subito, una volta sola**. Se l'intoppo si ripete allora è un problema
 vero e il giro resta rosso.
 
+### Com'è finita, il 2026-08-26 alle 20:30
+
+L'orologio è passato dentro Supabase. La prova, presa dal registro di GitHub:
+
+```
+#429  partito 20:25:01
+#430  partito 20:30:01
+```
+
+Cinque minuti esatti, al secondo, entrambi a `:01` dopo il multiplo di cinque. Per
+confronto, il `#427` — l'ultimo partito dal cron di GitHub — è delle `20:22:17`.
+
+| | Prima | Dopo |
+|---|---|---|
+| Durata di un giro | 8–11 min | **10–19 s** (mondo vuoto) |
+| Ogni quanto si muove il mondo | ~40 min | **5 min** |
+| Giri uccisi dal cronometro | 13 su 20 | 0 |
+| Chi decide quando | GitHub | Il database |
+
+**Il refactor «carica una volta, scrivi in blocco» non è stato fatto**, benché approvato.
+Non serviva: il problema non era come il tick parlava al database, erano quindici leghe
+invece di una, i colloqui che si riaprivano in eterno, un messaggio Telegram per notifica e
+un timeout che uccideva due giri su tre. Quattromilanovecento righe da toccare per un
+guadagno che a questi numeri non esiste più.
+
+Se un giorno i giri pieni risultassero lenti, i tempi per fase sono in
+`tick_state.last_run_notes` e si riparte da un numero invece che da un'ipotesi.
+
+**Quello che resta da guardare** è l'egress: 5 GB al mese, e la cadenza a cinque minuti è
+sostenibile solo perché i giri a vuoto costano pochi kilobyte. Se cresce oltre i ~150 MB al
+giorno, la manopola è una riga:
+
+```sql
+select cron.schedule('mfoot-orologio', '*/10 * * * *', 'select sveglia_il_tick()');
+```
+
 ### Come si leggono i tempi, senza scaricare i registri di GitHub
 
 Il riepilogo per fase finisce in **`tick_state.last_run_notes`**, che si apre dal Table
