@@ -266,3 +266,38 @@ ma qui pesa di più: il tick è l'unico posto dove le partite vengono davvero gi
 I passi da 1 a 3 non cambiano niente di visibile: costruiscono lo strumento con cui si
 misura il passo 5. Sono la parte che rende questo progetto diverso da un rifacimento a
 occhio.
+
+---
+
+## Com'è andata
+
+*Aggiunto il 2026-08-29, a lavoro finito. Il progetto qui sopra è rimasto com'era: questa
+sezione dice dove la realtà si è discostata, che è l'unica parte che serve rileggere.*
+
+**I nove passi sono stati fatti tutti**, nell'ordine previsto. L'interruttore è acceso e la
+banda misurata è verde su tutti e due i motori.
+
+**Tre cose sono uscite solo misurando**, e nessuna si vedeva leggendo il codice:
+
+1. *Ogni duello vinto in area diventava un tiro.* Col motore vecchio arrivare in zona
+   d'attacco era raro, quindi «sei arrivato, concludi» era giusto; coi duelli in area ci si
+   resta. Quarantatré tiri a partita invece di ventiquattro.
+2. *Le pendenze compoundavano.* Con 280 episodi invece di 118 decisioni, cinque punti di
+   overall valevano il 95% delle vittorie. Tutte alzate tranne quella della corsa, che è una
+   regola detta e non una manopola.
+3. *Sei zone su nove non le usava nessuno* — e questo era un difetto vecchio, non dei duelli.
+   La corsia centrale era assorbente: terzini e ali non toccavano mai il pallone, e la
+   larghezza tattica non faceva niente. Si è visto contando chi commetteva i falli.
+
+**Una prova era rotta e una si è rotta.** Il test degli angoli era sotto-campionato — a
+quattrocento partite l'effetto spariva nel rumore, quindi passava senza misurare niente — e
+`DuelliReportTest` ha cominciato a confrontare il motore con se stesso nel momento in cui
+l'interruttore è stato acceso di serie, stampando due colonne identiche senza che niente lo
+segnalasse.
+
+**Una cosa in più rispetto al progetto:** `Carattere.kt`. I tre tratti erano previsti dentro
+la simulazione; sono diventati funzioni pure perché altrimenti non erano provabili se non
+facendo girare partite intere.
+
+**Una cosa che il progetto prometteva ed è stata mantenuta:** zero modifiche al database. Le
+statistiche nuove viaggiano in `match_results.player_stats`, che è `jsonb` dal primo giorno.

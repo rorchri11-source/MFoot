@@ -1,9 +1,49 @@
 # MFoot — stato del progetto
 
-**Aggiornato:** 2026-08-25
-**Test:** 773 verdi, 0 falliti (745 in `core`, 28 in `tick`)
-**Verificato:** `core:test`, `tick:test` e la build di rilascio firmata. **Da eseguire
-[`supabase/schema.sql`](supabase/schema.sql) prima di installare l'APK**
+**Aggiornato:** 2026-08-29
+**Test:** 820 verdi, 0 falliti
+**Verificato:** `core:test`, `tick:build`, `android:assembleDebug`, e l'APK installato e
+avviato sull'emulatore senza errori.
+
+---
+
+## ⚠️ Il database in produzione è indietro di tre colonne — 2026-08-29
+
+**Va eseguito [`supabase/schema.sql`](supabase/schema.sql). Finché non lo si fa, il server
+non riesce a salvare nessuna partita e l'app non riesce ad aprirne nessuna.**
+
+Misurato interrogando l'API REST del progetto vero, non dedotto:
+
+| Colonna | In produzione |
+|---|---|
+| `match_results.home_formation` | **manca** |
+| `match_results.away_formation` | **manca** |
+| `appearances.position` | **manca** |
+| `match_results.player_stats` | c'è |
+| `competitions.finished_at`, `winner_club_id` | ci sono |
+| `tick_state.last_stamina_at` | c'è |
+| `fixtures.first_half`, `resume_at` | ci sono |
+
+Quindi l'SQL è stato eseguito, ma **una versione precedente**: il primo gruppo di colonne
+c'è, il secondo no.
+
+Cosa succede finché resta così, e perché è peggio di quanto sembri:
+
+- il tick scrive `insert into match_results (… home_formation, away_formation)` e
+  `insert into appearances (… position)`: entrambe le scritture falliscono, quindi **nessun
+  risultato viene salvato** e nessuna pagella;
+- l'app chiede quelle colonne dentro la lettura della partita, e PostgREST per una colonna
+  che non esiste **rifiuta l'intera query** — non la riga, tutta la SELECT. Quindi non è la
+  formazione a mancare nel tabellino: è tutta la schermata della partita a non aprirsi.
+
+È la trappola scritta in `CLAUDE.md`, già pagata due volte con `clubs.division_level` e
+`clubs.parent_club_id`. Le tre colonne sono già dentro `schema.sql`, sia nel `create table`
+sia nel blocco `alter table … add column if not exists`: il file è rieseguibile senza danni,
+e basta rieseguirlo.
+
+Il lavoro del 2026-08-29 sui duelli **non ha toccato lo schema**: le sei statistiche nuove
+viaggiano dentro `match_results.player_stats`, che è `jsonb` dal primo giorno. È stata una
+scelta di progetto proprio per non aggiungere un quarto motivo a questa lista.
 
 ---
 
