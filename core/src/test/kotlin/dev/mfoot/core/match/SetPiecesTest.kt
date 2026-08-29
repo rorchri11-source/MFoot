@@ -24,6 +24,11 @@ import kotlin.test.assertTrue
  */
 class SetPiecesTest {
 
+    private companion object {
+        /** Vedi la nota sul test degli angoli: sotto le duemila partite non si misura. */
+        const val CAMPIONE_ANGOLI = 2500
+    }
+
     private fun giocatore(
         id: Long,
         position: Position = Position.CC,
@@ -258,19 +263,27 @@ class SetPiecesTest {
      * Due squadre identiche in tutto tranne che per chi batte gli angoli. Se il risultato
      * non cambia, l'incarico e' decorazione — che e' precisamente cio' che l'angolo era
      * fino al 2026-08-24, quando veniva emesso e la palla ripartiva.
+     *
+     * ## Perche' il campione e' cosi' grande
+     *
+     * Perche' l'effetto e' vero ma piccolo: gli angoli valgono fra i quattro e i sei
+     * centesimi di gol a partita. A quattrocento partite spariva nel rumore, e il test
+     * passava o falliva a seconda di quale seme capitava — il tipo di prova che da'
+     * sicurezza senza misurare niente. Misurato: +0,057 a 1500 partite, +0,041 a 3000,
+     * sempre nello stesso verso.
      */
     @Test
     fun `chi batte gli angoli cambia quanti gol si fanno`() {
         val config = ConfigPresets.sprint(20, 12, LocalDate.of(2026, 9, 1))
         val world = WorldGenerator.generate(config)
 
-        val conSpecialista = BalanceHarness.run(world, config, 75, 75, 400)
+        val conSpecialista = BalanceHarness.run(world, config, 75, 75, CAMPIONE_ANGOLI)
 
         // Stessa lega, angoli che non arrivano mai: e' il motore di prima del 2026-08-24.
         val senzaAngoli = config.copy(
             engine = config.engine.copy(cornerConversionMin = 0.0, cornerConversionMax = 0.0),
         )
-        val conAngoliInutili = BalanceHarness.run(world, senzaAngoli, 75, 75, 400)
+        val conAngoliInutili = BalanceHarness.run(world, senzaAngoli, 75, 75, CAMPIONE_ANGOLI)
 
         assertTrue(
             conSpecialista.goalsPerMatch > conAngoliInutili.goalsPerMatch,

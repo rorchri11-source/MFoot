@@ -3,9 +3,12 @@ package dev.mfoot.core.match
 import dev.mfoot.core.config.EngineConfig
 import dev.mfoot.core.config.LeagueConfig
 import dev.mfoot.core.model.Attr
+import dev.mfoot.core.model.Lane
 import dev.mfoot.core.model.Player
 import dev.mfoot.core.model.PlayerId
 import dev.mfoot.core.model.Zone
+import dev.mfoot.core.model.cardFactor
+import dev.mfoot.core.model.foulFactor
 import dev.mfoot.core.model.injuryFactor
 import dev.mfoot.core.model.staminaFactor
 import dev.mfoot.core.rng.DeterministicRandom
@@ -186,6 +189,9 @@ object MatchEngine {
         /** Da che minuto ciascun giocatore e' in campo, per contare i minuti giocati. */
         val onPitchSince = mutableMapOf<PlayerId, Int>()
 
+        /** Quanto e' in palla oggi ciascuno. Estratta una volta e tenuta. */
+        private val giornate = mutableMapOf<PlayerId, Double>()
+
         init {
             // Nel secondo tempo si riparte dal 45': i minuti del primo sono gia' contati.
             val startMinute = if (restored != null) HALF_MINUTES else 0
@@ -272,9 +278,12 @@ object MatchEngine {
                 return
             }
 
-            val shotChance = (
-                if (engine.duelliAttivi) engine.shotChanceDuelli else engine.shotChanceInAttackingZone
-                ) * attackerSetup.tactics.stance.shotChanceFactor
+            val leva = attackerSetup.tactics.stance.shotChanceFactor
+            val shotChance = if (engine.duelliAttivi) {
+                engine.shotChanceDuelli * (1.0 + (leva - 1.0) * engine.smorzamentoAssetto)
+            } else {
+                engine.shotChanceInAttackingZone * leva
+            }
             // Fuorigioco: l'azione muore prima di diventare una conclusione. Non esisteva
             // affatto — nemmeno come evento — e nel calcio vero capita quattro volte a
             // partita. Chi gioca alto ne prende di piu': la linea difensiva avversaria
@@ -307,7 +316,7 @@ object MatchEngine {
             val advanceChance = MathX.sigmoid(delta, engine.sigmoidK)
 
             if (rng.chance(advanceChance)) {
-                val next = zone.advance()
+                val next = avanza(zone, attackerSetup.tactics)
                 if (next == null) {
                     // Non si puo' andare oltre: si conclude.
                     resolveShot(minute, toucher, defenderSetup)
@@ -377,9 +386,13 @@ object MatchEngine {
             // che e' lo stesso difetto per cui i corner li segnava sempre lo stesso uomo.
             val contende = if (duello == Duello.AEREO) incornatore(attackerSetup) ?: slot else slot
 
-            val forzaAttacco = forzaInDuello(contende, duello, Lato.ATTACCO, bersaglio, attacker)
+            val spintaAttacco = spintaDi(possession, minute)
+            val spintaDifesa = spintaDi(possession.other(), minute)
+
+            val forzaAttacco =
+                forzaInDuello(contende, duello, Lato.ATTACCO, bersaglio, attacker, spintaAttacco)
             val forzaDifesa = avversario
-                ?.let { forzaInDuello(it, duello, Lato.DIFESA, zonaDifesa, defender) }
+                ?.let { forzaInDuello(it, duello, Lato.DIFESA, zonaDifesa, defender, spintaDifesa) }
                 ?: ZoneStrength.EMPTY_ZONE_RATING
 
             val vinto = rng.chance(Duelli.esito(duello, forzaAttacco, forzaDifesa, engine))
@@ -462,7 +475,8 @@ object MatchEngine {
                 }
             }
 
-            val next = zone.advance()
+            val tattica = if (possession == Side.CASA) home.tactics else away.tactics
+            val next = avanza(zone, tattica)
             lastToucher = id
             bump(id) { it.copy(keyActions = it.keyActions + 1) }
 
@@ -579,14 +593,56 @@ object MatchEngine {
             lato: Lato,
             inZone: Zone,
             strength: ZoneStrength,
+            spinta: Double,
         ): Double {
             val qualita = Duelli.valore(duello, lato, slot.player.attributes) * slot.fitness
-            val condizione = ZoneRatings.condizione(slot.player, importance, engine)
+            val condizione = ZoneRatings.condizione(slot.player, importance, engine) +
+                giornataDi(slot.player) + spinta
             return strength.contesto(inZone).applica(qualita + condizione).coerceIn(1.0, 99.0)
+        }
+
+        /** Quanto e' in palla oggi. Estratta una volta sola e tenuta: vedi [Carattere]. */
+        private fun giornataDi(player: Player): Double =
+            giornate.getOrPut(player.id) { Carattere.giornata(player, seed, engine) }
+
+        private fun spintaDi(side: Side, minute: Int): Double {
+            val scarto = if (side == Side.CASA) homeGoals - awayGoals else awayGoals - homeGoals
+            val setup = if (side == Side.CASA) home else away
+            return Carattere.spintaDiRimonta(setup.lineup, scarto, minute, engine)
         }
 
         private fun slotDi(setup: TeamSetup, id: PlayerId): LineupSlot? =
             setup.lineup.slots.firstOrNull { it.player.id == id }
+
+        /**
+         * Dove arriva l'azione andando avanti, corsia compresa.
+         *
+         * Sostituisce `Zone.advance()`, che conservava la corsia. Insieme a `mirror()`, che
+         * manda il centro nel centro, e alle ripartenze tutte centrali, quello bastava a
+         * rendere la corsia centrale **assorbente**: la palla nasceva in `MID_C` e non ne
+         * usciva mai piu'. Sei zone su nove restavano vuote per tutta la partita.
+         */
+        private fun avanza(from: Zone, tactics: Tactics): Zone? {
+            val band = from.band.advance() ?: return null
+            return Zone.of(prossimaCorsia(from.lane, tactics), band)
+        }
+
+        /**
+         * Da che parte si sviluppa adesso.
+         *
+         * Quasi sempre dov'era; ogni tanto si allarga o rientra; il cambio di fronte da una
+         * fascia all'altra e' raro, perche' nel calcio si passa quasi sempre dal centro.
+         * La larghezza tattica pesa qui — ed e' il primo posto in cui pesa davvero.
+         */
+        private fun prossimaCorsia(attuale: Lane, tactics: Tactics): Lane =
+            rng.pickWeighted(Lane.entries) { lane ->
+                val base = when {
+                    lane == attuale -> engine.pesoStessaCorsia
+                    attuale == Lane.C || lane == Lane.C -> 1.0
+                    else -> engine.pesoCorsiaOpposta
+                }
+                base * tactics.width.factorFor(lane)
+            }
 
         /**
          * Chi attacca l'area sul cross.
@@ -635,9 +691,13 @@ object MatchEngine {
 
         private fun resolveFoul(minute: Int, defenderSetup: TeamSetup) {
             val defendingStrength = if (possession == Side.CASA) awayStrength else homeStrength
-            val offender = pickToucher(defendingStrength, zone.mirror())
+            val offender = pickFalloso(defendingStrength, zone.mirror(), defenderSetup)
             val offendingSide = possession.other()
             bump(offender) { it.copy(fouls = it.fouls + 1) }
+
+            // Chi va in ritardo si prende anche piu' cartellini: e' la seconda meta' del
+            // tratto. Senza, una testa calda commetteva piu' falli ma li pagava come tutti.
+            val cartellino = playerOf(offender)?.traits?.cardFactor() ?: 1.0
 
             // Fallo da rigore: solo in area centrale, e raro.
             if (zone == Zone.ATT_C && rng.chance(0.075)) {
@@ -645,12 +705,16 @@ object MatchEngine {
                 return
             }
 
-            if (config.rules.suspensionsEnabled && rng.chance(engine.redCardChanceOnFoul)) {
+            if (config.rules.suspensionsEnabled &&
+                rng.chance(engine.redCardChanceOnFoul * cartellino)
+            ) {
                 sendOff(minute, offender, offendingSide)
                 return
             }
 
-            if (config.rules.suspensionsEnabled && rng.chance(engine.yellowCardChanceOnFoul)) {
+            if (config.rules.suspensionsEnabled &&
+                rng.chance(engine.yellowCardChanceOnFoul * cartellino)
+            ) {
                 book(minute, offender, offendingSide)
                 return
             }
@@ -1291,6 +1355,26 @@ object MatchEngine {
                     ?: setup.lineup.slots.first().player.id
             }
             return rng.pickWeighted(candidates) { it.weight }.playerId
+        }
+
+        /**
+         * Chi commette il fallo.
+         *
+         * Come [pickToucher], ma il peso tiene conto di chi va in ritardo. `TESTA_CALDA`
+         * diceva *«colleziona cartellini»* e non ne collezionava nessuno: dentro la partita
+         * il tratto non muoveva un solo numero, e chi lo aveva prendeva esattamente gli
+         * stessi gialli di chiunque altro.
+         */
+        private fun pickFalloso(
+            strength: ZoneStrength,
+            inZone: Zone,
+            setup: TeamSetup,
+        ): PlayerId {
+            val candidates = strength.contributions[inZone]
+            if (candidates.isNullOrEmpty()) return pickToucher(strength, inZone)
+            return rng.pickWeighted(candidates) { pw ->
+                pw.weight * (setup.lineup.playerById(pw.playerId)?.traits?.foulFactor() ?: 1.0)
+            }.playerId
         }
 
         /**

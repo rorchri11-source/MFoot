@@ -794,6 +794,69 @@ data class EngineConfig(
     val shotChanceDuelli: Double = 0.162,
 
     /**
+     * Quanto si smorza la leva dell'assetto sulle conclusioni, col motore a duelli.
+     *
+     * [TacticalStance.shotChanceFactor] va da 0,80 a 1,34 ed era tarato su un motore in
+     * cui **arrivare** in zona d'attacco era raro: la leva agiva su poche azioni. Coi
+     * duelli in zona d'attacco ci si resta per piu' episodi di fila, lo stesso fattore
+     * agisce su molte piu' conclusioni, e l'arrembante vinceva quindici punti percentuali
+     * piu' del catenaccio — cioe' uno dei due assetti diventava semplicemente quello
+     * sbagliato da scegliere.
+     *
+     * Smorzato a meta', 1,34 diventa 1,17 e 0,80 diventa 0,90: l'assetto continua a
+     * decidere che partita si gioca, senza decidere chi la vince.
+     */
+    val smorzamentoAssetto: Double = 0.5,
+
+    /**
+     * Quanto oscilla la **giornata** di un giocatore, in punti di attributo.
+     *
+     * Un tiro di dado a inizio partita, uguale per tutti i novanta minuti, moltiplicato
+     * per la volatilita' di forma di chi lo tira. Serve a rendere vera una promessa che il
+     * gioco faceva e non manteneva: *«un giorno domina, quello dopo sparisce»* era la
+     * descrizione di `INCOSTANTE`, ma dentro la partita quel tratto non muoveva niente e
+     * il giocatore faceva la stessa identica partita ogni volta.
+     *
+     * Con 2,2 un giocatore normale oscilla di due o tre punti; un incostante, che ha
+     * volatilita' doppia, arriva a nove nelle giornate estreme. Si vede, e non decide.
+     */
+    val giornataStdDev: Double = 2.2,
+
+    /**
+     * Quanto pesa chi trascina, quando si e' sotto nel finale.
+     *
+     * Moltiplica la somma dei `rimontaBonus` degli undici in campo. La differenza con la
+     * `resistenza` del capitano, che esiste gia', e' che quella guarda **solo la fascia**:
+     * un leader senza fascia non trascinava nessuno.
+     */
+    val spintaLeader: Double = 0.55,
+    val spintaLeaderMassima: Double = 4.0,
+
+    /** Da che minuto una squadra sotto comincia a spingere. */
+    val minutoRimonta: Int = 75,
+
+    /**
+     * Quanto il gioco resta sulla corsia dov'e', invece di spostarsi.
+     *
+     * ## Il difetto che questi due numeri chiudono
+     *
+     * Sei zone su nove non venivano **mai** usate. `Zone.advance()` conserva la corsia,
+     * `Zone.mirror()` manda il centro nel centro, e ogni ripartenza e' centrale: la palla
+     * nasceva in `MID_C` e non ne usciva piu'. Il modello a nove zone era in realta' un
+     * modello a tre.
+     *
+     * Si vedeva misurando i falli: in cento partite li commettevano solo attaccanti,
+     * centrali e mediani — nessun terzino, nessuna ala, mai. Non erano scarsi, non
+     * toccavano il pallone. E la larghezza tattica moltiplicava fattori di corsie in cui
+     * non passava nessuno, quindi «stretto» e «largo» erano la stessa impostazione.
+     *
+     * Il cambio di fronte da una fascia all'altra resta raro — nel calcio si passa quasi
+     * sempre dal centro — ma non impossibile.
+     */
+    val pesoStessaCorsia: Double = 3.2,
+    val pesoCorsiaOpposta: Double = 0.30,
+
+    /**
      * Bonus ai rating di zona per chi gioca in casa.
      *
      * Va letto **insieme a [sigmoidK]**: i due parametri non sono indipendenti. Alzando

@@ -31,6 +31,12 @@ enum class Trait(
     val squadMoraleBonus: Double = 0.0,
     /** Peso extra nella scelta del rigorista. */
     val penaltyTakerWeight: Double = 1.0,
+    /** Moltiplicatore sui falli commessi: chi va in ritardo lo fa piu' spesso. */
+    val foulFactor: Double = 1.0,
+    /** Moltiplicatore sul cartellino, una volta commesso il fallo. */
+    val cardFactor: Double = 1.0,
+    /** Quanto trascina i compagni quando la squadra e' sotto nel finale. */
+    val rimontaBonus: Double = 0.0,
 ) {
     RIGORISTA(
         "Rigorista nato",
@@ -43,6 +49,11 @@ enum class Trait(
         "Reagisce male ai rimproveri e colleziona cartellini.",
         moraleVolatility = 1.6,
         injuryFactor = 1.1,
+        // «Colleziona cartellini» era una promessa che il motore non manteneva: dentro i
+        // novanta minuti il tratto non muoveva un solo numero, e chi lo aveva prendeva
+        // esattamente gli stessi gialli di chiunque altro.
+        foulFactor = 1.8,
+        cardFactor = 1.55,
     ),
 
     UOMO_SPOGLIATOIO(
@@ -50,6 +61,7 @@ enum class Trait(
         "Accetta le scelte se gliele spieghi, e tiene su il gruppo.",
         moraleVolatility = 0.6,
         squadMoraleBonus = 2.0,
+        rimontaBonus = 1.2,
     ),
 
     FRAGILE(
@@ -71,6 +83,10 @@ enum class Trait(
         moraleVolatility = 0.7,
         squadMoraleBonus = 3.0,
         bigMatchBonus = 1.5,
+        // «Trascina la squadra» valeva solo se portava la fascia: la spinta passava tutta
+        // da `resistenza`, che guarda il capitano. Un leader senza fascia non trascinava
+        // nessuno, e la parola non voleva dire niente.
+        rimontaBonus = 3.0,
     ),
 
     INCOSTANTE(
@@ -124,3 +140,6 @@ fun Set<Trait>.moraleVolatility(): Double = fold(1.0) { acc, t -> acc * t.morale
 fun Set<Trait>.formVolatility(): Double = fold(1.0) { acc, t -> acc * t.formVolatility }
 fun Set<Trait>.bigMatchBonus(): Double = sumOf { it.bigMatchBonus }
 fun Set<Trait>.squadMoraleBonus(): Double = sumOf { it.squadMoraleBonus }
+fun Set<Trait>.foulFactor(): Double = fold(1.0) { acc, t -> acc * t.foulFactor }
+fun Set<Trait>.cardFactor(): Double = fold(1.0) { acc, t -> acc * t.cardFactor }
+fun Set<Trait>.rimontaBonus(): Double = sumOf { it.rimontaBonus }
