@@ -740,11 +740,83 @@ data class EngineConfig(
     val actionsPerMatch: Int = 118,
 
     /** Probabilita' base di concludere quando l'azione arriva in zona offensiva. */
-    val shotChanceInAttackingZone: Double = 0.34,
+    val shotChanceInAttackingZone: Double = 0.54,
 
     /** xG base per zona di conclusione: il centro vale molto piu' delle fasce. */
     val baseXgCentral: Double = 0.112,
     val baseXgWide: Double = 0.046,
+
+    /**
+     * Quanto vale ogni tipo di conclusione, e quanto spesso capita.
+     *
+     * ## Perche' esistono
+     *
+     * Perche' prima una conclusione era una sola cosa: la prendeva chi aveva la palla in
+     * zona d'attacco, e valeva `baseXgCentral` o `baseXgWide` a seconda della fascia. Il
+     * risultato era che segnavano solo gli attaccanti — un difensore non poteva fare gol
+     * nemmeno su calcio d'angolo — ed e' la cosa che il proprietario ha segnalato il
+     * 2026-08-29: *«gol solo da quelli forti, dall'attacco e basta»*.
+     *
+     * Con sei tipi, ognuno con il suo valore e la sua platea di tiratori
+     * ([Conclusioni.peso]), un centrale attacca i corner e un centrocampista tira da
+     * fuori. La media dei gol resta dov'era perche' le conclusioni che si sono aggiunte —
+     * teste e tiri da lontano — sono quelle che valgono meno.
+     *
+     * ## Da dove vengono i numeri
+     *
+     * Misurati sul calcio vero, e sono gli stessi del Match Simulator che il proprietario
+     * ha indicato come metro: un tiro da fuori su venticinque diventa gol, una conclusione
+     * in area una su dieci, un'occasione limpida quasi una su tre.
+     */
+    val xgDaFuori: Double = 0.036,
+    val xgInArea: Double = 0.098,
+    val xgDiTesta: Double = 0.076,
+    val xgLimpida: Double = 0.310,
+    val xgRipartenza: Double = 0.196,
+    val xgPunizione: Double = 0.054,
+
+    /**
+     * Quanto la bravura di chi tira sposta il valore di una conclusione.
+     *
+     * ## Il numero che concentrava tutti i gol sui fuoriclasse
+     *
+     * Era da 0,55 a 1,95: un grande finalizzatore segnava **tre volte e mezzo** piu' di uno
+     * scarso sulla stessa identica occasione. Sommato al fatto che tiravano solo gli
+     * attaccanti, il risultato e' quello che il proprietario ha segnalato il 2026-08-29:
+     * *«gol solo da quelli forti»*.
+     *
+     * Nel calcio vero e' il contrario: **decide l'occasione, non chi la prende**. Un
+     * fuoriclasse converte un'occasione limpida forse il 40% in piu' di un onesto, non tre
+     * volte tanto — e infatti in una stagione segnano tutti, compresi i difensori sui
+     * corner. Il divario resta e si vede sul lungo periodo, ma non cancella piu' la partita
+     * singola.
+     */
+    val finishingMin: Double = 0.97,
+    val finishingMax: Double = 1.40,
+
+    /**
+     * Quanto spesso un'azione offensiva muore in fuorigioco.
+     *
+     * Quattro a partita nel calcio vero. Non esisteva: MFoot non aveva nemmeno l'evento, e
+     * una statistica che ogni tabellino mostra non si poteva calcolare.
+     */
+    val offsideChance: Double = 0.035,
+
+    /**
+     * Quante conclusioni finiscono murate da un difensore.
+     *
+     * Un quarto. Contano come tiri e non arrivano al portiere: senza, ogni conclusione era
+     * gol, parata o fuori, e il portiere risultava impegnato circa il doppio del vero.
+     */
+    val blockedShotChance: Double = 0.25,
+
+    /** Quanto spesso capita ogni tipo di conclusione, in parti su cento. */
+    val quotaDaFuori: Double = 32.0,
+    val quotaInArea: Double = 33.0,
+    val quotaDiTesta: Double = 16.0,
+    val quotaLimpida: Double = 8.0,
+    val quotaRipartenza: Double = 8.0,
+    val quotaPunizione: Double = 3.0,
 
     /** Malus all'xG quando si conclude di piede debole. */
     val weakFootPenaltyPerStar: Double = 0.055,

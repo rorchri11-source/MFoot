@@ -289,6 +289,34 @@ dieci minuti. I dati c'erano tutti — `MatchEvent.zone` viene scritto dal primo
 lo leggeva nessuno.
 *Detta il 2026-08-29 · `ui/pitch/CampoLive.kt`*
 
+**Non segnano solo gli attaccanti.**
+Chi conclude non è più chi ha la palla: si sceglie prima **che conclusione è** — tiro da
+fuori, in area, di testa, occasione limpida, ripartenza, punizione — e poi chi la prende,
+fra tutti e undici, con un peso per ruolo. Un centrale pesa 5,5 sui colpi di testa contro
+l'1 di un terzino; un centrocampista pesa 8 sui tiri da fuori contro il 4 di una punta.
+E chi attacca i corner non è più sempre lo stesso: era `il miglior stacco della squadra`,
+quindi quel giocatore segnava da solo tutti i gol di testa della stagione.
+Segnalato così: *«gol solo da quelli forti, dall'attacco e basta»*. Era vero per
+costruzione — alle zone d'attacco contribuiscono solo punte, esterni e trequartista, e un
+difensore non poteva concludere **mai**, nemmeno su calcio d'angolo.
+Misurato dopo: attacco 66%, centrocampo 20%, **difesa 12%**, con venti marcatori diversi su
+ventidue in campo.
+*Detta il 2026-08-29 · `core/match/Conclusioni.kt`, `MatchEngine.scegliTiratore`*
+
+**La bravura di chi tira conta, ma decide l'occasione.**
+Il moltiplicatore del finalizzatore era da 0,55 a 1,95: un fuoriclasse segnava **tre volte
+e mezzo** più di un onesto sulla stessa identica occasione, e sommato al fatto che tiravano
+solo gli attaccanti spiegava da solo la frase sopra. Ora è da 0,97 a 1,40. Il divario
+resta e si vede sulla stagione, ma non cancella più la partita singola — che è come
+funziona il calcio.
+*Detta il 2026-08-29 · `EngineConfig.finishingMin/Max`*
+
+**Esistono il fuorigioco e i tiri murati.**
+Non c'erano affatto, nemmeno come evento. Nel calcio vero sono quattro fuorigioco a partita
+e un quarto delle conclusioni murate: senza, ogni tiro era gol, parata o fuori, e il
+portiere risultava impegnato il doppio del vero.
+*Detta il 2026-08-29 · `MatchEventType.FUORIGIOCO`, `TIRO_MURATO`*
+
 **Gli ordini condizionali si vedono e si scrivono.**
 «Se sono sotto dal 60', dentro la punta», «se scende sotto 40 di stamina, cambialo». Sono
 completi in `core` dal principio, il database ha la colonna `orders` che li aspetta, e

@@ -248,6 +248,21 @@ object MatchEngine {
 
             val shotChance = engine.shotChanceInAttackingZone *
                 attackerSetup.tactics.stance.shotChanceFactor
+            // Fuorigioco: l'azione muore prima di diventare una conclusione. Non esisteva
+            // affatto — nemmeno come evento — e nel calcio vero capita quattro volte a
+            // partita. Chi gioca alto ne prende di piu': la linea difensiva avversaria
+            // alza la probabilita'.
+            if (zone.isAttacking && rng.chance(engine.offsideChance)) {
+                emit(
+                    minute, MatchEventType.FUORIGIOCO, possession, zone = zone, player = toucher,
+                    description = "${nameOf(toucher)} parte in fuorigioco",
+                )
+                possession = possession.other()
+                zone = Zone.DIF_C
+                lastToucher = null
+                return
+            }
+
             if (zone.isAttacking && rng.chance(shotChance)) {
                 resolveShot(minute, toucher, defenderSetup)
                 return
@@ -339,10 +354,86 @@ object MatchEngine {
             }
         }
 
-        private fun resolveShot(minute: Int, shooter: PlayerId, defenderSetup: TeamSetup) {
+        /**
+         * Una conclusione in azione.
+         *
+         * ## Chi tira non e' chi ha la palla
+         *
+         * Era cosi', ed era il difetto: [toccante] e' chi ha portato l'azione, e alle zone
+         * d'attacco contribuiscono solo punte, esterni e trequartista. Un difensore
+         * centrale non poteva concludere **mai** — nemmeno su calcio d'angolo, che nel
+         * calcio vero e' il modo in cui i difensori segnano.
+         *
+         * Adesso si sceglie prima **che conclusione e'** e poi chi la prende, con i pesi
+         * per ruolo di [Conclusioni]. Chi aveva la palla diventa il primo candidato
+         * all'assist, che e' il suo mestiere.
+         */
+        private fun resolveShot(minute: Int, toccante: PlayerId, defenderSetup: TeamSetup) {
+            val attackerSetup = if (possession == Side.CASA) home else away
+            val tipo = scegliTipo()
+            val shooter = scegliTiratore(attackerSetup, tipo) ?: toccante
             val player = playerOf(shooter) ?: return
-            resolveAttempt(minute, shooter, defenderSetup, expectedGoals(player, zone))
+
+            // Chi ha portato l'azione serve l'assist, se non e' lui a concludere. Se ha
+            // concluso lui, l'assist lo cerca fra i compagni con i pesi da rifinitore.
+            lastToucher = if (toccante != shooter) toccante else scegliAssist(attackerSetup, shooter)
+
+            resolveAttempt(minute, shooter, defenderSetup, xgDi(tipo, player), tipo)
         }
+
+        /** Che conclusione e', pescata sui pesi della configurazione. */
+        private fun scegliTipo(): TipoConclusione {
+            val tipi = TipoConclusione.entries
+            return rng.pickWeighted(tipi) { Conclusioni.pesoTipo(it, engine) }
+        }
+
+        /**
+         * Chi la prende, fra **tutti gli undici** e non solo fra chi sta in zona.
+         *
+         * Il peso del ruolo dice chi ci arriva, la qualita' dice quanto e' bravo a
+         * finalizzare: un centrale con un buon stacco attacca i corner piu' di un terzino,
+         * e un centrocampista con il tiro tira da fuori piu' di un difensore.
+         */
+        private fun scegliTiratore(setup: TeamSetup, tipo: TipoConclusione): PlayerId? {
+            val inCampo = setup.lineup.outfield
+            if (inCampo.isEmpty()) return null
+
+            return rng.pickWeighted(inCampo) { slot ->
+                val ruolo = Conclusioni.peso(tipo, slot.position)
+                val abilita = if (Conclusioni.diTesta(tipo)) staccoDi(slot.player) else tiroDi(slot.player)
+                ruolo * (0.5 + abilita / 90.0)
+            }.player.id
+        }
+
+        /** Chi serve il pallone, quando a concludere e' stato chi lo portava. */
+        private fun scegliAssist(setup: TeamSetup, shooter: PlayerId): PlayerId? {
+            val altri = setup.lineup.outfield.filter { it.player.id != shooter }
+            if (altri.isEmpty()) return null
+            return rng.pickWeighted(altri) { slot ->
+                Conclusioni.pesoAssist(slot.position) *
+                    (0.5 + slot.player.attributes[Attr.PASSAGGIO] / 90.0)
+            }.player.id
+        }
+
+        /** Quanto e' pericolosa questa conclusione, per questo tiratore. */
+        private fun xgDi(tipo: TipoConclusione, shooter: Player): Double {
+            val base = Conclusioni.xgBase(tipo, engine)
+            val abilita = if (Conclusioni.diTesta(tipo)) staccoDi(shooter) else tiroDi(shooter)
+            val qualita = MathX.remap(abilita, 40.0, 95.0, engine.finishingMin, engine.finishingMax)
+
+            // Il piede debole non c'entra con i colpi di testa.
+            val piede = if (Conclusioni.diTesta(tipo) || !rng.chance(0.33)) {
+                1.0
+            } else {
+                1.0 - engine.weakFootPenaltyPerStar * (5 - shooter.weakFoot)
+            }
+
+            return (base * qualita * piede).coerceIn(0.01, 0.85)
+        }
+
+        /** Quanto uno vale al tiro: e' il tiro, con un po' di tecnica. */
+        private fun tiroDi(player: Player): Double =
+            player.attributes[Attr.TIRO] * 0.7 + player.attributes[Attr.TECNICA] * 0.3
 
         /**
          * L'angolo, che fino al 2026-08-24 non produceva niente.
@@ -374,14 +465,27 @@ object MatchEngine {
                 return
             }
 
-            val incornatore = attackerSetup.lineup.outfield.maxWithOrNull(
-                compareBy<LineupSlot> { staccoDi(it.player) }.thenBy { it.player.id.value },
-            )?.player ?: return
+            // CHI LA INCORNA NON E' SEMPRE LO STESSO
+            //
+            // Era `maxWithOrNull { staccoDi }`: il miglior stacco della squadra attaccava
+            // **tutti** i corner della stagione, e segnava lui tutti i gol di testa. Nel
+            // calcio in area ci salgono in sei, e chi ci arriva cambia ogni volta.
+            //
+            // Il peso e' quello dei colpi di testa: il centrale ha 5,5 contro l'1 del
+            // terzino, e la punta 10. E' la riga che fa segnare qualche gol a stagione a un
+            // difensore — cosa che prima non poteva succedere per costruzione.
+            val incornatore = rng.pickWeighted(attackerSetup.lineup.outfield) { slot ->
+                Conclusioni.peso(TipoConclusione.DI_TESTA, slot.position) *
+                    (0.5 + staccoDi(slot.player) / 90.0)
+            }.player
 
             // Sul corner si conclude sempre dal centro dell'area, chiunque abbia crossato.
             zone = Zone.ATT_C
             lastToucher = battitore.id.takeIf { it != incornatore.id }
-            resolveAttempt(minute, incornatore.id, defenderSetup, xgDiTesta(incornatore))
+            resolveAttempt(
+                minute, incornatore.id, defenderSetup,
+                xgDi(TipoConclusione.DI_TESTA, incornatore), TipoConclusione.DI_TESTA,
+            )
         }
 
         /**
@@ -423,6 +527,7 @@ object MatchEngine {
             shooter: PlayerId,
             defenderSetup: TeamSetup,
             xg: Double,
+            tipo: TipoConclusione? = null,
         ) {
             val goalkeeper = defenderSetup.lineup.slots
                 .firstOrNull { it.position.isGoalkeeper }?.player
@@ -430,11 +535,48 @@ object MatchEngine {
             recordShot(xg)
             bump(shooter) { it.copy(shots = it.shots + 1) }
 
-            val goalChance = goalkeeper?.let { xg * keeperFactor(it) } ?: (xg * 1.6)
+            // TIRO MURATO
+            //
+            // Un quarto delle conclusioni finisce addosso a un difensore e non arriva mai
+            // al portiere. Senza, ogni tiro era gol, parata o fuori — e il portiere
+            // risultava impegnato circa il doppio del vero, con parate a raffica in ogni
+            // partita. Il tiro conta lo stesso: e' stato tentato.
+            if (rng.chance(engine.blockedShotChance)) {
+                emit(
+                    minute, MatchEventType.TIRO_MURATO, possession, zone = zone, player = shooter,
+                    description = "Murato il tiro di ${nameOf(shooter)}",
+                )
+                // Spesso rimane li' e diventa un angolo: e' il modo in cui i corner
+                // nascono davvero.
+                if (rng.chance(engine.cornerChanceOnLostAttack)) {
+                    val attaccante = if (possession == Side.CASA) home else away
+                    emit(
+                        minute, MatchEventType.ANGOLO, possession, zone = zone,
+                        player = SetPieces.taker(attaccante.lineup, MatchDuty.ANGOLI)?.id,
+                        description = "Angolo per ${teamName(possession)}",
+                    )
+                    resolveCorner(minute, attaccante, defenderSetup)
+                } else {
+                    turnoverAfterShot()
+                }
+                return
+            }
+
+            // L'xG PUBBLICATO E' PER TENTATIVO, QUI IL TIRO E' GIA' PASSATO DAL MURO
+            //
+            // I valori di [Conclusioni.xgBase] sono quelli misurati nel calcio vero, e
+            // valgono **per conclusione tentata** — murate comprese. Qui invece il muro e'
+            // gia' stato superato: applicarli tali e quali toglierebbe una seconda volta
+            // il quarto di tiri che il muro ha gia' tolto, e i gol scenderebbero a meta'.
+            //
+            // Misurato: con la correzione mancante la media era 1,53 gol a partita contro i
+            // 2,7 del calcio vero, e i pareggi salivano al 38%.
+            val perTentativo = xg / (1.0 - engine.blockedShotChance).coerceAtLeast(0.05)
+            val goalChance = goalkeeper?.let { perTentativo * keeperFactor(it) } ?: (perTentativo * 1.6)
             val roll = rng.nextDouble()
 
             when {
-                roll < goalChance -> scoreGoal(minute, shooter, MatchEventType.GOL)
+                roll < goalChance -> scoreGoal(minute, shooter, MatchEventType.GOL, tipo)
                 roll < goalChance + POST_CHANCE -> {
                     bump(shooter) { it.copy(shotsOnTarget = it.shotsOnTarget + 1) }
                     emit(
@@ -503,7 +645,12 @@ object MatchEngine {
             // il manager all'intervallo: il motore non schiera al posto suo.
         }
 
-        private fun scoreGoal(minute: Int, scorer: PlayerId, type: MatchEventType) {
+        private fun scoreGoal(
+            minute: Int,
+            scorer: PlayerId,
+            type: MatchEventType,
+            tipo: TipoConclusione? = null,
+        ) {
             val assist = lastToucher?.takeIf { it != scorer }
             bump(scorer) { it.copy(goals = it.goals + 1, shotsOnTarget = it.shotsOnTarget + 1) }
             assist?.let { a -> bump(a) { it.copy(assists = it.assists + 1) } }
@@ -519,8 +666,11 @@ object MatchEngine {
             // cioe' le partite di cui si parla il giorno dopo.
             momentum += if (possession == Side.CASA) -engine.momentumStrength else engine.momentumStrength
 
+            // Il tipo di conclusione entra nella frase: «di testa», «da fuori». E la
+            // differenza fra un tabellino e una telecronaca.
             val description = buildString {
                 append("GOL! ").append(nameOf(scorer))
+                tipo?.let { append(" ").append(it.etichetta) }
                 if (assist != null) append(", assist di ").append(nameOf(assist))
             }
             emit(minute, type, possession, zone = zone, player = scorer, secondaryPlayer = assist,

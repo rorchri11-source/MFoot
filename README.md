@@ -62,8 +62,11 @@ Misurato su migliaia di partite simulate, non stimato a occhio:
 
 | Metrica | Valore | Riferimento |
 |---|---|---|
-| Squadre pari — casa / pari / trasferta | 45,1% / 28,0% / 27,0% | calcio vero: 45 / 27 / 28 |
-| Gol a partita | 2,77 | 2,5–3,0 |
+| Squadre pari — casa / pari / trasferta | 45,2% / 27,0% / 27,9% | calcio vero: 45 / 27 / 28 |
+| Gol a partita | 2,64 | 2,5–3,0 |
+| Tiri a partita | 23,8 | 25 |
+| Conversione | 11,1% | 10,8% |
+| Gol per reparto — attacco / centrocampo / difesa | 66% / 20% / 12% | 55-60 / 25-30 / 12-15 |
 | Squadra con +10 di overall | vince il 62% | non deve essere una certezza |
 | Catenaccio vs arrembante | 50,5% vs 46,6% | nessun assetto domina |
 

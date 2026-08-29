@@ -26,6 +26,22 @@ enum class MatchEventType(val baseDanger: Int, val label: String) {
     CONTRASTO(18, "Contrasto"),
     FALLO(28, "Fallo"),
     ANGOLO(40, "Angolo"),
+
+    /**
+     * Fuorigioco: non esisteva, e nel calcio vero capita quattro volte a partita.
+     *
+     * Mancava del tutto — nemmeno come voce nelle statistiche — ed e una delle cose che
+     * si contano guardando: una squadra che ne prende otto sta giocando alta e sbagliata.
+     */
+    FUORIGIOCO(22, "Fuorigioco"),
+
+    /**
+     * Tiro murato: un quarto delle conclusioni finisce addosso a un difensore.
+     *
+     * Contano come tiri e non arrivano al portiere. Senza, ogni conclusione era o gol o
+     * parata o fuori, e il portiere risultava impegnato il doppio del vero.
+     */
+    TIRO_MURATO(30, "Tiro murato"),
     TIRO_FUORI(48, "Tiro fuori"),
     PARATA(62, "Parata"),
     PALO(76, "Palo"),
