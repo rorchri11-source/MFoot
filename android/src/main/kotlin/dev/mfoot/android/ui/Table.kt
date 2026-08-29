@@ -342,11 +342,21 @@ private fun TableFooter() {
 private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> Unit) {
     val mine = match.homeClubId == state.myClubId || match.awayClubId == state.myClubId
 
+    // SI APRE ANCHE QUELLA IN CORSO
+    //
+    // Era `if (match.played)`, e andava bene finche' una partita durava un istante: o non
+    // era cominciata, o era finita. Dal 2026-08-29 dura **centodieci minuti veri**, e per
+    // tutto quel tempo `played` e' falso — quindi la partita in diretta era l'unica cosa
+    // dell'app che non si poteva aprire proprio mentre stava succedendo.
+    //
+    // Il calendario a mesi le apriva gia' tutte: erano due schermate che rispondevano in
+    // modo diverso allo stesso tocco.
+    val cominciata = match.kickoff?.isBefore(java.time.Instant.now()) == true
+    val apribile = match.played || cominciata
+
     Scheda(
         Modifier.padding(horizontal = MFootSpacing.section, vertical = 4.dp),
-        // Solo le giocate si aprono: una partita che deve ancora cominciare non ha
-        // niente da far rivedere.
-        onClick = if (match.played) ({ onOpen(match) }) else null,
+        onClick = if (apribile) ({ onOpen(match) }) else null,
         evidenziata = mine,
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -367,13 +377,16 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                if (match.played) {
-                    "tocca per rivederla"
-                } else {
-                    state.oraDi(match)?.format(QUANDO) ?: "giornata ${match.matchDay}"
+                when {
+                    match.played -> "tocca per rivederla"
+                    // In corso adesso: e' l'unica riga della schermata che chiede di essere
+                    // toccata subito, e deve dirlo con parole diverse da «rivederla» —
+                    // rivedere e guardare sono due cose che non si fanno nello stesso momento.
+                    cominciata -> "si sta giocando · tocca per guardarla"
+                    else -> state.oraDi(match)?.format(QUANDO) ?: "giornata ${match.matchDay}"
                 },
                 style = MFootType.chip,
-                color = if (match.played) MFootColors.elite else MFootColors.ink3,
+                color = if (apribile) MFootColors.elite else MFootColors.ink3,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
