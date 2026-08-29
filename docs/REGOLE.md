@@ -318,7 +318,7 @@ portiere risultava impegnato il doppio del vero.
 *Detta il 2026-08-29 · `MatchEventType.FUORIGIOCO`, `TIRO_MURATO`*
 
 **Le azioni le decidono i duelli fra due giocatori, non la media di due reparti.**
-*Decisa il 2026-08-29, ancora da implementare.*
+*Decisa e implementata il 2026-08-29.*
 Oggi un'azione è un numero contro un numero: `rating(zona) − rating(zona specchiata)` dentro
 una sigmoide. `ZoneRatings` schiaccia gli undici in una media **prima** che succeda
 qualcosa, e i nomi arrivano dopo, su un esito già deciso. Conseguenza verificata: nessuno
@@ -334,9 +334,45 @@ Le zone restano come **geografia** e come anagrafe di chi c'è: servono a estrar
 l'avversario. Il livello del tiro — `Conclusioni`, misurato oggi a 66/20/12 con venti
 marcatori — **non si tocca**: i duelli riguardano come si arriva al tiro.
 Scelta contro il consiglio di innestare i duelli dentro l'avanzamento esistente, sapendo
-che il costo è rifare la taratura. Difesa: la banda misurata diventa un test, e il motore
-nuovo nasce dietro un interruttore spento.
-*Progetto: [`superpowers/specs/2026-08-29-duelli-in-campo-design.md`](superpowers/specs/2026-08-29-duelli-in-campo-design.md)*
+che il costo è rifare la taratura. Difesa: la banda misurata è diventata un test che gira
+su **tutti e due** i motori, e il motore nuovo è nato dietro un interruttore spento.
+Misurato a taratura finita, 75 contro 75: **46,0% casa · 28,4% pari · 25,6% ospite · 2,89
+gol · 27,7 tiri · 10,4% di conversione**, con attacco 64,6% / centrocampo 21,4% / difesa
+13,9% e venti marcatori diversi. E le tre misure che prima non esistevano: 266 duelli, 16,4
+dribbling riusciti su 37 tentati, 77,2% di precisione nei passaggi.
+*Detta il 2026-08-29 · `core/match/Duelli.kt`, `Intenzioni.kt`, `MatchEngine.risolviDuello`
+· progetto: [`superpowers/specs/2026-08-29-duelli-in-campo-design.md`](superpowers/specs/2026-08-29-duelli-in-campo-design.md)*
+
+**La palla usa tutte e nove le zone, non solo la colonna centrale.**
+`Zone.advance()` conservava la corsia, `Zone.mirror()` manda il centro nel centro, e ogni
+ripartenza è centrale: la palla nasceva in `MID_C` e non ne usciva mai più. Il modello a
+nove zone era, in esercizio, un modello a tre — **sei zone su nove restavano vuote per
+tutta la partita**.
+Si vedeva misurando i falli: in cento partite li commettevano solo attaccanti, centrali e
+mediani. Nessun terzino, nessuna ala, mai — non perché scarsi, ma perché non toccavano il
+pallone. E la larghezza tattica moltiplicava i fattori di corsie in cui non passava
+nessuno, quindi «stretto» e «largo» erano la stessa impostazione.
+*Corretta il 2026-08-29 · `MatchEngine.avanza`, `prossimaCorsia`, `engine.pesoStessaCorsia`*
+
+**Tre tratti che promettevano e non mantenevano.**
+- **Incostante** — *«un giorno domina, quello dopo sparisce»*: adesso esiste la **giornata**,
+  un tiro di dado a inizio partita valido per tutti i novanta minuti. Un giocatore normale
+  oscilla di due o tre punti, un incostante fino a nove.
+- **Leader** — *«trascina la squadra»*: valeva solo con la fascia, perché l'unica spinta
+  esistente passava dal capitano. Adesso contano tutti i trascinatori in campo, quando si è
+  sotto dal 75'.
+- **Testa calda** — *«colleziona cartellini»*: ne prendeva quanti chiunque altro. Adesso
+  commette più falli e li paga di più.
+*Corretti il 2026-08-29 · `core/match/Carattere.kt`, `Trait.foulFactor/cardFactor/rimontaBonus`*
+
+**Il tabellino dice cosa ha fatto un difensore.**
+Duelli vinti e persi, dribbling riusciti e subiti, precisione dei passaggi. Prima, di un
+centrale il foglio diceva soltanto quanti cartellini aveva preso: un grande centrale e uno
+scarso producevano lo stesso identico tabellino.
+Viaggiano dentro `match_results.player_stats`, che è già `jsonb`: sei chiavi in più in un
+JSON non sono sei colonne in più. **Non** si tocca `appearances`, che l'app legge con una
+`select` a lista esplicita.
+*Detta il 2026-08-29 · `PlayerMatchStats`, `MatchJson.playerStats`, `ui/screens/Partita.kt`*
 
 **La profondità si ferma dentro i novanta minuti.**
 *Decisa il 2026-08-29.*

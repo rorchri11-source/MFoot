@@ -341,6 +341,34 @@ gradlew :android:assembleDebug
 | 60 | **Due ore fra due partite** | Una regola sola in `core`, applicata dal calendario, dalle amichevoli, dall'AI e dal database. Toglie di mezzo le tre ore fisse dentro l'SQL |
 | 61 | **Il recupero a ore vere** | Sette punti l'ora invece di 34 per giornata: la giornata valeva sei o dodici ore a seconda di quante fasce aveva la lega |
 | 62 | **Il campo che si guarda** | La palla fra le nove zone, l'alone sulle occasioni, l'onda del gol, la barra dell'inerzia. Decorativo: `MatchEvent.zone` c'era dal primo giorno |
+| 63 | **Le azioni le decidono i duelli** | Cinque contese fra due giocatori con un nome, ognuna con la sua pendenza. Tutti e dodici gli attributi decidono episodi: prima nessuno ne decideva uno |
+| 64 | **La palla usa tutte e nove le zone** | Sei restavano vuote per tutta la partita: la corsia centrale era assorbente. Terzini e ali non toccavano il pallone, e la larghezza tattica non faceva niente |
+| 65 | **Incostante, leader, testa calda** | Tre tratti che promettevano e non muovevano un numero. La giornata, la spinta di chi trascina, i falli di chi va in ritardo |
+| 66 | **Il tabellino di un difensore** | Duelli, dribbling riusciti e subiti, precisione dei passaggi. Prima diceva solo quanti cartellini aveva preso |
+
+### Il motore a duelli, 2026-08-29
+
+Il pezzo che vale la pena ricordare non è come funziona — quello sta nel progetto — ma
+**cosa si è scoperto misurando**, perché nessuna delle tre cose si vedeva leggendo il
+codice.
+
+**Ogni duello vinto in area diventava un tiro.** Col motore vecchio arrivare in zona
+d'attacco era raro, quindi «sei arrivato, concludi» era giusto. Coi duelli in area ci si
+resta per più episodi di fila e uscivano quarantatré tiri a partita invece di ventiquattro.
+Adesso lì la palla gira, e a concludere pensa il tiro di dado in cima all'azione.
+
+**Le pendenze compoundavano.** Con 280 episodi invece di 118 decisioni, un vantaggio per
+duello si moltiplica: cinque punti di overall valevano il 95% delle vittorie. Alzate tutte
+tranne quella della corsa, che resta ripida perché è una regola detta dal proprietario — e
+il test che la codifica è rimasto com'era, mentre la manopola tornava dove la frase è vera.
+
+**Sei zone su nove non le usava nessuno.** Il difetto più vecchio e il più invisibile: si è
+visto solo contando chi commetteva i falli. Vedi la voce 64.
+
+Una quarta cosa, sui test: la prova degli angoli era **sotto-campionata**. A quattrocento
+partite l'effetto — quattro centesimi di gol — spariva nel rumore, e la prova passava o
+falliva a seconda di quale seme capitava. Passava da mesi senza misurare niente. Adesso
+duemilacinquecento.
 
 ### La partita in tempo reale, 2026-08-29
 
@@ -485,15 +513,36 @@ si riaprono, non sono più il riferimento.
 
 ### Numeri di bilanciamento raggiunti
 
-Misurati su migliaia di partite simulate, non stimati:
+Misurati su migliaia di partite simulate, non stimati. Col **motore a duelli**, acceso il
+2026-08-29; fra parentesi il motore vecchio, che resta in piedi dietro `duelliAttivi` e
+sul quale ogni prova gira comunque.
 
 | Metrica | Valore | Riferimento |
 |---|---|---|
-| Squadre pari — casa / pari / trasferta | 45,1% / 28,0% / 27,0% | calcio vero: 45 / 27 / 28 |
-| Gol a partita | 2,77 | 2,5-3,0 |
+| Squadre pari — casa / pari / trasferta | 46,0% / 28,4% / 25,6%  (46,0 / 26,0 / 28,0) | calcio vero: 45 / 27 / 28 |
+| Gol a partita | 2,89  (2,68) | 2,5-3,0 |
+| Tiri a partita | 27,7  (23,8) | 24-28 |
+| Conversione | 10,4%  (11,3%) | 10-12% |
 | Squadra con +10 di overall | vince il 62% | non deve essere una certezza |
-| Catenaccio vs Arrembante | 50,5% vs 46,6% | nessun assetto domina |
+| Catenaccio vs Arrembante | 42,5% vs 54,8% | nessun assetto domina (banda: 15 punti) |
 | Allenatore 5⭐ vs 1⭐ | 55,5% | conta, ma meno della rosa |
+
+E le misure che prima non esistevano — quelle per cui i numeri d'insieme non bastavano:
+
+| Metrica | Valore | Riferimento |
+|---|---|---|
+| Chi segna: attacco / centrocampo / difesa | 64,6% / 21,4% / 13,9% | non solo gli attaccanti |
+| Marcatori diversi su 36 | 20 | non sempre gli stessi cinque |
+| Duelli a partita | 267 | non due tiri di dado |
+| Dribbling riusciti / tentati | 16,4 su 36,6 — **44,8%** | calcio vero: circa uno su due |
+| Precisione dei passaggi | 77,2% | calcio vero: circa 80% |
+
+**L'arrembante è più forte del catenaccio di dodici punti, e resta dentro la banda.** Va
+letto sapendo cosa il collaudo *non* misura: `BalanceHarness` gioca **una** partita con le
+gambe fresche, mentre l'arrembante consuma il 46% di stamina in più (ritmo alto per
+pressing alto). In una lega con due partite al giorno quel costo si paga la sera, e il
+banco di prova non lo vede. Se dopo una stagione vera l'arrembante risultasse comunque
+dominante, la manopola da girare è `smorzamentoAssetto` — o il consumo del pressing.
 
 ### Il giocatore custom, misurato
 

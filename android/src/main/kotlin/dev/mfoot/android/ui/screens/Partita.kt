@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.MatchState
 import dev.mfoot.android.app.MatchTab
 import dev.mfoot.android.data.MatchMoment
+import dev.mfoot.android.data.DuelliPartita
 import dev.mfoot.android.data.MatchRating
 import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Hairline
@@ -454,7 +455,7 @@ private fun ColumnScope.SchedaFormazioni(state: MatchState, nomeGiocatore: (Long
                 }
             }
             items(suoi.filter { it.started }, key = { "s${it.playerId}" }) { v ->
-                Pagella(v, nomeGiocatore(v.playerId))
+                Pagella(v, nomeGiocatore(v.playerId), p.duelli[v.playerId])
             }
             val dentro = suoi.filter { !it.started && it.minutes > 0 }
             if (dentro.isNotEmpty()) {
@@ -464,7 +465,7 @@ private fun ColumnScope.SchedaFormazioni(state: MatchState, nomeGiocatore: (Long
                     }
                 }
                 items(dentro, key = { "e${it.playerId}" }) { v ->
-                    Pagella(v, nomeGiocatore(v.playerId))
+                    Pagella(v, nomeGiocatore(v.playerId), p.duelli[v.playerId])
                 }
             }
         }
@@ -726,7 +727,7 @@ private fun Momento(momento: MatchMoment, state: MatchState) {
 }
 
 @Composable
-private fun Pagella(voto: MatchRating, nome: String) {
+private fun Pagella(voto: MatchRating, nome: String, duelli: DuelliPartita? = null) {
     // Chi non e' sceso in campo non ha un voto: uno zero si distingue da un sei, e un sei
     // di comodo a chi e' rimasto in panchina falserebbe ogni media.
     if (voto.minutes == 0) return
@@ -750,6 +751,15 @@ private fun Pagella(voto: MatchRating, nome: String) {
                 style = MFootType.chip,
                 color = MFootColors.ink3,
             )
+
+            // La seconda riga e' quella che rende leggibile un difensore. Sulla prima, di
+            // un centrale c'era scritto solo quanti cartellini aveva preso: un grande
+            // centrale e uno scarso producevano lo stesso identico foglio.
+            val racconto = duelli?.let(::rigaDeiDuelli)
+            if (racconto != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(racconto, style = MFootType.chip, color = MFootColors.ink3)
+            }
         }
 
         Text(
@@ -764,4 +774,20 @@ private fun Pagella(voto: MatchRating, nome: String) {
         )
     }
     Hairline()
+}
+
+/**
+ * I duelli in una riga sola.
+ *
+ * Si scrive solo quello che c'e'. Un terzino che ha vinto nove duelli e non ha mai
+ * dribblato non deve leggere «0 dribbling»: leggerebbe un difetto dove c'e' un mestiere.
+ */
+private fun rigaDeiDuelli(d: DuelliPartita): String? {
+    val pezzi = buildList {
+        d.percentualeDuelli?.let { add("${d.vinti}/${d.duelli} duelli · $it%") }
+        if (d.dribbling > 0) add("${d.dribbling} dribbling")
+        if (d.dribblingSubiti > 0) add("saltato ${d.dribblingSubiti} volte")
+        d.precisione?.let { add("$it% passaggi") }
+    }
+    return pezzi.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }

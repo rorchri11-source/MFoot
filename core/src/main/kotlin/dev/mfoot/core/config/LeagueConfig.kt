@@ -737,7 +737,7 @@ data class EngineConfig(
      * duelli accesi, il gioco continua a girare sul motore vecchio: non esiste un giorno
      * in cui e' rotto, e se la taratura non converge si torna indietro togliendo una riga.
      */
-    val duelliAttivi: Boolean = false,
+    val duelliAttivi: Boolean = true,
 
     /**
      * Quanto conta essere piu' forte, in ciascuna delle cinque contese.
@@ -806,7 +806,7 @@ data class EngineConfig(
      * Smorzato a meta', 1,34 diventa 1,17 e 0,80 diventa 0,90: l'assetto continua a
      * decidere che partita si gioca, senza decidere chi la vince.
      */
-    val smorzamentoAssetto: Double = 0.5,
+    val smorzamentoAssetto: Double = 0.40,
 
     /**
      * Quanto oscilla la **giornata** di un giocatore, in punti di attributo.

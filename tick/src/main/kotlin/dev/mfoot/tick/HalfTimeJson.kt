@@ -57,7 +57,12 @@ object HalfTimeJson {
      * schieramenti che gia' ci stavano. Il server non lo rilegge mai — alla ripresa
      * ri-simula, che e' piu' economico — e serve **solo** a chi guarda.
      */
-    fun write(home: TeamSetup, away: TeamSetup, primoTempo: HalfTimeState? = null): String {
+    fun write(
+        home: TeamSetup,
+        away: TeamSetup,
+        primoTempo: HalfTimeState? = null,
+        duelliAttivi: Boolean = true,
+    ): String {
         val w = JsonWriter(16 * 1024)
         w.beginObject()
         w.objectField("home")
@@ -66,6 +71,12 @@ object HalfTimeJson {
         w.objectField("away")
         writeTeam(w, away)
         w.endObject()
+        // Con che motore e' cominciata. Alla ripresa il primo tempo viene **ri-simulato**,
+        // e una partita che comincia con un motore e finisce con l'altro cambierebbe
+        // punteggio al 45': chi ha guardato il primo tempo vedrebbe un risultato diverso
+        // da quello che finisce in classifica. Vale per il giorno in cui l'interruttore
+        // viene girato, e per quel giorno soltanto — ma quel giorno esiste.
+        w.field("duelli", duelliAttivi)
         primoTempo?.let { writeLive(w, it) }
         w.endObject()
         return w.toString()

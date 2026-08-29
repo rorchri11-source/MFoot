@@ -44,6 +44,34 @@ data class MatchRating(
     val position: String? = null,
 )
 
+/**
+ * Cosa ha fatto in campo, oltre a quello che e' finito in porta.
+ *
+ * Di un difensore centrale il tabellino diceva soltanto quanti cartellini aveva preso: un
+ * grande centrale e un centrale scarso producevano lo stesso identico foglio.
+ */
+data class DuelliPartita(
+    val vinti: Int = 0,
+    val persi: Int = 0,
+    val dribbling: Int = 0,
+    val dribblingTentati: Int = 0,
+    val dribblingSubiti: Int = 0,
+    val passaggi: Int = 0,
+    val passaggiTentati: Int = 0,
+) {
+    val duelli: Int get() = vinti + persi
+
+    /** Su cento duelli, quanti ne ha vinti. Null se non ne ha giocati abbastanza. */
+    val percentualeDuelli: Int?
+        get() = if (duelli < 4) null else (vinti * 100) / duelli
+
+    /** Precisione nei passaggi. Null sotto i cinque tentativi: non direbbe niente. */
+    val precisione: Int?
+        get() = if (passaggiTentati < 5) null else (passaggi * 100) / passaggiTentati
+
+    val niente: Boolean get() = duelli == 0 && dribblingTentati == 0 && passaggiTentati == 0
+}
+
 /** Una partita giocata, pronta da rivedere. */
 data class PlayedMatch(
     val fixtureId: Long,
@@ -72,6 +100,17 @@ data class PlayedMatch(
     val awayFormation: String? = null,
     val moments: List<MatchMoment>,
     val ratings: List<MatchRating>,
+    /**
+     * Cosa ha fatto ciascuno, oltre a quello che e' finito in porta.
+     *
+     * Arriva da `match_results.player_stats`, che e' `jsonb` **dal primo schema**: sei
+     * chiavi in piu' dentro un JSON non sono sei colonne in piu'. Non passa da
+     * `appearances`, che si legge con una `select` a lista esplicita — ed e' precisamente
+     * la lettura condivisa che PostgREST fa esplodere per intero se una colonna non c'e'.
+     *
+     * Vuota per le partite giocate col motore vecchio: quelle i duelli non li avevano.
+     */
+    val duelli: Map<Long, DuelliPartita> = emptyMap(),
 ) {
     val scoreline: String get() = "$homeGoals - $awayGoals"
 
@@ -196,7 +235,8 @@ object MatchRepository {
     suspend fun load(fixtureId: Long): ApiResult<PlayedMatch> {
         val path = "/rest/v1/fixtures?select=id,home_club_id,away_club_id,match_day,kickoff," +
             "resume_at,first_half," +
-            "match_results(home_goals,away_goals,timeline,home_possession,home_formation,away_formation)" +
+            "match_results(home_goals,away_goals,timeline,player_stats,home_possession," +
+            "home_formation,away_formation)" +
             "&id=eq.$fixtureId&limit=1"
 
         return SupabaseApi.get(path).then { body ->
@@ -248,9 +288,37 @@ object MatchRepository {
                         )
                     },
                     ratings = emptyList(),
+                    duelli = leggiDuelli(result["player_stats"]),
                 ),
             )
         }
+    }
+
+    /**
+     * I duelli, dal JSON che il server scrive gia'.
+     *
+     * Le chiavi sono gli identificativi dei giocatori. Le partite giocate col motore
+     * vecchio non hanno queste voci e restituiscono zero — che e' la verita': i duelli
+     * quel giorno non si giocavano.
+     */
+    private fun leggiDuelli(node: JsonNode): Map<Long, DuelliPartita> {
+        if (!node.exists) return emptyMap()
+        val fuori = mutableMapOf<Long, DuelliPartita>()
+        for (chiave in node.keys()) {
+            val id = chiave.toLongOrNull() ?: continue
+            val s = node[chiave]
+            val d = DuelliPartita(
+                vinti = s["duelliVinti"].int(0),
+                persi = s["duelliPersi"].int(0),
+                dribbling = s["dribbling"].int(0),
+                dribblingTentati = s["dribblingTentati"].int(0),
+                dribblingSubiti = s["dribblingSubiti"].int(0),
+                passaggi = s["passaggi"].int(0),
+                passaggiTentati = s["passaggiTentati"].int(0),
+            )
+            if (!d.niente) fuori[id] = d
+        }
+        return fuori
     }
 
     /**

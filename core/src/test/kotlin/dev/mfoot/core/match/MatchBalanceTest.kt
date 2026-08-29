@@ -37,7 +37,7 @@ class MatchBalanceTest {
         config.copy(engine = config.engine.copy(duelliAttivi = true))
 
     private fun perOgniMotore(prova: (String, LeagueConfig) -> Unit) {
-        prova("motore vecchio", config)
+        prova("motore vecchio", config.copy(engine = config.engine.copy(duelliAttivi = false)))
         prova("duelli", conDuelli)
     }
 

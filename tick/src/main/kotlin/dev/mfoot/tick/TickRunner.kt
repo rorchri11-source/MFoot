@@ -3213,7 +3213,10 @@ class TickRunner(
             // Il primo tempo viaggia insieme agli schieramenti: per quarantacinque minuti
             // reali e' l'unica cosa che esiste di questa partita, e senza di lui chi apre
             // l'app durante il primo tempo vedrebbe un campo vuoto.
-            st.setString(2, HalfTimeJson.write(home, away, primo))
+            st.setString(
+                2,
+                HalfTimeJson.write(home, away, primo, league.config.engine.duelliAttivi),
+            )
             st.setLong(3, fixture.id)
             st.executeUpdate()
         }
@@ -3283,7 +3286,23 @@ class TickRunner(
         }
 
         val seed = league.config.setup.worldSeed * 31L + fixture.id
-        val intervallo = MatchEngine.simulateFirstHalf(primoHome, primoAway, league.config, seed)
+
+        // La partita si finisce col motore con cui e' cominciata. Il primo tempo viene
+        // ri-simulato qui, quindi se l'interruttore dei duelli fosse girato durante
+        // l'intervallo il punteggio del 45' cambierebbe: chi ha guardato il primo tempo
+        // vedrebbe finire in classifica un risultato diverso da quello che ha visto.
+        // Le partite piu' vecchie della colonna non hanno il campo e valgono false, che
+        // e' quello con cui sono davvero cominciate.
+        val comeEraCominciata = if (node["duelli"].exists) {
+            league.config.copy(
+                engine = league.config.engine.copy(duelliAttivi = node["duelli"].bool(false)),
+            )
+        } else {
+            league.config.copy(engine = league.config.engine.copy(duelliAttivi = false))
+        }
+
+        val intervallo =
+            MatchEngine.simulateFirstHalf(primoHome, primoAway, comeEraCominciata, seed)
 
         // I setup **di adesso**: e' qui che entrano i cambi fatti nella finestra. Se
         // nessuno ha toccato niente si rilegge la stessa formazione e non cambia nulla.
@@ -3291,7 +3310,7 @@ class TickRunner(
         val secondoAway = buildTeam(league, fixture.away, today, notes) ?: primoAway
 
         val result = MatchEngine.simulateSecondHalf(
-            intervallo, league.config, secondoHome, secondoAway,
+            intervallo, comeEraCominciata, secondoHome, secondoAway,
         )
 
         connection.prepareStatement(

@@ -327,6 +327,29 @@ object ConfigJson {
         w.field("maxStaminaPenalty", c.maxStaminaPenalty)
         w.field("moraleWeight", c.moraleWeight)
         w.field("formWeight", c.formWeight)
+        // Le manopole dei duelli. Sono le piu' importanti da poter girare dal server:
+        // sono cinque, sono nuove, e sono quelle su cui e' piu' probabile doversi
+        // ricredere dopo una stagione vera invece che dopo diecimila partite simulate.
+        w.field("duelliAttivi", c.duelliAttivi)
+        w.field("kCorsa", c.kCorsa)
+        w.field("kDribbling", c.kDribbling)
+        w.field("kContrasto", c.kContrasto)
+        w.field("kAereo", c.kAereo)
+        w.field("kPassaggio", c.kPassaggio)
+        w.field("equilibrioCorsa", c.equilibrioCorsa)
+        w.field("equilibrioDribbling", c.equilibrioDribbling)
+        w.field("equilibrioContrasto", c.equilibrioContrasto)
+        w.field("equilibrioAereo", c.equilibrioAereo)
+        w.field("equilibrioPassaggio", c.equilibrioPassaggio)
+        w.field("actionsPerMatchDuelli", c.actionsPerMatchDuelli)
+        w.field("shotChanceDuelli", c.shotChanceDuelli)
+        w.field("smorzamentoAssetto", c.smorzamentoAssetto)
+        w.field("giornataStdDev", c.giornataStdDev)
+        w.field("spintaLeader", c.spintaLeader)
+        w.field("spintaLeaderMassima", c.spintaLeaderMassima)
+        w.field("minutoRimonta", c.minutoRimonta)
+        w.field("pesoStessaCorsia", c.pesoStessaCorsia)
+        w.field("pesoCorsiaOpposta", c.pesoCorsiaOpposta)
         w.endObject()
     }
 
@@ -559,6 +582,26 @@ object ConfigJson {
         maxStaminaPenalty = n["maxStaminaPenalty"].double(d.maxStaminaPenalty),
         moraleWeight = n["moraleWeight"].double(d.moraleWeight),
         formWeight = n["formWeight"].double(d.formWeight),
+        duelliAttivi = n["duelliAttivi"].bool(d.duelliAttivi),
+        kCorsa = n["kCorsa"].double(d.kCorsa),
+        kDribbling = n["kDribbling"].double(d.kDribbling),
+        kContrasto = n["kContrasto"].double(d.kContrasto),
+        kAereo = n["kAereo"].double(d.kAereo),
+        kPassaggio = n["kPassaggio"].double(d.kPassaggio),
+        equilibrioCorsa = n["equilibrioCorsa"].double(d.equilibrioCorsa),
+        equilibrioDribbling = n["equilibrioDribbling"].double(d.equilibrioDribbling),
+        equilibrioContrasto = n["equilibrioContrasto"].double(d.equilibrioContrasto),
+        equilibrioAereo = n["equilibrioAereo"].double(d.equilibrioAereo),
+        equilibrioPassaggio = n["equilibrioPassaggio"].double(d.equilibrioPassaggio),
+        actionsPerMatchDuelli = n["actionsPerMatchDuelli"].int(d.actionsPerMatchDuelli),
+        shotChanceDuelli = n["shotChanceDuelli"].double(d.shotChanceDuelli),
+        smorzamentoAssetto = n["smorzamentoAssetto"].double(d.smorzamentoAssetto),
+        giornataStdDev = n["giornataStdDev"].double(d.giornataStdDev),
+        spintaLeader = n["spintaLeader"].double(d.spintaLeader),
+        spintaLeaderMassima = n["spintaLeaderMassima"].double(d.spintaLeaderMassima),
+        minutoRimonta = n["minutoRimonta"].int(d.minutoRimonta),
+        pesoStessaCorsia = n["pesoStessaCorsia"].double(d.pesoStessaCorsia),
+        pesoCorsiaOpposta = n["pesoCorsiaOpposta"].double(d.pesoCorsiaOpposta),
     )
 
     /**
