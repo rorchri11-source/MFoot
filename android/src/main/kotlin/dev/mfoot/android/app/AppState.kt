@@ -394,10 +394,22 @@ sealed interface AppState {
             get() = rows
                 .filter {
                     when (browse.scope) {
-                        // Chi ha un prezzo e non e' gia' tuo: comprarlo e' un tocco.
+                        // Tutto cio' che ha un prezzo, **i tuoi compresi**.
+                        //
+                        // Prima i propri venivano tolti — `club?.isMine != true` — con una
+                        // buona intenzione: non mostrare «Compra» su un giocatore che e'
+                        // gia' tuo. L'effetto pero' era che mettere in vendita faceva
+                        // *sparire* il giocatore dal listino, cioe' l'unico posto in cui
+                        // si guarda il mercato. Da fuori la vendita non risultava avvenuta.
+                        //
+                        // Il pulsante «Compra» era gia' protetto per conto suo dentro la
+                        // scheda, che sul proprio mostra «ritira». Toglierlo anche
+                        // dall'elenco toglieva l'unica cosa che serve davvero: vedere il
+                        // proprio prezzo in mezzo a quelli degli altri, che e' il modo per
+                        // accorgersi di averlo messo fuori mercato.
                         ListScope.LISTINO ->
-                            (it.inVendita != null || (it.isFreeAgent && it.player.age >= ETA_MINIMA_LISTINO)) &&
-                                it.club?.isMine != true
+                            it.inVendita != null ||
+                                (it.isFreeAgent && it.player.age >= ETA_MINIMA_LISTINO)
                         ListScope.SVINCOLATI -> it.isFreeAgent
                         ListScope.TUTTI -> true
                         ListScope.MIA_ROSA -> it.club != null && it.club.isMine

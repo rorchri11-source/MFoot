@@ -1,6 +1,8 @@
 package dev.mfoot.core.ai
 
 import dev.mfoot.core.config.ConfigPresets
+import dev.mfoot.core.market.Listing
+import dev.mfoot.core.market.Valuation
 import dev.mfoot.core.model.Club
 import dev.mfoot.core.model.ClubId
 import dev.mfoot.core.model.Player
@@ -65,8 +67,28 @@ class MarketRhythmTest {
 
         val state get() = AiState(personality, Instant.EPOCH)
 
-        fun valuta(player: Player, competing: Int) =
-            AiManager.evaluate(state, club, rosa, player, config, competing)
+        /**
+         * @param impegnato quanto ha gia' bloccato sulle aste aperte.
+         *
+         * Va dentro il club prima di chiedere il tetto, non tolto dopo. `ceilingFor`
+         * chiude il tetto dentro i crediti **disponibili**, e passandogli un club con la
+         * cassa piena tornava un tetto che il club non poteva permettersi: chi aveva
+         * qualcosa in ballo si ritrovava scartato da ogni asta — `ceiling <= disponibile`
+         * era falso ovunque — e restava fermo con la rosa incompleta.
+         *
+         * Prima non si vedeva perche' i tetti erano minuscoli: il gradimento passava per
+         * la curva dei prezzi, quindi nessun tetto arrivava mai vicino al disponibile e la
+         * differenza non cambiava nessuna decisione. Il difetto era nella prova, ed era li'
+         * da prima.
+         */
+        fun valuta(player: Player, competing: Int, impegnato: Int = 0) = AiManager.evaluate(
+            state,
+            club.copy(committedCredits = club.committedCredits + impegnato),
+            rosa,
+            player,
+            config,
+            competing,
+        )
 
         fun compra(player: Player, prezzo: Int) {
             rosa += player
@@ -74,8 +96,23 @@ class MarketRhythmTest {
         }
     }
 
-    /** Il mercato giro per giro. Restituisce quante aste erano aperte a ogni giro. */
-    private fun simula(giri: Int): Pair<List<Squadra>, List<Int>> {
+    /**
+     * Il mercato giro per giro. Restituisce quante aste erano aperte a ogni giro.
+     *
+     * [conListino] distingue le **due leghe che il gioco sa fare**, e vanno provate
+     * tutte e due:
+     *
+     * - accesa (il caso normale dal 2026-08-24) si compra a prezzo fisso, e l'asta resta
+     *   l'eccezione. E' la lega in cui bisogna verificare che le rose si riempiano.
+     * - spenta (`market.instantBuyEnabled = false`, «in questa lega si compra solo
+     *   all'asta») nessuno compra a listino. E' la lega in cui vivono le asserzioni sul
+     *   numero di aste aperte, ed e' il mondo in cui e' nato il difetto del corto
+     *   circuito che questo file esiste per impedire.
+     *
+     * Simularla spenta come rifiuto di [AiMove.COMPRA_A_LISTINO] equivale a spegnere
+     * l'interruttore: [AiTurn.order] in quel caso non propone nemmeno la mossa.
+     */
+    private fun simula(giri: Int, conListino: Boolean = true): Pair<List<Squadra>, List<Int>> {
         val squadre = (0 until 8).map { i ->
             Squadra(
                 indice = i,
@@ -102,6 +139,7 @@ class MarketRhythmTest {
 
                 for (mossa in AiTurn.order(squadra.rosa.size, config)) {
                     val fatto = when (mossa) {
+                        AiMove.COMPRA_A_LISTINO -> conListino && compraAListino(squadra, liberi, aperte)
                         AiMove.APRI_ASTA -> apri(squadra, liberi, aperte, mie, giro)
                         AiMove.OFFRI -> offri(squadra, aperte)
                         AiMove.METTI_IN_VENDITA -> vendi(squadra, aperte, mie, giro)
@@ -139,6 +177,59 @@ class MarketRhythmTest {
         return squadre to conteggio
     }
 
+    /**
+     * Compra dal listino a prezzo fisso: **la strada principale del mercato**.
+     *
+     * ## Perche' mancava, e cosa nascondeva
+     *
+     * Questa simulazione e' stata scritta quando il mercato era fatto solo di aste. Il
+     * 2026-08-24 il listino a prezzo fisso e' diventato il modo normale di comprare e
+     * l'asta e' rimasta l'eccezione che nasce da una contestazione — ma qui `AiTurn` la
+     * proponeva come prima mossa e il `when` la buttava via con `else -> false`.
+     *
+     * Il risultato era una lega in cui **si compra solo all'asta e vince sempre il piu'
+     * spregiudicato**: il club con l'aggressivita' piu' bassa perdeva ogni singolo
+     * confronto, e restava a tredici giocatori con i crediti piu' alti di tutti — in
+     * mano, senza modo di spenderli. Il gioco vero non ha quel problema perche' quel club
+     * si prende uno svincolato a prezzo fisso e nessuno glielo puo' soffiare.
+     *
+     * Gli svincolati sono a listino al valore di mercato: e' quello che il server scrive
+     * in `aggiornaListinoSvincolati`, con la stessa funzione di `core`.
+     */
+    private fun compraAListino(
+        squadra: Squadra,
+        liberi: MutableList<Player>,
+        aperte: List<Asta>,
+    ): Boolean {
+        val impegnato = impegnatoDi(squadra, aperte)
+        val inAsta = aperte.map { it.target.id }.toSet()
+
+        val listino = liberi.asSequence()
+            .filter { it.id !in inAsta }
+            .map { p ->
+                Listing(
+                    id = p.id.value,
+                    playerId = p.id,
+                    seller = null,
+                    price = Valuation.marketValue(p, config).coerceAtLeast(1),
+                    listedAt = Instant.EPOCH,
+                ) to p
+            }
+            .toList()
+
+        val scelta = AiMarket.playerToBuy(
+            squadra.state,
+            squadra.club.copy(committedCredits = squadra.club.committedCredits + impegnato),
+            squadra.rosa,
+            listino,
+            config,
+        ) ?: return false
+
+        liberi.remove(scelta.second)
+        squadra.compra(scelta.second, scelta.first.price)
+        return true
+    }
+
     /** Apre tutte le aste che [AiTurn] consente in questo risveglio. */
     private fun apri(
         squadra: Squadra,
@@ -162,7 +253,7 @@ class MarketRhythmTest {
             val candidato = liberi.asSequence()
                 .filter { it.id !in inAsta }
                 .filter { p -> aperte.none { it.target.id == p.id } }
-                .map { p -> p to squadra.valuta(p, competing = 0) }
+                .map { p -> p to squadra.valuta(p, competing = 0, impegnato = impegnato) }
                 .filter { (_, a) -> a.isInterested && a.ceiling <= disponibile }
                 .filter { (p, _) ->
                     AiTurn.migliora(
@@ -237,7 +328,7 @@ class MarketRhythmTest {
             .filter { it.venditore != squadra.indice }
             .map { asta ->
                 val competing = asta.offerte.keys.count { it != squadra.indice }
-                asta to squadra.valuta(asta.target, competing)
+                asta to squadra.valuta(asta.target, competing, impegnato = impegnatoDi(squadra, aperte))
             }
             .filter { (_, a) -> a.isInterested && a.ceiling <= disponibile }
             .maxByOrNull { (_, a) -> a.appeal }
@@ -258,7 +349,7 @@ class MarketRhythmTest {
      */
     @Test
     fun `il mercato apre molte aste insieme, non una alla volta`() {
-        val (_, aperte) = simula(giri = 6)
+        val (_, aperte) = simula(giri = 6, conListino = false)
 
         assertTrue(
             aperte[2] >= 20,
@@ -269,7 +360,7 @@ class MarketRhythmTest {
 
     @Test
     fun `il mercato non si spegne appena parte`() {
-        val (_, aperte) = simula(giri = 6)
+        val (_, aperte) = simula(giri = 6, conListino = false)
 
         assertTrue(
             aperte.take(4).all { it > 0 },
@@ -303,10 +394,16 @@ class MarketRhythmTest {
      * Prima moriva davvero: `tryOpenAuction` cominciava con `if (squad.size >= minSquadSize)
      * return false`, quindi dal momento in cui un club arrivava alla rosa minima non apriva
      * piu' un'asta per il resto della stagione.
+     *
+     * Si misura nella lega **senza listino**, dove il difetto e' nato e dove l'asta e'
+     * l'unico modo di comprare. Con il listino acceso il conto delle aste non dice piu' se
+     * il mercato e' vivo: un'AI a rosa completa preferisce il prezzo fisso e apre un'asta
+     * solo quando a listino non c'e' piu' niente che le interessi — quindi zero aste
+     * significherebbe «il mercato funziona», non «il mercato e' morto».
      */
     @Test
     fun `a rose piene il mercato rallenta invece di fermarsi`() {
-        val (squadre, aperte) = simula(giri = 30)
+        val (squadre, aperte) = simula(giri = 30, conListino = false)
 
         assertTrue(
             squadre.all { it.rosa.size >= config.setup.minSquadSize },

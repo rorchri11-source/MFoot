@@ -165,7 +165,7 @@ class ConfigJsonTest {
             momentumStrength = 5.0,
             momentumDecayPerAction = 0.88,
             staminaDrainPerMinute = 0.5,
-            staminaRecoveryPerMatchDay = 50.0,
+            staminaRecoveryPerHour = 50.0,
             staminaComfortThreshold = 70,
             maxStaminaPenalty = 20.0,
             moraleWeight = 0.12,

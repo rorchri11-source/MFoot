@@ -56,10 +56,23 @@ data class Schedule(
  */
 object CalendarSolver {
 
+    /**
+     * @param occupati le partite **gia' in calendario**, come coppie ora-club.
+     *
+     * Serve a chi programma un turno per volta invece di tutta la stagione insieme: un
+     * turno di coppa nasce quando il precedente e' finito, e a quel punto il campionato ha
+     * gia' le sue partite scritte. Senza questo elenco il risolutore le ignorerebbe — non
+     * le ha generate lui — e piazzerebbe la coppa sopra una giornata di campionato, con la
+     * stessa squadra impegnata due volte alla stessa ora.
+     *
+     * Chi genera un calendario intero non lo passa: dentro una sola chiamata il conto se
+     * lo tiene da se'.
+     */
     fun schedule(
         rounds: List<Round>,
         config: LeagueConfig,
         firstMatchDay: MatchDay = MatchDay(1),
+        occupati: Collection<Pair<LocalDateTime, ClubId>> = emptyList(),
     ): Schedule {
         val slots = buildSlots(config.calendar, firstMatchDay)
         val warnings = mutableListOf<String>()
@@ -77,6 +90,15 @@ object CalendarSolver {
         val fixtures = mutableListOf<Fixture>()
         val playedPerDate = mutableMapOf<Pair<LocalDate, ClubId>, Int>()
         val playedPerSlot = mutableSetOf<Pair<LocalDateTime, ClubId>>()
+
+        // Cio' che c'era prima conta come giocato: e' l'unico modo perche' il limite
+        // giornaliero e il divieto di doppio impegno valgano anche fra competizioni
+        // programmate in momenti diversi.
+        occupati.forEach { (quando, club) ->
+            playedPerSlot += quando to club
+            val key = quando.toLocalDate() to club
+            playedPerDate[key] = (playedPerDate[key] ?: 0) + 1
+        }
         var fixtureId = 1L
         val usedSlots = mutableListOf<TimeSlot>()
 
@@ -129,8 +151,17 @@ object CalendarSolver {
     }
 
     /**
-     * Un turno entra in questa fascia se **nessuno** dei club coinvolti ha gia' esaurito
-     * il proprio limite giornaliero o e' gia' impegnato in quella stessa ora.
+     * Un turno entra in questa fascia se **nessuno** dei club coinvolti ha gia' esaurito il
+     * proprio limite giornaliero, non e' gia' impegnato in quella stessa ora, e non ha
+     * un'altra partita troppo vicina.
+     *
+     * ## La distanza fra due partite
+     *
+     * Aggiunta il 2026-08-29, quando la partita e' diventata di novanta minuti veri. Il
+     * tetto giornaliero da solo non bastava piu': accettava due partite alle 20:30 e alle
+     * 21:00 — sono due, nella stessa giornata — e adesso quelle due si sovrapporrebbero per
+     * un'ora e venti. La regola sta in [KickoffRules] perche' vale identica qui, sulle
+     * amichevoli e sul server.
      */
     private fun fits(
         round: Round,
@@ -140,7 +171,12 @@ object CalendarSolver {
         playedPerSlot: Set<Pair<LocalDateTime, ClubId>>,
     ): Boolean = round.clubs.all { club ->
         val onDate = playedPerDate[slot.date to club] ?: 0
-        onDate < calendar.matchesPerDayPerClub && (slot.kickoff to club) !in playedPerSlot
+        onDate < calendar.matchesPerDayPerClub &&
+            (slot.kickoff to club) !in playedPerSlot &&
+            playedPerSlot.none { (quando, chi) ->
+                chi == club &&
+                    KickoffRules.troppoVicine(quando, slot.kickoff, calendar.minHoursBetweenMatches)
+            }
     }
 
     /**

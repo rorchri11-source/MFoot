@@ -145,4 +145,50 @@ class KickoffRulesTest {
 
         assertEquals(2, KickoffRules.problemiDiCalendario(calendario, adesso).size)
     }
+// ------------------------------------------------- la distanza fra due partite
+
+    /**
+     * La regola nuova del 2026-08-29: fra due partite dello stesso club passano due ore.
+     *
+     * Prima bastava il tetto giornaliero, che non sa che ore sono: accettava due partite
+     * alle 20:30 e alle 21:00 — sono due, nella stessa giornata — e con la partita che dura
+     * 110 minuti veri quelle due si sovrappongono per un ora e venti.
+     */
+    @Test
+    fun `due partite a mezz ora di distanza sono troppo vicine`() {
+        val prima = LocalDateTime.of(2026, 8, 19, 20, 30)
+        val poi = LocalDateTime.of(2026, 8, 19, 21, 0)
+
+        assertTrue(KickoffRules.troppoVicine(prima, poi, oreMinime = 2))
+        assertTrue(KickoffRules.troppoVicine(poi, prima, oreMinime = 2), "vale nei due sensi")
+    }
+
+    @Test
+    fun `alle dieci e a mezzogiorno si puo`() {
+        val prima = LocalDateTime.of(2026, 8, 19, 10, 0)
+        val poi = LocalDateTime.of(2026, 8, 19, 12, 0)
+
+        assertFalse(KickoffRules.troppoVicine(prima, poi, oreMinime = 2))
+        assertTrue(
+            KickoffRules.troppoVicine(prima, LocalDateTime.of(2026, 8, 19, 11, 0), oreMinime = 2),
+            "alle undici no: e esattamente l esempio del proprietario",
+        )
+    }
+
+    @Test
+    fun `il problema dice da che ora si potrebbe`() {
+        val impegni = listOf(LocalDateTime.of(2026, 8, 19, 20, 30))
+        val messaggio = KickoffRules.problemaDiDistanza(
+            LocalDateTime.of(2026, 8, 19, 21, 0), impegni, oreMinime = 2,
+        )
+
+        assertNotNull(messaggio)
+        assertTrue(messaggio.contains("22:30"), "deve dire quando si libera, non solo che non si puo: $messaggio")
+    }
+
+    @Test
+    fun `a zero ore la regola e spenta`() {
+        val prima = LocalDateTime.of(2026, 8, 19, 20, 30)
+        assertFalse(KickoffRules.troppoVicine(prima, prima.plusMinutes(1), oreMinime = 0))
+    }
 }

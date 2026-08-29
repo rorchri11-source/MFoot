@@ -3,6 +3,7 @@ package dev.mfoot.tick
 import dev.mfoot.core.json.JsonNode
 import dev.mfoot.core.json.JsonWriter
 import dev.mfoot.core.match.Formation
+import dev.mfoot.core.match.HalfTimeState
 import dev.mfoot.core.match.Lineup
 import dev.mfoot.core.match.LineupSlot
 import dev.mfoot.core.match.MatchDuty
@@ -41,8 +42,23 @@ import dev.mfoot.core.model.Position
  */
 object HalfTimeJson {
 
-    fun write(home: TeamSetup, away: TeamSetup): String {
-        val w = JsonWriter(4 * 1024)
+    /**
+     * @param primoTempo la timeline dei primi quarantacinque minuti, per chi guarda.
+     *
+     * ## Perche' gli eventi finiscono qui dentro
+     *
+     * Perche' dal 2026-08-29 la partita si guarda **mentre si gioca**, e per quarantacinque
+     * minuti reali l'unica cosa che esiste e' il primo tempo. `match_results` nasce solo al
+     * fischio finale — ed e' giusto che sia cosi', perche' e' la riga che significa
+     * «giocata»: scriverla a meta' vorrebbe dire una partita che entra in classifica
+     * all'intervallo.
+     *
+     * Quindi il primo tempo viaggia dentro `fixtures.first_half`, accanto agli
+     * schieramenti che gia' ci stavano. Il server non lo rilegge mai — alla ripresa
+     * ri-simula, che e' piu' economico — e serve **solo** a chi guarda.
+     */
+    fun write(home: TeamSetup, away: TeamSetup, primoTempo: HalfTimeState? = null): String {
+        val w = JsonWriter(16 * 1024)
         w.beginObject()
         w.objectField("home")
         writeTeam(w, home)
@@ -50,9 +66,50 @@ object HalfTimeJson {
         w.objectField("away")
         writeTeam(w, away)
         w.endObject()
+        primoTempo?.let { writeLive(w, it) }
         w.endObject()
         return w.toString()
     }
+
+    /**
+     * Il primo tempo nella stessa forma della timeline completa.
+     *
+     * Identica a [MatchJson.timeline] di proposito: il client ha gia' il lettore, e un
+     * secondo formato per gli stessi eventi sarebbe un secondo posto in cui sbagliarli.
+     */
+    private fun writeLive(w: JsonWriter, stato: HalfTimeState) {
+        w.objectField("live")
+        w.field("homeGoals", stato.homeGoals)
+        w.field("awayGoals", stato.awayGoals)
+        w.field("homePossession", possesso(stato))
+        w.field("homeShots", stato.homeShots)
+        w.field("awayShots", stato.awayShots)
+        w.field("homeXg", stato.homeXg)
+        w.field("awayXg", stato.awayXg)
+
+        w.arrayField("events")
+        stato.events.forEach { event ->
+            w.beginObject()
+            w.field("minute", event.minute)
+            w.field("type", event.type.name)
+            w.field("side", event.side.name)
+            w.field("danger", event.danger)
+            w.field("text", event.description)
+            w.field("homeGoals", event.homeGoals)
+            w.field("awayGoals", event.awayGoals)
+            event.zone?.let { w.field("zone", it.name) }
+            event.player?.let { w.field("player", it.value) }
+            event.secondaryPlayer?.let { w.field("second", it.value) }
+            w.endObject()
+        }
+        w.endArray()
+        w.endObject()
+    }
+
+    /** Il possesso del primo tempo, dalle azioni: e' come lo calcola il motore a fine gara. */
+    private fun possesso(stato: HalfTimeState): Double =
+        if (stato.totalActions <= 0) 0.5
+        else stato.homePossessionActions.toDouble() / stato.totalActions
 
     private fun writeTeam(w: JsonWriter, setup: TeamSetup) {
         w.field("club", setup.clubId.value)

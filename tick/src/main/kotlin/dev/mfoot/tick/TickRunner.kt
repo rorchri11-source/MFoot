@@ -13,9 +13,14 @@ import dev.mfoot.core.ai.AiState
 import dev.mfoot.core.ai.AiTactics
 import dev.mfoot.core.calendar.CalendarSolver
 import dev.mfoot.core.calendar.Competition
+import dev.mfoot.core.calendar.CompetitionProgress
 import dev.mfoot.core.calendar.CompetitionType
 import dev.mfoot.core.calendar.Fixture
 import dev.mfoot.core.calendar.FixtureGenerator
+import dev.mfoot.core.calendar.FixtureResult
+import dev.mfoot.core.calendar.FixtureState
+import dev.mfoot.core.calendar.Round
+import dev.mfoot.core.config.CalendarConfig
 import dev.mfoot.core.config.ConfigJson
 import dev.mfoot.core.conversation.AppearanceFact
 import dev.mfoot.core.conversation.ConversationEngine
@@ -53,6 +58,7 @@ import dev.mfoot.core.match.Formation
 import dev.mfoot.core.match.Lineup
 import dev.mfoot.core.match.LineupFitter
 import dev.mfoot.core.match.LineupSlot
+import dev.mfoot.core.match.MatchClock
 import dev.mfoot.core.match.MatchDuty
 import dev.mfoot.core.match.MatchEngine
 import dev.mfoot.core.match.MatchResult
@@ -389,6 +395,17 @@ class TickRunner(
                           and not exists (select 1 from listings l
                                           where l.player_id = p.id and l.target_type = 'player'
                                             and l.status = 'APERTO'))
+                -- 14. una competizione che ha finito tutte le sue partite e aspetta il
+                --     turno successivo (o di essere dichiarata conclusa)
+                --
+                --     `finished_at is null` non e' un dettaglio: senza, una coppa vinta a
+                --     ottobre terrebbe questa condizione vera per sempre, e la guardia
+                --     smetterebbe di far risparmiare un solo giro.
+             or exists (select 1 from competitions c
+                        where c.league_id = ? and c.kind = 'UFFICIALE' and c.finished_at is null
+                          and exists (select 1 from fixtures f where f.competition_id = c.id)
+                          and not exists (select 1 from fixtures f
+                                          where f.competition_id = c.id and not f.played))
             """.trimIndent(),
         ).use { st ->
             var i = 1
@@ -398,6 +415,7 @@ class TickRunner(
             st.setLong(i++, league.id); st.setInt(i++, oggi)   // 11
             st.setLong(i++, league.id)                          // 12
             st.setLong(i++, league.id); st.setInt(i++, ETA_MINIMA_A_LISTINO) // 13
+            st.setLong(i++, league.id)                          // 14
             st.executeQuery().use { rs -> rs.next() && rs.getBoolean(1) }
         }
     }
@@ -587,7 +605,7 @@ class TickRunner(
                 }
 
                 is TickEffect.RecuperaStamina -> {
-                    recoverStamina(league)
+                    recoverStamina(league, now)
                     settled = effect.matchDay
                     applied++
                 }
@@ -604,6 +622,18 @@ class TickRunner(
 
         // Il riepilogo era l'ultimo effetto pianificato e mai applicato. Adesso parte.
         val riepilogo = plan.effects.filterIsInstance<TickEffect.InviaRiepilogo>().isNotEmpty()
+
+        // Il recupero e' tempo che passa, quindi si accredita a ogni giro e non solo
+        // quando cambia la giornata. Con le partite ogni due ore il vecchio aggancio alla
+        // giornata lasciava le gambe ferme per mezza giornata e poi restituiva tutto in
+        // blocco; e in una lega senza partite in calendario non recuperava **mai**.
+        // Chiamarlo qui non raddoppia niente: sotto l'ora accreditata non fa nulla.
+        cronometro.fase("recupero") { recoverStamina(league, now) }
+
+        // Le coppe camminano da sole. Sta **subito dopo le partite** perche' e' l'ultima
+        // partita di un turno a farlo finire: aspettare il giro successivo vorrebbe dire
+        // che ogni turno di coppa parte con cinque minuti di ritardo sul dovuto.
+        notes += cronometro.fase("competizioni") { avanzaLeCompetizioni(league) }
 
         // Le proposte di scambio si guardano a ogni giro, non al risveglio dell'AI.
         //
@@ -2112,11 +2142,22 @@ class TickRunner(
                 val quando = trade.terms["kickoff"].strOrNull()
                     ?: return chiudiConNota(trade, club, "orario mancante")
 
-                val si = AiInitiative.answerFriendly(
+                val motivo = AiInitiative.friendlyRefusal(
                     stato, squad, league.config,
-                    giornateAllaProssimaPartita(league.id, trade.to) - league.currentMatchDay,
+                    giornateAllaProssimaPartita(league.id, trade.to, league.currentMatchDay),
                 )
-                if (!si) return chiudiConNota(trade, club, "abbiamo le gambe pesanti")
+                // Il motivo vero, non uno per tutti: era «abbiamo le gambe pesanti» anche
+                // su una squadra fresca che rifiutava per il calendario.
+                if (motivo != null) return chiudiConNota(trade, club, motivo)
+
+                // E la distanza dalle altre partite, che fra la proposta e la risposta puo'
+                // essere cambiata: l'admin scrive una giornata di campionato e all'improvviso
+                // quell'amichevole si sovrappone. Le ore le decide la lega, e la regola e' la
+                // stessa che applicano il calendario e l'app.
+                val ore = league.config.calendar.minHoursBetweenMatches
+                if (ore > 0 && haUnaPartitaVicina(league.id, listOf(trade.from, trade.to), quando, ore)) {
+                    return chiudiConNota(trade, club, "a quell'ora una delle due gioca già")
+                }
 
                 val competizione = competizioneAmichevoli(league.id)
                 connection.prepareStatement(
@@ -2144,6 +2185,36 @@ class TickRunner(
     private fun chiudiConNota(trade: PendingTrade, club: Club, motivo: String): String {
         chiudiScambio(trade.id, "RIFIUTATA", motivo.replaceFirstChar { it.uppercase() } + ".")
         return "${club.name} rifiuta: $motivo."
+    }
+
+    /**
+     * Uno di questi club ha gia' una partita entro [ore] da quel momento?
+     *
+     * Il conto lo fa il database perche' e' li' che stanno le partite, ma la **regola** —
+     * quante ore, e che valga nei due sensi — e' `KickoffRules.troppoVicine` in `core`,
+     * usata identica dal calendario e dall'app.
+     */
+    private fun haUnaPartitaVicina(
+        leagueId: Long,
+        clubs: List<ClubId>,
+        quando: String,
+        ore: Int,
+    ): Boolean = connection.prepareStatement(
+        """
+        select 1 from fixtures
+        where league_id = ? and not played and kickoff is not null
+          and kickoff > ?::timestamptz - make_interval(hours => ?)
+          and kickoff < ?::timestamptz + make_interval(hours => ?)
+          and (home_club_id = any(?) or away_club_id = any(?))
+        limit 1
+        """.trimIndent(),
+    ).use { st ->
+        val ids = connection.createArrayOf("bigint", clubs.map { it.value }.toTypedArray())
+        st.setLong(1, leagueId)
+        st.setString(2, quando); st.setInt(3, ore)
+        st.setString(4, quando); st.setInt(5, ore)
+        st.setArray(6, ids); st.setArray(7, ids)
+        st.executeQuery().use { rs -> rs.next() }
     }
 
     /** La competizione nascosta delle amichevoli, creata alla prima che se ne gioca. */
@@ -2736,6 +2807,349 @@ class TickRunner(
         return note
     }
 
+    // ------------------------------------------------------------- le competizioni
+
+    /**
+     * Fa camminare le competizioni: finito un turno, nasce il successivo.
+     *
+     * ## Il difetto che questa funzione chiude
+     *
+     * Una coppa giocava gli ottavi e si fermava li' per sempre. Non per un errore di
+     * calcolo: [FixtureGenerator.nextKnockoutRound] era corretto e provato dal primo
+     * giorno, e **non lo chiamava nessuno** — ne' qui, ne' nell'app, ne' in una funzione
+     * del database. Mancava il collegamento, non la regola.
+     *
+     * Valeva identico per i playoff e i playout delle divisioni, che nascono come
+     * tabellone a quattro e non arrivavano mai alla finale.
+     *
+     * ## Perche' la decisione non e' qui dentro
+     *
+     * Chi e' passato, chi ha riposato e quali sono gli accoppiamenti nuovi lo dice
+     * [CompetitionProgress] in `core`, con le sue prove. Qui restano solo le tre cose che
+     * `core` non puo' fare: leggere, dare le date, e scrivere.
+     */
+    private fun avanzaLeCompetizioni(league: LeagueRow): List<String> {
+        val note = mutableListOf<String>()
+
+        caricaCompetizioniAperte(league).forEach { (competition, calendario) ->
+            val partite = leggiStatoPartite(competition.id)
+            if (partite.isEmpty()) return@forEach
+
+            when (val next = CompetitionProgress.next(competition, partite, leggiEsiti(competition.id))) {
+                CompetitionProgress.Next.Attendi -> Unit
+
+                is CompetitionProgress.Next.Finita -> {
+                    chiudiCompetizione(competition.id, next.winner)
+                    val chi = next.winner?.let { clubNameOf(it) }
+                    note += if (chi != null) "${competition.name}: ha vinto $chi." else "${competition.name} e' finita."
+                    notify(
+                        league.id, null,
+                        if (chi != null) "${competition.name}: ha vinto $chi." else "${competition.name} e' finita.",
+                        kind = "competizione", urgency = "riepilogo",
+                    )
+                }
+
+                is CompetitionProgress.Next.Turno -> {
+                    val scritte = scriviIlTurno(league, competition, calendario, next.rounds)
+                    if (scritte == 0) {
+                        // Non si segna niente e non si chiude niente: al prossimo giro ci
+                        // riprova. Un turno che non entra nel calendario e' un problema di
+                        // date, e le date si possono ancora cambiare.
+                        note += "${competition.name}: il turno nuovo non entra nel periodo."
+                    } else {
+                        note += "${competition.name}: ${next.rounds.first().label}, $scritte partite."
+                    }
+                }
+            }
+        }
+
+        return note
+    }
+
+    /**
+     * Le competizioni ufficiali ancora aperte, con il calendario con cui erano state
+     * create.
+     *
+     * Le amichevoli restano fuori: la loro competizione e' un contenitore senza turni e
+     * senza classifica, e chiedere «a che punto e' il tabellone» non vorrebbe dire niente.
+     */
+    private fun caricaCompetizioniAperte(league: LeagueRow): List<Pair<Competition, CalendarConfig>> {
+        val out = mutableListOf<Pair<Competition, CalendarConfig>>()
+        connection.prepareStatement(
+            """
+            select id, name, type, config, participants
+            from competitions
+            where league_id = ? and kind = 'UFFICIALE' and finished_at is null
+            order by id
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val tipo = runCatching { CompetitionType.valueOf(rs.getString("type")) }.getOrNull()
+                        ?: continue
+                    val iscritte = (rs.getArray("participants")?.array as? Array<*>)
+                        ?.mapNotNull { (it as? Number)?.toLong() }
+                        ?.map(::ClubId)
+                        .orEmpty()
+                    if (iscritte.size < 2) continue
+
+                    val config = JsonNode.parse(rs.getString("config") ?: "{}")
+                    val andataRitorno = config["doubleRound"].bool(false)
+
+                    out += Competition(
+                        id = CompetitionId(rs.getLong("id")),
+                        name = rs.getString("name"),
+                        type = tipo,
+                        participants = iscritte,
+                        doubleRound = andataRitorno,
+                        // Nel tabellone «andata e ritorno» si chiama doppia sfida ed e' la
+                        // stessa casella dell'app: erano due campi diversi, e il risultato
+                        // era un interruttore che nella coppa non faceva niente.
+                        twoLeggedKnockout = andataRitorno && tipo != CompetitionType.GIRONE,
+                    ) to calendarioDi(league, config)
+                }
+            }
+        }
+        return out
+    }
+
+    /**
+     * Il calendario con cui giocare i turni nuovi.
+     *
+     * Le fasce orarie e il tetto giornaliero sono quelli che l'admin ha scelto quando ha
+     * creato la competizione — stanno nel suo `config` — e non quelli della lega: due
+     * tornei nella stessa lega possono benissimo giocarsi in ore diverse, ed e' proprio il
+     * caso della coppa infrasettimanale.
+     */
+    private fun calendarioDi(league: LeagueRow, config: JsonNode): CalendarConfig {
+        val fasce = config["kickoffSlots"].asList().mapNotNull { nodo ->
+            nodo.strOrNull()?.let { runCatching { java.time.LocalTime.parse(it) }.getOrNull() }
+        }
+        return league.config.calendar.copy(
+            kickoffSlots = fasce.ifEmpty { league.config.calendar.kickoffSlots },
+            matchesPerDayPerClub = config["matchesPerDayPerClub"]
+                .int(league.config.calendar.matchesPerDayPerClub),
+        )
+    }
+
+    private fun leggiStatoPartite(competitionId: CompetitionId): List<FixtureState> {
+        val out = mutableListOf<FixtureState>()
+        connection.prepareStatement(
+            // **In ordine di id**, cioe' nell'ordine in cui sono state scritte: e' l'ordine
+            // del tabellone, e da quello dipende chi affronta chi al turno dopo.
+            """
+            select round, home_club_id, away_club_id, tie_id, played
+            from fixtures where competition_id = ? order by id
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, competitionId.value)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += FixtureState(
+                        round = rs.getInt("round"),
+                        home = ClubId(rs.getLong("home_club_id")),
+                        away = ClubId(rs.getLong("away_club_id")),
+                        tieId = rs.getString("tie_id"),
+                        played = rs.getBoolean("played"),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    private fun leggiEsiti(competitionId: CompetitionId): List<FixtureResult> {
+        val out = mutableListOf<FixtureResult>()
+        connection.prepareStatement(
+            """
+            select f.id, f.home_club_id, f.away_club_id, r.home_goals, r.away_goals
+            from fixtures f join match_results r on r.fixture_id = f.id
+            where f.competition_id = ? order by f.id
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, competitionId.value)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += FixtureResult(
+                        fixtureId = rs.getLong("id"),
+                        competitionId = competitionId,
+                        home = ClubId(rs.getLong("home_club_id")),
+                        away = ClubId(rs.getLong("away_club_id")),
+                        homeGoals = rs.getInt("home_goals"),
+                        awayGoals = rs.getInt("away_goals"),
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    /**
+     * Da' le date al turno nuovo e lo scrive. Torna quante partite sono state scritte.
+     *
+     * ## Perche' un turno per volta invece di tutti insieme
+     *
+     * Perche' l'andata e il ritorno devono stare a distanza. Passati insieme al
+     * risolutore finirebbero nelle due fasce dello stesso giorno — sono due turni
+     * consecutivi e lui riempie le fasce in ordine — cioe' andata alle 18:30 e ritorno
+     * alle 21. Scritti uno per volta, ognuno riparte da [CalendarConfig.cupRoundGapDays]
+     * giorni dopo il precedente.
+     *
+     * ## Perche' il risolutore deve sapere del campionato
+     *
+     * Perche' il campionato ha gia' le sue partite scritte, e il risolutore non le ha
+     * generate lui: senza passargliele piazzerebbe la coppa sopra una giornata di
+     * campionato, con la stessa squadra impegnata due volte alla stessa ora.
+     */
+    private fun scriviIlTurno(
+        league: LeagueRow,
+        competition: Competition,
+        calendario: CalendarConfig,
+        rounds: List<Round>,
+    ): Int {
+        val gap = league.config.calendar.cupRoundGapDays.coerceAtLeast(1).toLong()
+        val occupati = impegniInCalendario(league)
+
+        var giorno = LocalDate.now(league.config.calendar.timeZone).plusDays(gap)
+        var giornata = league.currentMatchDay + 1
+        var scritte = 0
+
+        rounds.forEach { round ->
+            val periodo = calendario.copy(startDate = giorno, endDate = giorno.plusDays(FINESTRA_TURNO))
+            val schedule = CalendarSolver.schedule(
+                rounds = listOf(round),
+                config = league.config.copy(calendar = periodo),
+                firstMatchDay = MatchDay(giornata),
+                occupati = occupati,
+            )
+            if (schedule.fixtures.isEmpty()) return scritte
+
+            schedule.fixtures.forEach { f ->
+                scriviPartita(league, competition, f, periodo)
+                f.kickoff?.let { quando ->
+                    occupati += quando to f.home
+                    occupati += quando to f.away
+                }
+                scritte++
+            }
+
+            avvisaChiGioca(league, competition, schedule.fixtures)
+
+            giornata = schedule.lastMatchDay.value + 1
+            giorno = (schedule.fixtures.mapNotNull { it.kickoff?.toLocalDate() }.maxOrNull() ?: giorno)
+                .plusDays(gap)
+        }
+        return scritte
+    }
+
+    /**
+     * Le partite gia' in programma, come coppie ora-club.
+     *
+     * Solo quelle non giocate: cio' che e' gia' successo non impegna piu' nessuno, e
+     * portarsi dietro una stagione intera renderebbe questo conto piu' caro del turno che
+     * deve collocare.
+     */
+    private fun impegniInCalendario(league: LeagueRow): MutableSet<Pair<java.time.LocalDateTime, ClubId>> {
+        val out = mutableSetOf<Pair<java.time.LocalDateTime, ClubId>>()
+        connection.prepareStatement(
+            """
+            select home_club_id, away_club_id, kickoff from fixtures
+            where league_id = ? and not played and kickoff is not null
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    // In **ora di lega**: le fasce con cui ragiona il risolutore sono ore
+                    // locali, e confrontarle con l'ora UTC del database sposterebbe ogni
+                    // impegno di due ore d'estate — cioe' non ne riconoscerebbe nessuno.
+                    val quando = league.config.calendar.localOf(rs.getTimestamp("kickoff").toInstant())
+                    out += quando to ClubId(rs.getLong("home_club_id"))
+                    out += quando to ClubId(rs.getLong("away_club_id"))
+                }
+            }
+        }
+        return out
+    }
+
+    private fun scriviPartita(
+        league: LeagueRow,
+        competition: Competition,
+        fixture: Fixture,
+        calendario: CalendarConfig,
+    ) {
+        connection.prepareStatement(
+            """
+            insert into fixtures (league_id, competition_id, round, round_label,
+                                  home_club_id, away_club_id, match_day, kickoff,
+                                  tie_id, is_second_leg)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setLong(2, competition.id.value)
+            st.setInt(3, fixture.round)
+            st.setString(4, fixture.roundLabel)
+            st.setLong(5, fixture.home.value)
+            st.setLong(6, fixture.away.value)
+            st.setInt(7, fixture.matchDay.value)
+            st.setTimestamp(8, Timestamp.from(calendario.instantOf(fixture.kickoff!!)))
+            if (fixture.tieId == null) st.setNull(9, java.sql.Types.VARCHAR) else st.setString(9, fixture.tieId)
+            st.setBoolean(10, fixture.isSecondLeg)
+            st.executeUpdate()
+        }
+    }
+
+    /**
+     * Chi gioca il turno nuovo lo deve sapere, e con l'ora.
+     *
+     * Un tabellone che avanza in silenzio e' indistinguibile da un tabellone fermo: era la
+     * cosa che, dal telefono, faceva sembrare la coppa rotta anche quando non lo era.
+     */
+    private fun avvisaChiGioca(
+        league: LeagueRow,
+        competition: Competition,
+        fixtures: List<Fixture>,
+    ) {
+        fixtures.forEach { f ->
+            // [Fixture.kickoff] e' gia' ora di lega — e' quella che il risolutore ha
+            // scelto fra le fasce dell'admin — quindi si scrive com'e'. La conversione a
+            // istante serve solo al database.
+            val quando = f.kickoff
+                ?.let { "%02d/%02d alle %02d:%02d".format(it.dayOfMonth, it.monthValue, it.hour, it.minute) }
+                ?: "data da definire"
+
+            listOf(f.home to f.away, f.away to f.home).forEach { (club, avversario) ->
+                notify(
+                    league.id, club,
+                    "${competition.name} · ${f.roundLabel}: contro ${clubNameOf(avversario)}, $quando.",
+                    kind = "competizione", urgency = "immediata",
+                )
+            }
+        }
+    }
+
+    /**
+     * Quanti giorni si guardano avanti per far entrare un turno.
+     *
+     * Due settimane: abbastanza perche' anche una coppa con poche fasce orarie e un
+     * campionato fitto trovi dove infilarsi, poco abbastanza perche' un turno che non ci
+     * sta in due settimane sia un problema di configurazione da segnalare invece di una
+     * partita fissata fra due mesi.
+     */
+    private val FINESTRA_TURNO = 14L
+
+    private fun chiudiCompetizione(competitionId: CompetitionId, winner: ClubId?) {
+        connection.prepareStatement(
+            "update competitions set finished_at = now(), winner_club_id = ? where id = ?",
+        ).use { st ->
+            if (winner == null) st.setNull(1, java.sql.Types.BIGINT) else st.setLong(1, winner.value)
+            st.setLong(2, competitionId.value)
+            st.executeUpdate()
+        }
+    }
+
     // ------------------------------------------------------------------- la partita
 
     /**
@@ -2777,12 +3191,29 @@ class TickRunner(
     ): Boolean {
         val primo = MatchEngine.simulateFirstHalf(home, away, league.config, seed)
 
+        // LA RIPRESA SI CONTA DAL FISCHIO D'INIZIO, NON DA ADESSO
+        //
+        // Dal 2026-08-29 il primo tempo si **guarda** per quarantacinque minuti veri, poi
+        // c'e' l'intervallo. La ripresa cade quindi a `kickoff + 45 + pausa`, ed e' una cosa
+        // diversa da «fra venti minuti»: il tick arriva quando arriva — fino a cinque
+        // minuti dopo l'orario, perche' `pg_cron` bussa a quella cadenza — e contando da
+        // adesso ogni ritardo del server si sommerebbe alla partita. Un fischio d'inizio
+        // preso con quattro minuti di ritardo avrebbe spostato la fine di quattro minuti,
+        // e la partita sarebbe finita a un'ora che nessuno aveva letto da nessuna parte.
+        //
+        // Se la partita non ha un orario — non dovrebbe succedere — si ricade su adesso,
+        // che e' il comportamento di prima.
+        val inizio = fixture.kickoff?.toInstant(ZoneOffset.UTC) ?: Instant.now()
+        val ripresa = MatchClock.ripresaDi(inizio, finestraMinuti)
+
         connection.prepareStatement(
-            "update fixtures set resume_at = now() + make_interval(mins => ?), " +
-                "first_half = ?::jsonb where id = ?",
+            "update fixtures set resume_at = ?, first_half = ?::jsonb where id = ?",
         ).use { st ->
-            st.setInt(1, finestraMinuti)
-            st.setString(2, HalfTimeJson.write(home, away))
+            st.setTimestamp(1, Timestamp.from(ripresa))
+            // Il primo tempo viaggia insieme agli schieramenti: per quarantacinque minuti
+            // reali e' l'unica cosa che esiste di questa partita, e senza di lui chi apre
+            // l'app durante il primo tempo vedrebbe un campo vuoto.
+            st.setString(2, HalfTimeJson.write(home, away, primo))
             st.setLong(3, fixture.id)
             st.executeUpdate()
         }
@@ -2795,7 +3226,7 @@ class TickRunner(
                 kind = "partita", urgency = "immediata",
             )
         }
-        log("Partita ${fixture.id} all'intervallo sul $parziale, riprende fra $finestraMinuti minuti.")
+        log("Partita ${fixture.id} all'intervallo sul $parziale, riprende alle $ripresa.")
         return true
     }
 
@@ -4049,7 +4480,11 @@ class TickRunner(
     ): Boolean {
         if (!league.config.rules.friendliesEnabled) return false
 
-        val prossima = giornateAllaProssimaPartita(league.id, club.id)
+        // Giornate **mancanti**, non la giornata assoluta. Prima ci finiva il numero di
+        // giornata: a inizio stagione valeva 1 o 2 e il controllo «almeno due giornate
+        // libere» diceva no anche con il calendario vuoto, mentre a stagione avanzata
+        // valeva trenta e diceva sempre si', partita di domani compresa.
+        val prossima = giornateAllaProssimaPartita(league.id, club.id, league.currentMatchDay)
         if (!AiInitiative.wantsFriendly(state, squad, league.config, prossima)) return false
 
         val altri = loadClubIds(league.id).filter { it != club.id }
@@ -4098,7 +4533,20 @@ class TickRunner(
         }
 
     /** Quante giornate mancano alla prossima partita di questo club. Grande se non ce n'e'. */
-    private fun giornateAllaProssimaPartita(leagueId: Long, clubId: ClubId): Int =
+    /**
+     * Quante **giornate mancano** alla prossima partita vera di questo club.
+     *
+     * Restituisce gia' la differenza, non la giornata assoluta. Prima tornava
+     * `min(match_day)` e chi chiamava ci sottraeva la giornata corrente per conto suo, con
+     * due conseguenze: il valore di ripiego 99 diventava `99 - giornata`, cioe' un numero
+     * che calava col passare della stagione fino a mentire; e una partita **arretrata** —
+     * non giocata e con la giornata gia' passata — produceva un negativo, che e' un modo
+     * involontario di dire «gioco fra meno di zero giorni».
+     *
+     * Zero significa oggi. Non scende mai sotto zero: una partita che andava giocata ieri
+     * e' comunque una partita che incombe, non una gia' passata.
+     */
+    private fun giornateAllaProssimaPartita(leagueId: Long, clubId: ClubId, oggi: Int): Int =
         connection.prepareStatement(
             """
             select min(match_day) from fixtures
@@ -4110,11 +4558,14 @@ class TickRunner(
             st.setLong(2, clubId.value)
             st.setLong(3, clubId.value)
             st.executeQuery().use { rs ->
-                if (!rs.next()) return@use 99
+                if (!rs.next()) return@use SENZA_PARTITE
                 val prossima = rs.getInt(1)
-                if (rs.wasNull()) 99 else prossima
+                if (rs.wasNull()) SENZA_PARTITE else (prossima - oggi).coerceAtLeast(0)
             }
         }
+
+    /** Nessuna partita in programma: qualunque numero grande va bene, purche' non menta. */
+    private val SENZA_PARTITE = 99
 
     private fun loadContractsOf(clubId: ClubId): List<Contract> {
         val out = mutableListOf<Contract>()
@@ -4774,8 +5225,21 @@ class TickRunner(
      * ma applicarla giocatore per giocatore vorrebbe dire leggere e riscrivere qualche
      * migliaio di righe: qui si traduce nella stessa curva, in una query.
      */
-    private fun recoverStamina(league: LeagueRow) {
-        val base = league.config.engine.staminaRecoveryPerMatchDay
+    private fun recoverStamina(league: LeagueRow, now: Instant) {
+        // LE ORE VERE PASSATE DALL'ULTIMA VOLTA
+        //
+        // Il recupero era «34 punti per giornata», e una giornata e' una fascia oraria del
+        // calendario: quanto tempo valesse dipendeva da quante fasce l'admin aveva messo in
+        // un giorno. Con due erano dodici ore, con quattro sei — lo stesso riposo pagava il
+        // doppio in una lega e la meta' in un'altra, e non c'era modo di accorgersene.
+        //
+        // Adesso e' una quantita' di tempo, come lo e' il riposo. Il tetto di dodici ore
+        // per giro serve a chi torna dopo tre giorni: si recupera tutto lo stesso, ma senza
+        // che una sola query regali quattrocento punti a chiunque.
+        val ore = oreDallUltimoRecupero(league.id, now)
+        if (ore <= 0.0) return
+
+        val base = league.config.engine.staminaRecoveryPerHour * ore
 
         connection.prepareStatement(
             """
@@ -4797,6 +5261,52 @@ class TickRunner(
         ).use { st ->
             st.setDouble(1, base)
             st.setLong(2, league.id)
+            st.executeUpdate()
+        }
+
+        segnaRecupero(league.id, now)
+    }
+
+    /**
+     * Quante ore reali sono passate dall'ultimo recupero.
+     *
+     * Zero quando non ne e' passata nemmeno una: il tick gira ogni cinque minuti, e
+     * accreditare un ottavo d'ora dodici volte l'ora sarebbe lo stesso risultato con dodici
+     * volte le scritture — piu' il minimo di un punto che, applicato a ogni giro,
+     * regalerebbe dodici punti l'ora a tutti indipendentemente dalla configurazione.
+     *
+     * Alla prima volta in assoluto non si recupera niente e si segna il momento: senza,
+     * una lega appena creata vedrebbe accreditarsi le ore dall'inizio dei tempi.
+     */
+    private fun oreDallUltimoRecupero(leagueId: Long, now: Instant): Double {
+        val ultimo = connection.prepareStatement(
+            "select last_stamina_at from tick_state where league_id = ?",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getTimestamp(1)?.toInstant() else null }
+        }
+
+        if (ultimo == null) {
+            segnaRecupero(leagueId, now)
+            return 0.0
+        }
+
+        val ore = java.time.Duration.between(ultimo, now).toMinutes() / 60.0
+        return if (ore < 1.0) 0.0 else ore.coerceAtMost(ORE_MASSIME_PER_GIRO)
+    }
+
+    /** Il tetto per giro: chi torna dopo tre giorni recupera comunque, ma non in un colpo. */
+    private val ORE_MASSIME_PER_GIRO = 12.0
+
+    private fun segnaRecupero(leagueId: Long, now: Instant) {
+        connection.prepareStatement(
+            """
+            insert into tick_state (league_id, last_stamina_at) values (?, ?)
+            on conflict (league_id) do update set last_stamina_at = excluded.last_stamina_at
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setTimestamp(2, Timestamp.from(now))
             st.executeUpdate()
         }
     }

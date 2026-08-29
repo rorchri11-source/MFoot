@@ -148,6 +148,59 @@ class AiInitiativeTest {
         assertTrue(AiInitiative.wantsFriendly(stato(aggressivita = 0.9), freschi, config, 5))
     }
 
+    /**
+     * Accettare non e' chiedere.
+     *
+     * Le due cose erano la stessa regola, e il risultato era che **quasi ogni amichevole
+     * proposta da una persona veniva rifiutata**: chi chiede vuole due giornate libere
+     * davanti, e in una lega con un campionato in corso non ce ne sono mai. Il difetto era
+     * invisibile in prova perche' nessun test chiedeva mai a un'AI di rispondere.
+     */
+    @Test
+    fun `accetta l'amichevole anche se gioca fra una giornata`() {
+        val freschi = rosa(portieri = 2, difensori = 5, centrocampisti = 5, attaccanti = 4)
+
+        assertTrue(
+            !AiInitiative.wantsFriendly(stato(aggressivita = 0.9), freschi, config, 1),
+            "con una partita domani non la va a cercare",
+        )
+        assertTrue(
+            AiInitiative.answerFriendly(stato(aggressivita = 0.9), freschi, config, 1),
+            "ma se gliela chiede un amico dice di si': e' il caso che le rifiutava tutte",
+        )
+    }
+
+    @Test
+    fun `accetta anche il club prudente, che non ne chiederebbe mai`() {
+        val freschi = rosa(portieri = 2, difensori = 5, centrocampisti = 5, attaccanti = 4)
+
+        assertTrue(
+            !AiInitiative.wantsFriendly(stato(aggressivita = 0.2), freschi, config, 5),
+            "il prudente non le cerca, ed e' il suo carattere",
+        )
+        assertTrue(
+            AiInitiative.answerFriendly(stato(aggressivita = 0.2), freschi, config, 5),
+            "ma un carattere non e' un motivo per dire di no per sempre allo stesso amico",
+        )
+    }
+
+    @Test
+    fun `il rifiuto dice il motivo vero`() {
+        val stanchi = rosa(portieri = 2, difensori = 5, centrocampisti = 5, attaccanti = 4)
+            .map { it.withStamina(30) }
+        val freschi = rosa(portieri = 2, difensori = 5, centrocampisti = 5, attaccanti = 4)
+
+        assertEquals(
+            "Abbiamo le gambe pesanti: rimandiamo.",
+            AiInitiative.friendlyRefusal(stato(), stanchi, config, 5),
+        )
+        assertEquals(
+            "Giochiamo una partita vera oggi.",
+            AiInitiative.friendlyRefusal(stato(), freschi, config, 0),
+        )
+        assertNull(AiInitiative.friendlyRefusal(stato(), freschi, config, 2))
+    }
+
     // ------------------------------------------------------------------------ prestiti
 
     @Test

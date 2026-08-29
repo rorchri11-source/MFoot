@@ -41,6 +41,7 @@ import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Notice
+import dev.mfoot.android.ui.pitch.CampoLive
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -98,6 +99,31 @@ fun PartitaScreen(
             }
             return
         }
+
+        // IL CAMPO
+        //
+        // Sta sotto il tabellone e sopra la telecronaca perche' e' quello che si guarda
+        // per novanta minuti: l'elenco degli eventi lo si legge quando succede qualcosa,
+        // il campo lo si guarda anche quando non succede niente — che nel calcio vero e'
+        // la maggior parte del tempo.
+        val azione = state.azione
+        Box(Modifier.padding(MFootSpacing.section, 12.dp, MFootSpacing.section, 0.dp)) {
+            CampoLive(
+                zona = azione?.zone,
+                casa = azione?.homeSide ?: true,
+                pericolo = azione?.danger ?: 0,
+                golTotali = state.golCasa + state.golFuori,
+            )
+            if (state.inIntervallo) Sipario(state, Modifier.matchParentSize())
+        }
+
+        // L'inerzia: da che parte sta andando la partita.
+        //
+        // Non e' il possesso della partita intera, che a fine gara e' un numero e basta:
+        // e' come sono andati gli **ultimi dieci minuti**, cioe' la domanda che ci si fa
+        // guardando. Una squadra puo' avere il 60% di possesso e stare subendo, e con la
+        // sola percentuale finale quella cosa non si vede.
+        Inerzia(state)
 
         Comandi(state, onPausa, onFine, onChiudi)
         Hairline()
@@ -223,6 +249,77 @@ private fun Tabellone(state: MatchState) {
     }
 }
 
+/**
+ * Il velo dell'intervallo, sopra il campo.
+ *
+ * Un campo fermo con la palla al centro e' indistinguibile da un'app bloccata. Qui c'e'
+ * scritto **quale** delle due attese si sta vivendo: l'intervallo vero, o i minuti in cui
+ * l'intervallo e' finito e il server non ha ancora giocato il secondo tempo — il tick passa
+ * ogni cinque minuti, non ogni secondo.
+ */
+@Composable
+private fun Sipario(state: MatchState, modifier: Modifier = Modifier) {
+    Box(
+        modifier.background(Color.Black.copy(alpha = 0.55f), MFootShapes.band),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                if (state.attesaRipresa) "Si riprende" else "Intervallo",
+                style = MFootType.playerName,
+                color = MFootColors.ink,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (state.attesaRipresa) "Il secondo tempo sta per cominciare."
+                else "${state.golCasa} - ${state.golFuori} · si torna in campo fra poco",
+                style = MFootType.chip,
+                color = MFootColors.ink2,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/**
+ * La barra dell'inerzia: da che parte sta andando la partita **adesso**.
+ *
+ * Si conta sulla pericolosita' degli ultimi dieci minuti, non sul possesso: il possesso
+ * dice chi ha la palla, l'inerzia dice chi sta facendo male. Sono due cose diverse, e
+ * quella che si vuole sapere guardando e' la seconda.
+ */
+@Composable
+private fun Inerzia(state: MatchState) {
+    val recenti = state.partita?.moments.orEmpty()
+        .filter { it.minute in (state.minuto - 10)..state.minuto }
+
+    val casa = recenti.filter { it.homeSide }.sumOf { it.danger }.toFloat()
+    val fuori = recenti.filter { !it.homeSide }.sumOf { it.danger }.toFloat()
+    val quota = if (casa + fuori <= 0f) 0.5f else casa / (casa + fuori)
+
+    // Scorre invece di saltare: un'inerzia che sbatte da un lato all'altro a ogni evento
+    // non e' leggibile, ed e' anche falsa — l'inerzia e' una cosa che si sposta piano.
+    val animata by animateFloatAsState(quota, tween(900), label = "inerzia")
+
+    Column(Modifier.padding(MFootSpacing.section, 10.dp, MFootSpacing.section, 2.dp)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .background(MFootColors.gamble.copy(alpha = 0.35f), MFootShapes.pill),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(animata.coerceIn(0.03f, 0.97f))
+                    .height(4.dp)
+                    .background(MFootColors.elite, MFootShapes.pill),
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("Inerzia", style = MFootType.label, color = MFootColors.ink3)
+    }
+}
+
 @Composable
 private fun Comandi(
     state: MatchState,
@@ -235,7 +332,17 @@ private fun Comandi(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!state.finita) {
+        // In diretta non ci sono comandi: non si mette in pausa una partita, e «salta alla
+        // fine» vorrebbe dire saltare a un finale che non e' ancora successo. Al loro posto
+        // c'e' quello che sta succedendo — e uno spazio vuoto dove prima c'erano due
+        // pulsanti si legge peggio di una riga che dice dove siamo.
+        if (state.diretta) {
+            Text(
+                state.avviso ?: "In diretta",
+                style = MFootType.chip,
+                color = if (state.avviso == null) MFootColors.elite else MFootColors.ink2,
+            )
+        } else if (!state.finita) {
             Bottone(if (state.inCorso) "Pausa" else "Riprendi", onPausa)
             Bottone("Salta alla fine", onFine)
         }

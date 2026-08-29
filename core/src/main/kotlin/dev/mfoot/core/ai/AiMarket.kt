@@ -59,11 +59,46 @@ object AiMarket {
             .mapNotNull { coppia ->
                 val (listing, player) = coppia
                 val appeal = AiManager.evaluate(state, club, squad, player, config)
-                if (!appeal.isInterested) return@mapNotNull null
+
+                // L'AFFARE E' UN CRITERIO DI PREZZO, NON DI GUSTO
+                //
+                // Il gradimento non sa quanto costa: dice solo quanto quel giocatore
+                // servirebbe. Da solo lasciava passare l'ottantenne a un decimo del
+                // valore, perche' il club aveva gia' qualcuno in quel ruolo — e un club a
+                // rosa completa rispondeva no a tutto il listino, qualunque prezzo ci
+                // fosse scritto.
+                //
+                // Chi fa mercato sul serio un affare cosi' lo prende comunque, e poi lo
+                // rivende. Qui la soglia e' `bargainShare` del valore stimato, ed e' la
+                // stessa idea con cui l'AI decide se **contestare** l'acquisto di un
+                // altro: le due regole devono rispondere allo stesso modo alla stessa
+                // domanda, o un'AI contesterebbe un affare che non avrebbe comprato.
+                val stimato = AiManager.estimatedValueOf(player, club, config)
+                val affare = listing.price <= stimato * config.ai.bargainShare
+
+                if (!appeal.isInterested && !affare) return@mapNotNull null
+
                 // Il tetto vale come in asta: sopra quello non si compra, per quanto
-                // comodo sia comprare subito. E' cio' che impedisce a un'AI di svuotare
-                // la cassa sul primo nome che le piace.
-                if (listing.price > appeal.ceiling) return@mapNotNull null
+                // comodo sia comprare subito. E' cio' che impedisce a un'AI di svuotare la
+                // cassa sul primo nome che le piace.
+                //
+                // Su un affare si rifa' il conto **come se lo volesse davvero**: e' quello
+                // che cambia, ed e' tutto quello che cambia. Il vincolo per casella resta
+                // dov'era, quindi un affare che rovinerebbe il bilancio resta un affare per
+                // qualcun altro.
+                val tetto = if (!affare) {
+                    appeal.ceiling
+                } else {
+                    AiManager.ceilingFor(
+                        personality = state.personality,
+                        club = club,
+                        estimatedValue = stimato,
+                        appeal = config.ai.fullInterestAppeal,
+                        config = config,
+                        squadSize = squad.size,
+                    )
+                }
+                if (listing.price > tetto) return@mapNotNull null
 
                 Candidato(
                     listing = listing,

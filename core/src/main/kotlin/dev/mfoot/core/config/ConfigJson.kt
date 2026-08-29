@@ -189,6 +189,9 @@ object ConfigJson {
         w.endArray()
         w.field("matchSpeed", c.matchSpeed.name)
         w.field("halfTimeWindowMinutes", c.halfTimeWindowMinutes)
+        w.field("cupRoundGapDays", c.cupRoundGapDays)
+
+        w.field("minHoursBetweenMatches", c.minHoursBetweenMatches)
         w.field("timeZone", c.timeZone.id)
         w.endObject()
     }
@@ -288,6 +291,8 @@ object ConfigJson {
         w.field("refusalCooldownMatchDays", c.refusalCooldownMatchDays)
         w.field("recentPurchaseGraceMatchDays", c.recentPurchaseGraceMatchDays)
         w.field("rebidStepFraction", c.rebidStepFraction)
+        w.field("fullInterestAppeal", c.fullInterestAppeal)
+        w.field("bargainShare", c.bargainShare)
         w.endObject()
     }
 
@@ -317,7 +322,7 @@ object ConfigJson {
         w.field("momentumStrength", c.momentumStrength)
         w.field("momentumDecayPerAction", c.momentumDecayPerAction)
         w.field("staminaDrainPerMinute", c.staminaDrainPerMinute)
-        w.field("staminaRecoveryPerMatchDay", c.staminaRecoveryPerMatchDay)
+        w.field("staminaRecoveryPerHour", c.staminaRecoveryPerHour)
         w.field("staminaComfortThreshold", c.staminaComfortThreshold)
         w.field("maxStaminaPenalty", c.maxStaminaPenalty)
         w.field("moraleWeight", c.moraleWeight)
@@ -429,6 +434,9 @@ object ConfigJson {
         },
         matchSpeed = n["matchSpeed"].enum(d.matchSpeed),
         halfTimeWindowMinutes = n["halfTimeWindowMinutes"].int(d.halfTimeWindowMinutes),
+        cupRoundGapDays = n["cupRoundGapDays"].int(d.cupRoundGapDays),
+
+        minHoursBetweenMatches = n["minHoursBetweenMatches"].int(d.minHoursBetweenMatches),
         // Un fuso sconosciuto non deve impedire di aprire la lega: si ricade su quello
         // predefinito, che e' sbagliato di un'ora al massimo, invece di lanciare
         // un'eccezione che lascerebbe l'app su una schermata bianca.
@@ -526,6 +534,8 @@ object ConfigJson {
         refusalCooldownMatchDays = n["refusalCooldownMatchDays"].int(d.refusalCooldownMatchDays),
         recentPurchaseGraceMatchDays = n["recentPurchaseGraceMatchDays"].int(d.recentPurchaseGraceMatchDays),
         rebidStepFraction = n["rebidStepFraction"].double(d.rebidStepFraction),
+        fullInterestAppeal = n["fullInterestAppeal"].double(d.fullInterestAppeal),
+        bargainShare = n["bargainShare"].double(d.bargainShare),
     )
 
     private fun readEngine(n: JsonNode, d: EngineConfig) = EngineConfig(
@@ -544,7 +554,7 @@ object ConfigJson {
         momentumStrength = n["momentumStrength"].double(d.momentumStrength),
         momentumDecayPerAction = n["momentumDecayPerAction"].double(d.momentumDecayPerAction),
         staminaDrainPerMinute = n["staminaDrainPerMinute"].double(d.staminaDrainPerMinute),
-        staminaRecoveryPerMatchDay = n["staminaRecoveryPerMatchDay"].double(d.staminaRecoveryPerMatchDay),
+        staminaRecoveryPerHour = n["staminaRecoveryPerHour"].double(d.staminaRecoveryPerHour),
         staminaComfortThreshold = n["staminaComfortThreshold"].int(d.staminaComfortThreshold),
         maxStaminaPenalty = n["maxStaminaPenalty"].double(d.maxStaminaPenalty),
         moraleWeight = n["moraleWeight"].double(d.moraleWeight),

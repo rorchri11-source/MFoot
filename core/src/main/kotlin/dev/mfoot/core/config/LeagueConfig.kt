@@ -357,8 +357,55 @@ data class CalendarConfig(
     /** Orari di inizio disponibili nell'arco della giornata. */
     val kickoffSlots: List<LocalTime> = listOf(LocalTime.of(18, 30), LocalTime.of(21, 0)),
     val matchSpeed: MatchSpeed = MatchSpeed.RAPIDA,
-    /** Durata in minuti reali della finestra di intervallo per cambi e correzioni. */
-    val halfTimeWindowMinutes: Int = 3,
+
+    /**
+     * Durata in minuti reali dell'intervallo.
+     *
+     * Venti, decisi dal proprietario il 2026-08-29 — «non piu'». Erano tre, e con la
+     * partita che si liquidava in quindici secondi bastavano: adesso il primo tempo dura
+     * quarantacinque minuti veri e l'intervallo e' il momento in cui si guarda com'e'
+     * andata e si cambia qualcosa. Tre minuti non sarebbero il tempo di aprire la
+     * formazione.
+     *
+     * E' anche l'attesa del server: il secondo tempo si gioca alla fine di questa finestra.
+     */
+    val halfTimeWindowMinutes: Int = 20,
+
+    /**
+     * Quante ore devono passare fra due partite dello stesso club.
+     *
+     * ## Perche' due, e perche' e' un numero e non un divieto
+     *
+     * Perche' una partita **occupa 110 minuti reali**: quarantacinque, venti di intervallo,
+     * quarantacinque. Due ore sono quei 110 minuti piu' dieci di respiro. Chiesta dal
+     * proprietario cosi': «se la fai alle 10 non puoi alle 11, ma alle 12 minimo».
+     *
+     * Resta configurabile perche' dipende dall'intervallo: una lega che lo accorcia puo'
+     * stringere anche questa, e una che vuole una partita a sera la porta a ventiquattro.
+     *
+     * ## Il rapporto con [matchesPerDayPerClub]
+     *
+     * Sono lo stesso vincolo visto da due lati, e prima si contraddicevano: il tetto
+     * giornaliero arrivava a quattro partite in un giorno, che con 110 minuti l'una sono
+     * sette ore e venti di calcio. Adesso il tetto vero lo fa la distanza, e
+     * [matchesPerDayPerClub] resta come limite superiore per chi vuole essere piu' severo.
+     */
+    val minHoursBetweenMatches: Int = 2,
+
+    /**
+     * Quanti giorni passano fra un turno di coppa e il successivo.
+     *
+     * ## Perche' un turno di coppa non si programma insieme agli altri
+     *
+     * Perche' non si sa chi lo giochera' finche' il turno prima non e' finito. Il
+     * calendario di un campionato nasce intero il giorno della creazione; un tabellone
+     * nasce un turno per volta, e ogni volta serve una data.
+     *
+     * Tre giorni: il tempo di leggere com'e' andata, rimettere in piedi la rosa e
+     * schierare. Con uno si giocherebbe il giorno dopo con le gambe della partita prima;
+     * con sette una coppa da quattro turni durerebbe un mese.
+     */
+    val cupRoundGapDays: Int = 3,
 
     /**
      * Il fuso in cui vive la lega.
@@ -635,6 +682,28 @@ data class AiConfig(
     val recentPurchaseGraceMatchDays: Int = 6,
     /** Quanto rilancia oltre l'offerta corrente, in frazione del proprio tetto. */
     val rebidStepFraction: Double = 0.08,
+
+    /**
+     * Il gradimento oltre il quale un'AI vuole un giocatore quanto lo puo' volere.
+     *
+     * Serve a leggere il gradimento su una scala vera. `AiManager.evaluate` restituisce
+     * numeri fra 0,1 e 0,6 su una rosa normale — la curva del valore e' cubica, quindi un
+     * settantacinque vale 0,42 e non 0,75 — e trattarli come se andassero da zero a uno
+     * significava dire «questo giocatore mi interessa al venti per cento», cioe' **lo
+     * pago un quinto**. Con questa soglia 0,6 e' pieno interesse, e il resto si distribuisce
+     * fra li' e la soglia di indifferenza.
+     */
+    val fullInterestAppeal: Double = 0.6,
+
+    /**
+     * Sotto questa frazione del valore stimato, un'AI compra anche cio' che non cercava.
+     *
+     * E' il criterio del **prezzo**, tenuto separato da quello del gusto. Senza, un club a
+     * rosa completa rispondeva no a qualunque cosa non gli servisse, anche a un ottantenne
+     * a un decimo del valore: il gradimento decideva da solo, e il gradimento non sa quanto
+     * costa. Un affare cosi' lo prende chiunque faccia mercato sul serio, e poi lo rivende.
+     */
+    val bargainShare: Double = 0.6,
 )
 
 // ----------------------------------------------------------------- manopole del motore
@@ -731,7 +800,28 @@ data class EngineConfig(
     /** Stamina consumata per minuto giocato, prima dei modificatori di fisico e tratti. */
     val staminaDrainPerMinute: Double = 0.34,
     /** Stamina recuperata per giornata, prima del moltiplicatore del preparatore. */
-    val staminaRecoveryPerMatchDay: Double = 34.0,
+    /**
+     * Punti di stamina recuperati per **ora reale**, da un giocatore medio senza staff.
+     *
+     * ## Perche' per ora e non per giornata
+     *
+     * Era 34 per giornata di gioco, e una giornata e' una fascia oraria del calendario:
+     * quanto tempo vero valga dipendeva da quante fasce l'admin aveva messo in un giorno.
+     * Con due fasce erano dodici ore, con quattro sei — lo stesso identico riposo pagava il
+     * doppio in una lega e la meta' nell'altra, e nessuno poteva accorgersene.
+     *
+     * Dal 2026-08-29 la partita dura novanta minuti veri e fra due partite passano almeno
+     * due ore: il riposo e' diventato una quantita' di **tempo**, e va misurato in tempo.
+     *
+     * ## Il valore
+     *
+     * Sette punti l'ora: due ore fra una partita e l'altra ne rendono quattordici, una
+     * notte riporta al massimo chiunque. Sono circa due volte e mezzo il ritmo di prima —
+     * «tempi recuperi accelerati, ora troppo lenti», chiesto dal proprietario il
+     * 2026-08-29 — e restano lontani dal rendere la rosa profonda inutile: dopo una partita
+     * vera servono comunque diverse ore per tornare schierabili.
+     */
+    val staminaRecoveryPerHour: Double = 7.0,
     /** Sotto questa soglia la stanchezza inizia a pesare sui rating. */
     val staminaComfortThreshold: Int = 65,
     /** Malus massimo ai rating quando la stamina e' a zero. */

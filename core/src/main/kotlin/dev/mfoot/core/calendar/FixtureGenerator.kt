@@ -78,48 +78,81 @@ object FixtureGenerator {
      *
      * I turni successivi al primo non possono essere generati adesso: dipendono da chi
      * vince. Qui si produce **solo il primo turno**, con l'etichetta giusta ("Sedicesimi",
-     * "Ottavi", ...) ricavata dal numero di partecipanti. I turni successivi si generano
-     * con [nextKnockoutRound] man mano che i risultati arrivano.
+     * "Ottavi", ...) ricavata dal numero di partecipanti. I turni successivi li chiede
+     * [CompetitionProgress] a [nextKnockoutRound] man mano che i risultati arrivano.
      */
-    fun knockout(competition: Competition, seed: Long = 0L): List<Round> {
-        val clubs = shuffleClubs(competition.participants, seed)
-        return listOf(buildKnockoutRound(competition, clubs, roundNumber = 1))
-    }
+    fun knockout(competition: Competition, seed: Long = 0L): List<Round> =
+        buildKnockoutRound(competition, shuffleClubs(competition.participants, seed), roundNumber = 1)
 
-    /** Genera il turno successivo dati i vincitori del precedente. */
+    /**
+     * Il turno successivo, dati i vincitori del precedente.
+     *
+     * Vuoto quando non c'e' piu' niente da giocare: con un vincitore solo il torneo e'
+     * finito, e restituire un turno da zero partite obbligherebbe ogni chiamante a
+     * distinguere "turno vuoto" da "turno finale" per conto suo.
+     */
     fun nextKnockoutRound(
         competition: Competition,
         winners: List<ClubId>,
         previousRoundNumber: Int,
-    ): Round? {
-        if (winners.size < 2) return null
+    ): List<Round> {
+        if (winners.size < 2) return emptyList()
         return buildKnockoutRound(competition, winners, previousRoundNumber + 1)
     }
 
+    /**
+     * Un turno di tabellone: uno o due [Round].
+     *
+     * ## Perche' il ritorno e' un turno a se' e non due gare nello stesso
+     *
+     * Perche' [CalendarSolver] colloca un turno intero **in una sola fascia oraria**: e'
+     * il modo in cui garantisce che nessun club giochi due volte alla stessa ora. Andata e
+     * ritorno dentro lo stesso `Round` finivano quindi lo stesso giorno alla stessa ora,
+     * cioe' la stessa squadra in casa e in trasferta nello stesso istante. Separati, il
+     * risolutore li tratta come due turni consecutivi e li distanzia da solo.
+     *
+     * I due condividono il `tieId`, che e' cio' che li rende un accoppiamento solo agli
+     * occhi di [Standings.tieWinner] e di [CompetitionProgress].
+     *
+     * ## Il turno di riposo
+     *
+     * Con un numero dispari di squadre l'ultima resta senza avversario e **non compare in
+     * nessuna partita**: passa il turno. Non e' un caso da correggere qui — un turno di
+     * riposo non e' una partita e non ha niente da scrivere nel calendario — ma va saputo
+     * da chi calcola chi e' passato, e infatti [CompetitionProgress] lo ricava per
+     * differenza fra chi era nel turno e chi ci ha giocato.
+     */
     private fun buildKnockoutRound(
         competition: Competition,
         clubs: List<ClubId>,
         roundNumber: Int,
-    ): Round {
+    ): List<Round> {
         val label = knockoutLabel(clubs.size)
         val isFinal = clubs.size == 2
 
-        val pairings = buildList {
-            var index = 0
-            while (index + 1 < clubs.size) {
-                val a = clubs[index]
-                val b = clubs[index + 1]
-                val tieId = "${competition.id.value}-r$roundNumber-${index / 2}"
-                add(Pairing(a, b, tieId))
-                // La finale resta sempre in gara secca, anche in un torneo a doppia gara.
-                if (competition.twoLeggedKnockout && !isFinal) {
-                    add(Pairing(b, a, tieId, isSecondLeg = true))
-                }
-                index += 2
+        val andata = mutableListOf<Pairing>()
+        val ritorno = mutableListOf<Pairing>()
+
+        var index = 0
+        while (index + 1 < clubs.size) {
+            val a = clubs[index]
+            val b = clubs[index + 1]
+            val tieId = "${competition.id.value}-r$roundNumber-${index / 2}"
+            andata += Pairing(a, b, tieId)
+            // La finale resta sempre in gara secca, anche in un torneo a doppia gara.
+            if (competition.twoLeggedKnockout && !isFinal) {
+                ritorno += Pairing(b, a, tieId, isSecondLeg = true)
             }
+            index += 2
         }
 
-        return Round(competition.id, roundNumber, label, pairings)
+        if (andata.isEmpty()) return emptyList()
+
+        val turni = mutableListOf(Round(competition.id, roundNumber, label, andata))
+        if (ritorno.isNotEmpty()) {
+            turni += Round(competition.id, roundNumber + 1, "$label · ritorno", ritorno)
+        }
+        return turni
     }
 
     /** "Ottavi", "Quarti", "Semifinale", "Finale": dal numero di squadre rimaste. */

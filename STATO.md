@@ -330,6 +330,94 @@ gradlew :android:assembleDebug
 | 49 | **Le AI si muovono davvero** | Comprano a listino, contestano gli affari troppo buoni, offrono crediti per i tuoi giocatori e propongono in prestito i loro giovani |
 | 50 | **La finestra dell'intervallo** | Il tick ferma la partita al 45', apre i minuti dei cambi e poi gioca il secondo tempo con la formazione aggiornata |
 | 51 | **Lo strumento dell'admin** | Assegna, toglie e corregge i crediti di qualsiasi club. Senza registro pubblico: scelta del proprietario, e per questo le operazioni possibili sono tre e strette |
+| 52 | **Le coppe camminano** | `CompetitionProgress` in `core`: turno finito, vincitori, turno nuovo tre giorni dopo. Vale per il tabellone, per la fase finale dei gironi e per gli spareggi |
+| 53 | **Il giocatore unico resta tuo** | Chiusi i due buchi da cui se ne andava davvero: `start_auction` e `propose_trade`. E i pulsanti che lo offrivano non ci sono più |
+| 54 | **Il listino si vede e si scrive** | I propri in vendita compaiono fra gli altri, il «ritira» chiude la scheda, e il prezzo si digita col consigliato indicato |
+| 55 | **Le AI comprano davvero** | Il gradimento non passa più dalla curva dei prezzi, e il prezzo è un criterio separato dal gusto: un'AI compra al listino e non lascia passare un affare |
+| 56 | **Amichevoli accettabili** | Accettare non è più la stessa regola con cui si chiede. E il conto delle giornate, che era sbagliato nei due sensi |
+| 57 | **Divisioni nell'elenco, e cancellare** | I partecipanti raggruppati per serie, e un campionato si cancella anche a stagione cominciata, con la conferma che dice cosa si perde |
+| 58 | **La partita in tempo reale** | Novanta minuti veri: il minuto lo decide l'orologio, non un contatore. `MatchClock` in `core`, e il primo tempo si guarda mentre si gioca |
+| 59 | **Due tick e venti minuti di pausa** | La ripresa si conta dal fischio d'inizio. Finché il secondo tempo non è scritto il minuto resta al 45', e lo schermo lo dice |
+| 60 | **Due ore fra due partite** | Una regola sola in `core`, applicata dal calendario, dalle amichevoli, dall'AI e dal database. Toglie di mezzo le tre ore fisse dentro l'SQL |
+| 61 | **Il recupero a ore vere** | Sette punti l'ora invece di 34 per giornata: la giornata valeva sei o dodici ore a seconda di quante fasce aveva la lega |
+| 62 | **Il campo che si guarda** | La palla fra le nove zone, l'alone sulle occasioni, l'onda del gol, la barra dell'inerzia. Decorativo: `MatchEvent.zone` c'era dal primo giorno |
+
+### La partita in tempo reale, 2026-08-29
+
+Decisa e fatta nella stessa sessione. Vale la pena scrivere le tre cose che non erano ovvie.
+
+**Il minuto e' una funzione dell'ora, non un contatore.** E' l'unica forma che regge in
+multiplayer: due telefoni aperti nello stesso istante devono vedere lo stesso minuto, o
+«hai visto che gol al 78'?» non vuol dire niente. Contandolo in locale, chi apre l'app piu'
+tardi vedrebbe una partita piu' indietro. `MatchClock` sta in `core` con dieci prove.
+
+**Il cronometro non puo' correre sopra un campo di cui non si sa niente.** Fra la fine
+dell'intervallo e il momento in cui il tick gioca il secondo tempo passano fino a cinque
+minuti. In quei minuti l'orologio direbbe «61'» di una partita conosciuta fino al 45': il
+minuto resta fermo e lo schermo dice che si sta aspettando la ripresa. E' la differenza fra
+un'attesa e un guasto.
+
+**Non serviva un cron nuovo.** La misura dei 20-40 minuti che sta piu' su in questo
+documento e' **precedente** alla sveglia via Supabase, ed e' rimasta a dare l'impressione di
+un problema aperto: `pg_cron` chiama `sveglia_il_tick()` ogni cinque minuti e quello fa
+`workflow_dispatch` su GitHub. La ripresa parte entro cinque minuti dal dovuto, a costo
+zero.
+
+**E una contraddizione che il tempo reale ha reso visibile.** `propose_friendly` teneva tre
+ore fisse dentro l'SQL per non sovrapporre due partite; il risolutore del calendario non
+guardava l'orario affatto e accettava due partite alle 20:30 e alle 21:00. Due risposte
+diverse alla stessa domanda, in due posti che non si parlavano. Adesso e' una regola sola in
+`core`, applicata in quattro punti.
+
+### I sette difetti del 2026-08-29, e cosa avevano in comune
+
+Segnalati tutti insieme dal proprietario dopo aver guardato l'app. Sei su sette non erano
+regole sbagliate: erano **regole giuste che nessuno chiamava**, o chiamate con il numero
+sbagliato dentro.
+
+- **La coppa si fermava agli ottavi.** `FixtureGenerator.nextKnockoutRound` era corretto,
+  provato dal primo giorno, e non aveva **nessun chiamante in tutto il repository**. Stessa
+  cosa per `Standings.qualifiers` e per i playoff, che nascevano come semifinali e non
+  arrivavano mai alla finale.
+- **Il giocatore unico si vendeva.** La regola c'era in `core` e in `list_player`, e
+  mancava in `start_auction` e in `propose_trade`. Due strade su quattro aperte: una regola
+  applicata in meta' dei posti non e' una regola.
+- **«Ritira» non faceva niente.** Il server ritirava davvero. La scheda restava aperta con
+  la stessa scritta perche' `ritiraDalListino` era **l'unica** azione di mercato che non
+  faceva `selected = null`; ogni altra lo faceva.
+- **I propri in vendita sparivano.** Un filtro nato per non mostrare «Compra» sui propri
+  toglieva anche il vederli.
+- **Nessuno comprava niente.** Il gradimento di un'AI passava per `Valuation.overallScore`,
+  che ha esponente 7,5 perche' descrive **quanto costa** un giocatore, non quanto lo si
+  vuole: un settantasette valeva 0,068 su 1. Quel numero moltiplicava il tetto di spesa,
+  che finiva cinque volte sotto il prezzo consigliato dall'app a chi vende.
+- **Ogni amichevole veniva rifiutata.** `answerFriendly` era `wantsFriendly`, e una delle
+  sue condizioni — due giornate libere davanti — e' falsa **sempre** in una lega con un
+  campionato in corso.
+- **Le divisioni non comparivano dove si sceglie.** Unico difetto di vera assenza: il dato
+  c'era, la schermata non lo chiedeva.
+
+Vale la pena tenere il metodo: nessuno di questi sarebbe uscito da un test, perche' i test
+provano il codice che qualcuno chiama. Sono usciti perche' **qualcuno ha guardato l'app**.
+
+### Due difetti trovati dentro le prove, mentre si correggeva
+
+Tutte e due nascondevano il resto, ed erano li' da prima.
+
+**`MarketRhythmTest` non simulava il listino.** Simulava solo le aste — e' stato scritto
+prima del 2026-08-24, quando il listino non c'era. `AiTurn` proponeva
+`COMPRA_A_LISTINO` come prima mossa e il `when` la buttava via con `else -> false`: la
+prova misurava una lega in cui si compra solo all'asta e vince sempre il piu' spregiudicato,
+e infatti il club con l'aggressivita' piu' bassa restava a tredici giocatori **con i
+crediti piu' alti di tutti in mano**. Adesso il listino c'e', e le tre asserzioni sul numero
+di aste girano con `conListino = false`, cioe' nella lega che descrivono davvero — quella in
+cui `market.instantBuyEnabled` e' spento, che il gioco sa ancora fare.
+
+**E calcolava il tetto sui crediti pieni.** Il commento diceva di modellare
+`committed_credits`, e lo faceva solo per il confronto finale: `ceilingFor` riceveva un club
+con la cassa intera e restituiva un tetto che quel club non poteva permettersi. Non si
+vedeva perche' i tetti erano minuscoli — di nuovo la curva dei prezzi — quindi la
+differenza non cambiava nessuna decisione.
 
 ### La riprogettazione del 2026-08-23
 
@@ -556,6 +644,34 @@ Su un progetto Supabase vuoto, `schema.sql` costruisce tutto da zero.
 **Quello che il file non fa** è aggiungere colonne a tabelle che esistono già con meno
 colonne: `create table if not exists` su una tabella esistente non fa niente. Chi arriva
 da uno schema più vecchio del `0031` deve svuotare e ripartire.
+
+#### Cosa è cambiato nello schema il 2026-08-29
+
+**Va rieseguito.** Cinque funzioni cambiate:
+
+- `start_auction` e `propose_trade` rifiutano il giocatore custom;
+- `delete_competition` non chiede piu' che non si sia giocato;
+- `propose_friendly` e `respond_deal` leggono le ore di distanza dalla configurazione della
+  lega invece delle tre scritte a mano, e la distanza si **ricontrolla alla risposta**: fra
+  la proposta e l'accettazione l'admin puo' aver scritto una giornata di campionato.
+
+E `sveglia_il_tick()` tiene il mondo sveglio fino alle 22:59 invece che alle 21:59.
+
+Tre colonne nuove: `competitions.finished_at` e `competitions.winner_club_id`, che dicono al
+server quando **smettere** di cercare il turno successivo di una coppa, e
+`tick_state.last_stamina_at`, il punto da cui contare le ore di recupero.
+
+Le colonne nuove hanno anche un `alter table ... add column if not exists` in coda alle
+tabelle, ed e' una cosa che mancava al file: `create table if not exists` non tocca una
+tabella che c'e' gia', quindi su un database in cui la lega sta girando una colonna aggiunta
+dentro la `create table` **non sarebbe mai comparsa**. Il file sarebbe restato rieseguibile
+e non avrebbe fatto niente, che e' il modo piu' silenzioso di rompere un aggiornamento.
+
+Nessuna delle tre entra in una lettura condivisa dell'app, quindi la trappola di PostgREST
+non scatta: il tick le legge via JDBC. L'unica lettura nuova dell'app — `first_half` e
+`resume_at` sulla partita — chiede colonne che esistono dalla migrazione `0029`, ed e'
+isolata nella query della singola partita: al peggio fallisce li' e la partita si vede solo
+a fine gara, come prima.
 
 #### Cosa è cambiato nello schema il 2026-08-25
 

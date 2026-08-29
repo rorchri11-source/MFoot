@@ -845,6 +845,7 @@ class AppViewModel : ViewModel() {
                     leagueId = leagueId,
                     clubs = dentro.lega.clubs,
                     existing = (esistenti as? ApiResult.Ok)?.value ?: emptyList(),
+                    divisioni = dentro.lega.league.config.divisions,
                     errore = (esistenti as? ApiResult.Error)?.message,
                 ),
             )
@@ -982,14 +983,18 @@ class AppViewModel : ViewModel() {
     // ------------------------------------------------------------------------- partita
 
     /**
-     * Apre una partita gia' giocata e la fa ripartire dal primo minuto.
+     * Apre una partita: in diretta se si sta giocando adesso, in differita se e' finita.
      *
-     * ## Perche' non si riproduce in tempo reale
+     * ## Le due modalita'
      *
-     * Perche' novanta minuti sono novanta minuti. La partita si e' gia' giocata mentre il
-     * telefono era spento: quello che si vuole rivedere e' **come e' andata**, e sei
-     * minuti di gioco al secondo la raccontano in un quarto d'ora senza saltare niente.
-     * Chi ha fretta preme "salta alla fine" e legge le pagelle.
+     * Dal 2026-08-29 una partita dura **novanta minuti veri**. Mentre si gioca, il minuto
+     * lo decide l'orologio ([MatchClock]) e non un contatore locale: e' l'unico modo perche'
+     * due telefoni aperti nello stesso istante vedano lo stesso minuto, e perche' chi arriva
+     * al 63' veda il 63' invece di ricominciare da capo.
+     *
+     * Finita, torna la riproduzione accelerata di sempre — sei minuti di gioco al secondo,
+     * con pausa e salto alla fine. Quello che si rivede e' *come e' andata*, e novanta
+     * minuti per raccontarlo sarebbero novanta minuti.
      */
     fun apriPartita(fixtureId: Long, homeName: String, awayName: String) {
         viewModelScope.launch {
@@ -1008,24 +1013,104 @@ class AppViewModel : ViewModel() {
                 )
 
                 is ApiResult.Ok -> {
-                    val conPagelle = esito.value.copy(ratings = MatchRepository.ratings(fixtureId))
-                    _state.value = AppState.Partita(
-                        MatchState(
-                            partita = conPagelle,
-                            homeName = homeName,
-                            awayName = awayName,
-                            caricamento = false,
-                            inCorso = true,
-                        ),
+                    // Le pagelle solo a partita finita: a meta' gara `appearances` non
+                    // esiste ancora, e una lettura in piu' per una tabella vuota e' una
+                    // richiesta buttata su ognuno dei novanta minuti.
+                    val conPagelle =
+                        if (esito.value.completa) {
+                            esito.value.copy(ratings = MatchRepository.ratings(fixtureId))
+                        } else {
+                            esito.value
+                        }
+
+                    val stato = MatchState.apri(
+                        partita = conPagelle,
+                        homeName = homeName,
+                        awayName = awayName,
+                        pausaMinuti = pausaIntervallo(),
                     )
-                    riproduci()
+                    _state.value = AppState.Partita(stato)
+                    if (stato.diretta) segui(fixtureId) else riproduci()
                 }
             }
         }
     }
 
+    /** La finestra dell'intervallo della lega, o quella di serie se la lega non c'e' piu'. */
+    private fun pausaIntervallo(): Int =
+        ultimaLega?.league?.config?.calendar?.halfTimeWindowMinutes
+            ?: dev.mfoot.core.config.CalendarConfig().halfTimeWindowMinutes
+
     /**
-     * L'orologio della riproduzione.
+     * La diretta: il minuto lo chiede all'orologio, una volta al secondo.
+     *
+     * ## Perche' non basta contare
+     *
+     * Perche' un contatore locale va fuori sincrono con tutto: con l'altro telefono, con
+     * l'orologio della lega, e con se stesso appena Android sospende l'app per trenta
+     * secondi. Ricalcolare da `now` costa niente e non puo' derivare.
+     *
+     * ## L'unica richiesta al server durante la partita
+     *
+     * Quando l'orologio entra nel secondo tempo e la timeline in mano finisce al 45',
+     * bisogna richiederla: il server l'ha scritta nel frattempo. E' **una** richiesta per
+     * partita, non un polling — finche' il secondo tempo non serve, non si chiede niente, e
+     * appena arriva si smette di chiedere.
+     *
+     * Se il tick e' in ritardo la richiesta torna con lo stesso primo tempo: si riprova al
+     * giro dopo, e intanto lo schermo dice che si sta aspettando la ripresa invece di
+     * mostrare un campo fermo.
+     */
+    private fun segui(fixtureId: Long) {
+        viewModelScope.launch {
+            var ultimoTentativo = 0L
+
+            while (true) {
+                val schermata = _state.value as? AppState.Partita ?: return@launch
+                val corrente = schermata.partita
+                val gara = corrente.partita ?: return@launch
+                val kickoff = gara.kickoff ?: return@launch
+
+                val orologio = dev.mfoot.core.match.MatchClock.stato(
+                    kickoff = kickoff,
+                    now = java.time.Instant.now(),
+                    riprendeAlle = gara.riprendeAlle,
+                    pausaMinuti = pausaIntervallo(),
+                    secondoTempoPronto = gara.completa,
+                )
+
+                _state.value = AppState.Partita(
+                    corrente.copy(
+                        minuto = orologio.minuto,
+                        fase = orologio.fase,
+                        attesaRipresa = orologio.attesaRipresa,
+                    ),
+                )
+
+                // Il secondo tempo si chiede una volta ogni mezzo minuto, e solo quando
+                // serve davvero: l'orologio e' oltre l'intervallo e in mano c'e' solo il
+                // primo tempo.
+                val adesso = System.currentTimeMillis()
+                if (!gara.completa && orologio.attesaRipresa && adesso - ultimoTentativo > 30_000) {
+                    ultimoTentativo = adesso
+                    (MatchRepository.load(fixtureId) as? ApiResult.Ok)?.value?.let { fresca ->
+                        if (fresca.completa) {
+                            val conPagelle =
+                                fresca.copy(ratings = MatchRepository.ratings(fixtureId))
+                            val ora = (_state.value as? AppState.Partita)?.partita ?: return@let
+                            _state.value = AppState.Partita(ora.copy(partita = conPagelle))
+                        }
+                    }
+                }
+
+                if (orologio.fase == dev.mfoot.core.match.MatchClock.Fase.FINITA) return@launch
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+    }
+
+    /**
+     * La differita: sei minuti di gioco al secondo.
      *
      * Un ciclo solo, che si ferma da solo quando la partita finisce o quando si esce dalla
      * schermata. Il controllo su `AppState.Partita` a ogni giro non e' pignoleria: senza,
@@ -1046,8 +1131,10 @@ class AppViewModel : ViewModel() {
         }
     }
 
+    /** In diretta non si mette in pausa: non si mette in pausa una partita. */
     fun pausaPartita() {
         val corrente = (_state.value as? AppState.Partita)?.partita ?: return
+        if (corrente.diretta) return
         val ripresa = !corrente.inCorso
         _state.value = AppState.Partita(corrente.copy(inCorso = ripresa))
         if (ripresa) riproduci()
@@ -1055,6 +1142,7 @@ class AppViewModel : ViewModel() {
 
     fun saltaAllaFine() {
         val corrente = (_state.value as? AppState.Partita)?.partita ?: return
+        if (corrente.diretta) return
         _state.value = AppState.Partita(corrente.copy(minuto = 90, inCorso = false))
     }
 
@@ -1382,10 +1470,38 @@ class AppViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Toglie dal listino un proprio giocatore.
+     *
+     * ## Perche' chiude la scheda, e perche' e' l'unico motivo per cui sembrava rotta
+     *
+     * Perche' [BrowseState.selected] e' una **copia** della riga, scattata quando la si e'
+     * aperta: rileggere il mercato aggiorna l'elenco sotto, non il foglio sopra. Ogni
+     * altra azione di mercato — comprare, mettere in vendita, svincolare, l'asta — chiude
+     * la scheda con `selected = null` e ricarica; questa era l'unica che non lo faceva.
+     *
+     * Il ritiro andava a buon fine da mesi, e il pulsante restava «In vendita a 300 ·
+     * ritira» com'era. Da fuori e' indistinguibile da un pulsante che non fa niente, ed e'
+     * esattamente cosi' che e' stato segnalato.
+     *
+     * ## E l'errore non e' piu' muto
+     *
+     * L'esito della chiamata veniva buttato via: un rifiuto del server dava lo stesso
+     * avviso di un ritiro riuscito, cioe' «non e' piu' in vendita» su un giocatore che lo
+     * era ancora.
+     */
     fun ritiraDalListino(row: PlayerRow) {
         viewModelScope.launch {
-            MarketRepository.unlist(row.player.id.value)
-            ricaricaMercato("${row.player.fullName} non è più in vendita.")
+            when (val esito = MarketRepository.unlist(row.player.id.value)) {
+                is ApiResult.Error ->
+                    _state.value = statoCorrente()?.copy(errore = esito.message) ?: return@launch
+
+                is ApiResult.Ok -> {
+                    val corrente = statoCorrente() ?: return@launch
+                    _state.value = corrente.copy(browse = corrente.browse.copy(selected = null))
+                    ricaricaMercato("${row.player.fullName} non è più in vendita.")
+                }
+            }
         }
     }
 

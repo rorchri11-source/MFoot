@@ -468,6 +468,12 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                              */
                             canAuction = current.lega.myClub != null &&
                                 (row.isFreeAgent || row.club?.isMine == true) &&
+                                // Il giocatore costruito dal proprietario non passa
+                                // dall'asta. Era l'ultima delle tre strade per cederlo
+                                // ancora aperta: `list_player` lo rifiutava e
+                                // `release_player` pure, `start_auction` no — quindi si
+                                // vendeva davvero, mettendolo all'asta.
+                                !row.player.isCustom &&
                                 current.auctions.none {
                                     it.auction.targetType == "player" &&
                                         it.auction.targetId == row.player.id.value
@@ -489,6 +495,15 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                             creditiDisponibili = current.lega.myClub?.available ?: 0,
                             rilancioMinimo = current.lega.league.config.market.minimumRaise,
                             prezzoSvincolato = prezzoSvincolato,
+                            // Il consigliato lo calcola `core`, con la stessa curva che
+                            // decide il prezzo degli svincolati. `row.value` sarebbe stato
+                            // vicino ma non uguale: e' il valore **stimato**, che porta
+                            // dentro l'incertezza dello scouting — e sul proprio giocatore
+                            // non c'e' niente da stimare.
+                            prezzoConsigliato = dev.mfoot.core.market.ListingRules.suggestedPrice(
+                                row.player,
+                                current.lega.league.config,
+                            ),
                             onYouth = { viewModel.spostaSquadra(row) },
                             onAuction = { viewModel.mettiAllAsta(row) },
                             onCompra = { viewModel.compra(row) },

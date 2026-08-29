@@ -13,6 +13,14 @@ data class MatchMoment(
     val homeGoals: Int,
     val awayGoals: Int,
     val playerId: Long?,
+    /**
+     * In quale delle nove zone si trova la palla, dal punto di vista di chi attacca.
+     *
+     * `DIF_SX`, `MID_C`, `ATT_DX`… E' quello che permette di **disegnare** l'azione invece
+     * di elencarla: il motore ragiona su quella griglia dal primo giorno e la scrive nella
+     * timeline, e per mesi non l'ha letta nessuno.
+     */
+    val zone: String? = null,
 ) {
     val isGoal: Boolean get() = type == "GOL" || type == "RIGORE_SEGNATO"
 
@@ -39,6 +47,16 @@ data class PlayedMatch(
     val awayClubId: Long,
     val matchDay: Int,
     val kickoff: Instant?,
+    /** Quando riparte dopo l'intervallo. Null se il primo tempo non e' ancora finito. */
+    val riprendeAlle: Instant? = null,
+    /**
+     * Falso quando si sta guardando **solo il primo tempo**.
+     *
+     * E' la differenza fra una partita e un parziale, e va detta: con i soli quarantacinque
+     * minuti il punteggio non e' il risultato, le pagelle non ci sono, e il secondo tempo
+     * arrivera' quando il server lo avra' giocato.
+     */
+    val completa: Boolean = true,
     val homeGoals: Int,
     val awayGoals: Int,
     val homePossession: Double,
@@ -123,8 +141,29 @@ object MatchRepository {
         }
     }
 
+    /**
+     * La partita, finita o **in corso**.
+     *
+     * ## Le due sorgenti, e perche' sono due
+     *
+     * `match_results` nasce solo al fischio finale, ed e' giusto: e' la riga che significa
+     * «giocata», e scriverla a meta' vorrebbe dire una partita che entra in classifica
+     * all'intervallo. Ma dal 2026-08-29 la partita si guarda **mentre si gioca**, e per
+     * quarantacinque minuti reali quella riga non esiste ancora.
+     *
+     * Quindi: se c'e' il risultato si legge quello; se no si legge il primo tempo dentro
+     * `fixtures.first_half`, che il server scrive al 45'. Prima, in tutto quel tempo,
+     * l'unica risposta possibile era «non e' ancora stata giocata» — su una partita che si
+     * stava giocando in quel momento.
+     *
+     * `first_half` viene chiesto **in questa stessa query** e non a parte: e' una colonna
+     * che esiste dalla migrazione `0029`, quindi e' gia' insieme a `resume_at` fra quelle
+     * che un database aggiornato ha di sicuro. Se manca, questa lettura fallisce da sola e
+     * si vede la partita solo a fine gara, che e' il comportamento di prima.
+     */
     suspend fun load(fixtureId: Long): ApiResult<PlayedMatch> {
         val path = "/rest/v1/fixtures?select=id,home_club_id,away_club_id,match_day,kickoff," +
+            "resume_at,first_half," +
             "match_results(home_goals,away_goals,timeline,home_possession)" +
             "&id=eq.$fixtureId&limit=1"
 
@@ -133,11 +172,16 @@ object MatchRepository {
             if (!row.exists) return@then ApiResult.Error("Partita non trovata.")
 
             val result = row["match_results"].let { if (it.isArray) it[0] else it }
-            if (!result.exists) {
-                return@then ApiResult.Error("Questa partita non è ancora stata giocata.")
-            }
+            val primoTempo = row["first_half"]["live"]
 
-            val timeline = result["timeline"]
+            // Il finale vince sul parziale: appena il secondo tempo e' scritto, quello che
+            // conta e' la partita intera.
+            val dati = when {
+                result.exists -> result
+                primoTempo.exists -> primoTempo
+                else -> return@then ApiResult.Error("Questa partita non è ancora cominciata.")
+            }
+            val timeline = if (result.exists) dati["timeline"] else dati
 
             ApiResult.Ok(
                 PlayedMatch(
@@ -146,9 +190,11 @@ object MatchRepository {
                     awayClubId = row["away_club_id"].long(0),
                     matchDay = row["match_day"].int(0),
                     kickoff = row["kickoff"].strOrNull()?.let(Istanti::parse),
-                    homeGoals = result["home_goals"].int(0),
-                    awayGoals = result["away_goals"].int(0),
-                    homePossession = result["home_possession"].double(0.5),
+                    riprendeAlle = row["resume_at"].strOrNull()?.let(Istanti::parse),
+                    completa = result.exists,
+                    homeGoals = dati["home_goals"].int(dati["homeGoals"].int(0)),
+                    awayGoals = dati["away_goals"].int(dati["awayGoals"].int(0)),
+                    homePossession = dati["home_possession"].double(dati["homePossession"].double(0.5)),
                     moments = timeline["events"].asList().map { e ->
                         MatchMoment(
                             minute = e["minute"].int(0),
@@ -159,6 +205,10 @@ object MatchRepository {
                             homeGoals = e["homeGoals"].int(0),
                             awayGoals = e["awayGoals"].int(0),
                             playerId = e["player"].long(0).takeIf { it > 0 },
+                            // La zona in cui sta la palla: e' cio' che permette di
+                            // disegnare l'azione invece di elencarla. Il server la scrive
+                            // dal primo giorno e nessuno la leggeva.
+                            zone = e["zone"].strOrNull(),
                         )
                     },
                     ratings = emptyList(),

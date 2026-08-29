@@ -296,13 +296,74 @@ object AiInitiative {
         return player.overall > secondo
     }
 
-    /** Accetta un'amichevole? Le stesse condizioni con cui la chiederebbe. */
+    /**
+     * Perche' questo club rifiuta l'amichevole, o null se accetta.
+     *
+     * ## Chiedere e' una scelta, accettare e' cortesia
+     *
+     * Erano la stessa identica regola — `answerFriendly` chiamava [wantsFriendly] — e il
+     * risultato era che **quasi ogni amichevole veniva rifiutata**. Tre condizioni pensate
+     * per decidere se *proporre* una partita diventavano, girate, tre motivi per dire di no
+     * a un amico:
+     *
+     * - **la partita vicina.** [wantsFriendly] vuole almeno due giornate libere davanti.
+     *   Con un campionato in corso si gioca praticamente ogni giornata, quindi quella
+     *   condizione era falsa sempre: finche' una lega ha un calendario, nessuna amichevole
+     *   poteva essere accettata da nessuno. Era il difetto principale.
+     * - **la rosa sotto il minimo.** Un club del computer ci mette giorni ad arrivare a
+     *   diciotto uomini, e per tutto quel tempo diceva di no.
+     * - **il carattere.** `marketAggression > 0.45` esclude un quarto dei club **per
+     *   sempre**: quella squadra rifiuta oggi e rifiutera' fra tre mesi, sempre con la
+     *   stessa frase. Da fuori non e' un carattere, e' un guasto.
+     *
+     * Restano i due motivi che un amico capirebbe: le gambe a terra e una partita vera
+     * troppo vicina. E vengono **detti**, invece di uscire tutti come «abbiamo le gambe
+     * pesanti» — che su un club fresco a due giorni dalla partita e' una bugia.
+     *
+     * @param matchDaysUntilNextMatch quante giornate mancano alla prossima partita vera.
+     */
+    fun friendlyRefusal(
+        state: AiState,
+        squad: List<Player>,
+        config: LeagueConfig,
+        matchDaysUntilNextMatch: Int,
+    ): String? = when {
+        !config.rules.friendliesEnabled -> "In questa lega non si giocano amichevoli."
+
+        // Non c'e' proprio una squadra da mandare in campo. Undici piu' il portiere e'
+        // il minimo per giocare, e non ha niente a che vedere col minimo di rosa della
+        // lega: quello e' un obbligo di regolamento, questo e' un fatto fisico.
+        squad.size < IN_CAMPO -> "Non abbiamo abbastanza giocatori per scendere in campo."
+
+        // Solo se e' **oggi o domani**: e' il caso in cui l'amichevole rovina la partita
+        // vera. Due giornate di distanza bastano per recuperare.
+        matchDaysUntilNextMatch in 0..0 -> "Giochiamo una partita vera oggi."
+
+        squad.map { it.stamina }.average() < STAMINA_PER_AMICHEVOLE ->
+            "Abbiamo le gambe pesanti: rimandiamo."
+
+        else -> null
+    }
+
+    /** Accetta un'amichevole? */
     fun answerFriendly(
         state: AiState,
         squad: List<Player>,
         config: LeagueConfig,
         matchDaysUntilNextMatch: Int,
-    ): Boolean = wantsFriendly(state, squad, config, matchDaysUntilNextMatch)
+    ): Boolean = friendlyRefusal(state, squad, config, matchDaysUntilNextMatch) == null
+
+    /** Undici piu' il portiere: sotto questo numero non si scende in campo. */
+    private const val IN_CAMPO = 11
+
+    /**
+     * La stamina media sotto cui un'amichevole fa male invece che bene.
+     *
+     * Piu' bassa dei 70 con cui un club **chiede** un'amichevole, e la differenza e'
+     * voluta: cercarsi una partita in piu' con la rosa a mezzo servizio e' una scelta
+     * discutibile, rifiutarla a un amico e' un'altra cosa.
+     */
+    private const val STAMINA_PER_AMICHEVOLE = 55.0
 
     /**
      * Cosa fare dei contratti in scadenza.

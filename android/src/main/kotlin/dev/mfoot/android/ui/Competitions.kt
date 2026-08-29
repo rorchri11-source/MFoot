@@ -25,11 +25,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.CompetitionDraft
 import dev.mfoot.android.app.CompetitionsState
+import dev.mfoot.android.data.ClubInfo
+import dev.mfoot.android.data.CompetitionInfo
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
 import dev.mfoot.android.ui.theme.MFootSpacing
@@ -99,6 +103,19 @@ fun CompetitionsScreen(
 
 @Composable
 private fun Existing(state: CompetitionsState, onNew: () -> Unit, onDelete: (Long) -> Unit) {
+    // La competizione per cui si sta chiedendo conferma. Stato locale: nasce e muore
+    // dentro questa schermata, e portarlo nel ViewModel vorrebbe dire ricordarsi di
+    // azzerarlo da ogni strada che porta via di qui.
+    var daCancellare by remember { mutableStateOf<CompetitionInfo?>(null) }
+
+    daCancellare?.let { c ->
+        ConfermaCancellazione(
+            competizione = c,
+            onConferma = { daCancellare = null; onDelete(c.id) },
+            onClose = { daCancellare = null },
+        )
+    }
+
     Text(
         "Campionato, coppa, gironi: le decidi tu, con i partecipanti e le date che vuoi. " +
             "Puoi averne più di una insieme.",
@@ -139,15 +156,21 @@ private fun Existing(state: CompetitionsState, onNew: () -> Unit, onDelete: (Lon
                                 color = MFootColors.ink2,
                             )
                         }
-                        // Cancellare si puo' solo finche' non si e' giocato: dopo, i
-                        // risultati sono storia, e toglierli falserebbe la crescita dei
-                        // giocatori che quelle partite le hanno gia' giocate.
+                        // Si cancella anche a stagione cominciata, ma non con un tocco
+                        // solo: se ci sono partite giocate si passa da una conferma che
+                        // dice quante se ne vanno. La crescita e i premi gia' incassati
+                        // restano — non si possono disfare onestamente — e chi preme lo
+                        // deve sapere prima, non scoprirlo dopo.
                         if (c.canDelete) {
                             Text(
                                 "cancella",
                                 style = MFootType.chip,
                                 color = MFootColors.gamble,
-                                modifier = Modifier.clickable { onDelete(c.id) }.padding(8.dp),
+                                modifier = Modifier
+                                    .clickable {
+                                        if (c.played == 0) onDelete(c.id) else daCancellare = c
+                                    }
+                                    .padding(8.dp),
                             )
                         }
                     }
@@ -172,6 +195,81 @@ private fun Existing(state: CompetitionsState, onNew: () -> Unit, onDelete: (Lon
 
     Spacer(Modifier.height(16.dp))
     PrimaryButton("Crea una competizione", onNew)
+}
+
+/**
+ * La conferma prima di cancellare una competizione **gia' giocata**.
+ *
+ * ## Perche' esiste, e perche' elenca invece di avvertire
+ *
+ * Perche' quello che sparisce e quello che resta non e' deducibile. Se ne vanno le
+ * partite, i risultati e le presenze; **restano** i crediti dei premi gia' accreditati, la
+ * crescita dei giocatori e il morale — quelle cose sono gia' successe, e disfarle
+ * richiederebbe di conoscere lo stato del mondo prima di ogni partita, che nessuno
+ * conserva.
+ *
+ * Un avviso generico («sei sicuro?») non aggiunge niente: chi ha toccato «cancella» e'
+ * sicuro. Il numero delle partite che si portano via, invece, e' l'unica informazione che
+ * puo' fermare la mano al momento giusto.
+ */
+@Composable
+private fun ConfermaCancellazione(
+    competizione: CompetitionInfo,
+    onConferma: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.66f))
+            .clickable(onClick = onClose),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(MFootColors.coreTop, MFootShapes.shell)
+                // Un tocco dentro al foglio non lo chiude: il click del fondo arriverebbe
+                // comunque, e su una conferma di cancellazione e' il modo piu' rapido di
+                // farla sparire mentre la si sta leggendo.
+                .clickable(enabled = false) {}
+                .padding(MFootSpacing.gutter, 20.dp, MFootSpacing.gutter, 26.dp),
+        ) {
+            Text("Cancellare ${competizione.name}?", style = MFootType.playerName, color = MFootColors.ink)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Si portano via ${competizione.played} partite già giocate, con i loro " +
+                    "risultati, la classifica e le presenze.\n\n" +
+                    "Restano dove sono i premi già incassati e la crescita dei giocatori: " +
+                    "sono cose successe, e non si possono disfare.",
+                style = MFootType.chip,
+                color = MFootColors.ink2,
+            )
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "Cancella",
+                style = MFootType.value,
+                color = MFootColors.onAlarm,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MFootColors.alarm, MFootShapes.pill)
+                    .clickable(onClick = onConferma)
+                    .padding(vertical = 13.dp),
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Lascia perdere",
+                style = MFootType.value,
+                color = MFootColors.ink3,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClose)
+                    .padding(vertical = 10.dp),
+            )
+        }
+    }
 }
 
 @Composable
@@ -204,75 +302,7 @@ private fun Builder(
         ) { onEdit { it.copy(doubleRound = !it.doubleRound) } }
     }
 
-    Spacer(Modifier.height(28.dp))
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Label("Partecipanti", Modifier.weight(1f))
-        Text(
-            if (draft.participants.size == state.clubs.size) "nessuno" else "tutti",
-            style = MFootType.chip,
-            color = MFootColors.elite,
-            modifier = Modifier
-                .clickable {
-                    onEdit {
-                        it.copy(
-                            participants = if (it.participants.size == state.clubs.size) {
-                                emptySet()
-                            } else {
-                                state.clubs.map { c -> c.id }.toSet()
-                            },
-                        )
-                    }
-                }
-                .padding(6.dp),
-        )
-    }
-    Spacer(Modifier.height(8.dp))
-    state.clubs.forEach { club ->
-        val iscritto = club.id in draft.participants
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clickable {
-                    onEdit {
-                        it.copy(
-                            participants = if (iscritto) it.participants - club.id
-                            else it.participants + club.id,
-                        )
-                    }
-                }
-                .padding(vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier
-                    .width(18.dp)
-                    .height(18.dp)
-                    .background(
-                        if (iscritto) MFootColors.elite else MFootColors.core,
-                        MFootShapes.field,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (iscritto) {
-                    Text("✓", style = MFootType.chip, color = MFootColors.bg)
-                }
-            }
-            Spacer(Modifier.width(12.dp))
-            Text(
-                club.name,
-                style = MFootType.rowTitle,
-                color = if (iscritto) MFootColors.ink else MFootColors.ink3,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (club.isAi) {
-                Text("AI", style = MFootType.label, color = MFootColors.ink3)
-            }
-        }
-        Hairline()
-    }
-
+    Partecipanti(state, draft, onEdit)
     Spacer(Modifier.height(28.dp))
     Label("Quando si gioca")
     Spacer(Modifier.height(10.dp))
@@ -363,6 +393,155 @@ private fun Builder(
         enabled = draft.ready && draft.busy == null && problemi.isEmpty(),
     )
     Spacer(Modifier.height(30.dp))
+}
+
+/**
+ * Chi gioca questa competizione, **raggruppato per divisione**.
+ *
+ * ## Il difetto che chiude
+ *
+ * Era un elenco piatto di nomi. In una lega a piu' divisioni non c'era nessun modo di
+ * sapere in che serie giocasse una squadra proprio mentre si sceglieva chi iscrivere: il
+ * dato esiste da sempre in `clubs.division_level`, lo mostrano la Casa, la rosa e la
+ * schermata Squadre, e qui — dove serve a decidere — non compariva.
+ *
+ * Il risultato erano campionati con dentro squadre di due serie diverse e una classifica
+ * sola, composti senza accorgersene: da fuori le divisioni sembravano non esistere.
+ *
+ * ## Perche' resta un gesto manuale
+ *
+ * Perche' un campionato per divisione e' una scelta, non l'unica possibile: una coppa e un
+ * torneo a gironi devono poter mescolare le serie, ed e' il loro senso. Quello che serviva
+ * non era decidere al posto dell'admin ma **fargli vedere cosa sta componendo** — e il
+ * «tutte» su ogni gruppo rende un campionato di divisione un tocco solo invece di dieci
+ * spunte.
+ *
+ * Con una divisione sola le intestazioni non compaiono: sarebbero una riga che dice
+ * «prima divisione» sopra tutte le squadre che esistono.
+ */
+@Composable
+private fun Partecipanti(
+    state: CompetitionsState,
+    draft: CompetitionDraft,
+    onEdit: ((CompetitionDraft) -> CompetitionDraft) -> Unit,
+) {
+    Spacer(Modifier.height(28.dp))
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Label("Partecipanti · ${draft.participants.size}", Modifier.weight(1f))
+        Text(
+            if (draft.participants.size == state.clubs.size) "nessuno" else "tutti",
+            style = MFootType.chip,
+            color = MFootColors.elite,
+            modifier = Modifier
+                .clickable {
+                    onEdit {
+                        it.copy(
+                            participants = if (it.participants.size == state.clubs.size) {
+                                emptySet()
+                            } else {
+                                state.clubs.map { c -> c.id }.toSet()
+                            },
+                        )
+                    }
+                }
+                .padding(6.dp),
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+
+    val gruppi = state.clubs.groupBy { it.divisionLevel }.toSortedMap()
+    val piuDiUna = gruppi.size > 1
+
+    gruppi.forEach { (livello, club) ->
+        if (piuDiUna) {
+            val dentro = club.count { it.id in draft.participants }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    state.divisionName(livello),
+                    style = MFootType.label,
+                    color = MFootColors.ink2,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "$dentro/${club.size}",
+                    style = MFootType.chip,
+                    color = MFootColors.ink3,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    if (dentro == club.size) "nessuna" else "tutte",
+                    style = MFootType.chip,
+                    color = MFootColors.elite,
+                    modifier = Modifier
+                        .clickable {
+                            val ids = club.map { it.id }.toSet()
+                            onEdit { d ->
+                                d.copy(
+                                    participants = if (dentro == club.size) d.participants - ids
+                                    else d.participants + ids,
+                                )
+                            }
+                        }
+                        .padding(6.dp),
+                )
+            }
+            Hairline()
+        }
+
+        club.forEach { c -> RigaPartecipante(c, draft, onEdit) }
+    }
+}
+
+@Composable
+private fun RigaPartecipante(
+    club: ClubInfo,
+    draft: CompetitionDraft,
+    onEdit: ((CompetitionDraft) -> CompetitionDraft) -> Unit,
+) {
+    val iscritto = club.id in draft.participants
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable {
+                onEdit {
+                    it.copy(
+                        participants = if (iscritto) it.participants - club.id
+                        else it.participants + club.id,
+                    )
+                }
+            }
+            .padding(vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .width(18.dp)
+                .height(18.dp)
+                .background(
+                    if (iscritto) MFootColors.elite else MFootColors.core,
+                    MFootShapes.field,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (iscritto) {
+                Text("✓", style = MFootType.chip, color = MFootColors.bg)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            club.name,
+            style = MFootType.rowTitle,
+            color = if (iscritto) MFootColors.ink else MFootColors.ink3,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (club.isAi) {
+            Text("AI", style = MFootType.label, color = MFootColors.ink3)
+        }
+    }
+    Hairline()
 }
 
 /**

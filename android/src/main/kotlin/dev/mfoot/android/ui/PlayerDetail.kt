@@ -32,6 +32,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.mfoot.core.model.Money
@@ -75,6 +80,16 @@ fun PlayerDetailScreen(
      * stato l'errore che ha reso invisibile tutto il mercato nuovo.
      */
     prezzoSvincolato: Int? = null,
+    /**
+     * Il prezzo che l'app propone quando si mette in vendita.
+     *
+     * Lo calcola `ListingRules.suggestedPrice` in `core` — cioe' il valore di mercato con
+     * la curva vera — e arriva gia' pronto perche' qui dentro la configurazione della lega
+     * non c'e'. E' un **suggerimento**: serve a non far partire da zero chi non sa quanto
+     * valga il suo terzino, e a rendere evidente quando qualcuno vende a un decimo del
+     * valore, che e' il caso in cui gli altri contestano.
+     */
+    prezzoConsigliato: Int = 0,
     onYouth: () -> Unit = {},
     onAuction: () -> Unit = {},
     onCompra: () -> Unit = {},
@@ -164,14 +179,16 @@ fun PlayerDetailScreen(
         }
 
         if (chiedeIlPrezzo) {
+            val consigliato = prezzoConsigliato.takeIf { it > 0 } ?: row.value
             FoglioPrezzo(
                 titolo = "A quanto lo vendi?",
                 spiegazione = "Il prezzo lo decidi tu. Chi lo compra se lo porta via subito, " +
                     "ma per dodici ore chiunque può contestare l'acquisto e aprire un'asta.",
-                iniziale = row.value,
-                passo = 1.coerceAtLeast(row.value / 20),
+                iniziale = consigliato,
+                passo = 1.coerceAtLeast(consigliato / 20),
                 minimo = 1,
                 massimo = Int.MAX_VALUE / 2,
+                consigliato = consigliato,
                 conferma = { "Metti in vendita a $it" },
                 onConferma = { chiedeIlPrezzo = false; onVendi(it) },
                 onClose = { chiedeIlPrezzo = false },
@@ -220,8 +237,22 @@ fun PlayerDetailScreen(
  * Il foglio che chiede un numero: il prezzo di vendita, o il massimo per contestare.
  *
  * Uno solo per tutti e due i casi perche' la domanda e' la stessa — quanti crediti — e la
- * differenza sta nelle parole, non nel meccanismo. Il passo si adatta alla cifra: alzare
- * di uno un prezzo da trecento sarebbe un pomeriggio di tocchi.
+ * differenza sta nelle parole, non nel meccanismo.
+ *
+ * ## Il numero si scrive
+ *
+ * Erano solo un meno e un piu'. Il passo si adattava alla cifra — un ventesimo del valore
+ * — ma restava l'unico modo di arrivare a un numero: per mettere 4.000 partendo da 12.000
+ * servivano quaranta tocchi, e per metterne uno tondo non c'era proprio modo. Il campo si
+ * scrive con la tastiera, e i due tondi restano per gli aggiustamenti, che e' la cosa in
+ * cui sono bravi.
+ *
+ * ## E il consigliato e' scritto, non implicito
+ *
+ * Il valore di partenza **era** gia' il prezzo consigliato, ma non lo diceva: chi lo
+ * vedeva non poteva sapere se fosse una stima del gioco o un numero a caso, e chi lo
+ * cambiava non poteva piu' tornarci. Adesso c'e' scritto quanto vale e lo si rimette con
+ * un tocco.
  */
 @Composable
 private fun FoglioPrezzo(
@@ -234,8 +265,16 @@ private fun FoglioPrezzo(
     conferma: (Int) -> String,
     onConferma: (Int) -> Unit,
     onClose: () -> Unit,
+    consigliato: Int? = null,
 ) {
-    var valore by remember { mutableStateOf(iniziale.coerceIn(minimo, massimo)) }
+    // Il testo e il numero sono due cose diverse, di proposito. Tenere solo il numero
+    // vorrebbe dire che cancellando l'ultima cifra ricompare uno zero sotto le dita, e che
+    // «0500» si riscrive da solo mentre lo si sta battendo.
+    var testo by remember { mutableStateOf(iniziale.coerceIn(minimo, massimo).toString()) }
+    val valore = (testo.toIntOrNull() ?: 0).coerceIn(minimo, massimo)
+    val valido = testo.toIntOrNull()?.let { it in minimo..massimo } == true
+
+    fun imposta(n: Int) { testo = n.coerceIn(minimo, massimo).toString() }
 
     Sipario(onClose) {
         Text(titolo, style = MFootType.playerName, color = MFootColors.ink)
@@ -250,27 +289,57 @@ private fun FoglioPrezzo(
                 .padding(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Tondo("−") { valore = (valore - passo).coerceAtLeast(minimo) }
-            Text(
-                "$valore",
-                style = MFootType.overallLarge,
-                color = MFootColors.ink,
-                textAlign = TextAlign.Center,
+            Tondo("−") { imposta(valore - passo) }
+            BasicTextField(
+                value = testo,
+                // Solo cifre: un campo numerico che accetta lettere e' un campo che
+                // prima o poi manda al server una parola.
+                onValueChange = { nuovo -> testo = nuovo.filter { it.isDigit() }.take(9) },
+                singleLine = true,
+                textStyle = MFootType.overallLarge.copy(
+                    color = if (valido) MFootColors.ink else MFootColors.gamble,
+                    textAlign = TextAlign.Center,
+                ),
+                cursorBrush = SolidColor(MFootColors.elite),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                ),
                 modifier = Modifier.weight(1f),
             )
-            Tondo("+") { valore = (valore + passo).coerceAtMost(massimo) }
+            Tondo("+") { imposta(valore + passo) }
+        }
+
+        if (consigliato != null && consigliato > 0) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                if (valore == consigliato) "È il prezzo consigliato" else "Consigliato: $consigliato",
+                style = MFootType.chip,
+                color = if (valore == consigliato) MFootColors.ink3 else MFootColors.elite,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (valore == consigliato) Modifier
+                        else Modifier.clickable { imposta(consigliato) },
+                    )
+                    .padding(vertical = 4.dp),
+            )
         }
 
         Spacer(Modifier.height(16.dp))
         Text(
-            conferma(valore),
+            if (valido) conferma(valore) else "Scrivi un numero fra $minimo e $massimo",
             style = MFootType.value,
-            color = MFootColors.onAccent,
+            color = if (valido) MFootColors.onAccent else MFootColors.ink3,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MFootColors.elite, MFootShapes.pill)
-                .clickable { onConferma(valore) }
+                .background(if (valido) MFootColors.elite else MFootColors.core, MFootShapes.pill)
+                // Spento invece che "premi e vedi": un campo vuoto non e' uno zero, e
+                // mandare zero al server per farsi rispondere di no e' il modo peggiore
+                // di scoprire che serviva un numero.
+                .then(if (valido) Modifier.clickable { onConferma(valore) } else Modifier)
                 .padding(vertical = 13.dp),
         )
     }
@@ -1113,6 +1182,21 @@ private fun Footer(
                 fondo = MFootColors.raised,
                 inchiostro = MFootColors.ink,
                 onClick = onRitira,
+            )
+
+            // IL GIOCATORE COSTRUITO DAL PROPRIETARIO NON SI VENDE
+            //
+            // La regola c'era gia' in `core` e in `list_player`, e qui il pulsante
+            // compariva lo stesso: si toccava e tornava un errore dal server. E' proprio
+            // il caso che `docs/REGOLE.md` chiama per nome — *un pulsante che si puo'
+            // premere e che da' sempre errore insegna a non fidarsi di nessun pulsante*.
+            //
+            // Al suo posto non resta un buco ma la ragione, perche' senza sembrerebbe una
+            // schermata a cui manca qualcosa.
+            mio && row.player.isCustom -> Spiegazione(
+                "È il tuo giocatore",
+                "Non si vende e non si svincola: l'hai costruito tu. Puoi prestarlo, e " +
+                    "quella strada passa dalle trattative.",
             )
 
             mio -> Azione(

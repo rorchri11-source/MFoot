@@ -133,14 +133,29 @@ class FixtureGeneratorTest {
         assertEquals(16, impegnate.toSet().size)
     }
 
+    /**
+     * L'andata e il ritorno sono **due turni**, non due gare dentro lo stesso.
+     *
+     * Nello stesso `Round` finivano nella stessa fascia oraria — il risolutore colloca un
+     * turno intero in una fascia sola — cioe' la stessa squadra in casa e in trasferta
+     * allo stesso istante.
+     */
     @Test
     fun `l'andata e ritorno raddoppia le gare ma non la finale`() {
-        val ottavi = FixtureGenerator.knockout(cup(16, twoLegged = true)).first()
-        assertEquals(16, ottavi.pairings.size, "otto accoppiamenti da due gare")
-        assertTrue(ottavi.pairings.count { it.isSecondLeg } == 8)
+        val ottavi = FixtureGenerator.knockout(cup(16, twoLegged = true))
+        assertEquals(2, ottavi.size, "andata e ritorno sono due turni distinti")
+        assertEquals(8, ottavi[0].pairings.size)
+        assertEquals(8, ottavi[1].pairings.size)
+        assertTrue(ottavi[1].pairings.all { it.isSecondLeg })
+        assertEquals(
+            ottavi[0].pairings.map { it.tieId },
+            ottavi[1].pairings.map { it.tieId },
+            "le due gare di un confronto restano lo stesso accoppiamento",
+        )
 
-        val finale = FixtureGenerator.knockout(cup(2, twoLegged = true)).first()
-        assertEquals(1, finale.pairings.size, "la finale deve restare in gara secca")
+        val finale = FixtureGenerator.knockout(cup(2, twoLegged = true))
+        assertEquals(1, finale.size, "la finale deve restare in gara secca")
+        assertEquals(1, finale.first().pairings.size)
     }
 
     @Test
@@ -149,14 +164,14 @@ class FixtureGeneratorTest {
         val vincitori = clubs(8)
         val quarti = FixtureGenerator.nextKnockoutRound(competition, vincitori, previousRoundNumber = 1)
 
-        assertTrue(quarti != null)
-        assertEquals("Quarti", quarti.label)
-        assertEquals(4, quarti.pairings.size)
+        assertEquals(1, quarti.size)
+        assertEquals("Quarti", quarti.first().label)
+        assertEquals(4, quarti.first().pairings.size)
     }
 
     @Test
     fun `con un solo vincitore il torneo e finito`() {
-        assertTrue(FixtureGenerator.nextKnockoutRound(cup(2), listOf(ClubId(1)), 1) == null)
+        assertTrue(FixtureGenerator.nextKnockoutRound(cup(2), listOf(ClubId(1)), 1).isEmpty())
     }
 
     // ----------------------------------------------------- gironi + eliminazione

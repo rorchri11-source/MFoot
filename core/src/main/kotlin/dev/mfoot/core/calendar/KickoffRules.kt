@@ -45,6 +45,45 @@ object KickoffRules {
     fun isPlayable(kickoff: LocalDateTime, now: LocalDateTime): Boolean =
         !kickoff.isBefore(now.plusMinutes(MARGINE_MINUTI))
 
+    /**
+     * Due partite dello stesso club sono troppo vicine?
+     *
+     * ## Perche' e' una distanza e non un tetto giornaliero
+     *
+     * Perche' il tetto giornaliero non sa che ore sono. `matchesPerDayPerClub` accettava
+     * due partite alle 20:30 e alle 21:00 — sono due, nella stessa giornata, quindi
+     * andava bene — e dal 2026-08-29 una partita **occupa 110 minuti reali**: quelle due
+     * si sovrapporrebbero per un'ora e venti.
+     *
+     * La distanza si misura fra i due fischi d'inizio e vale nei due sensi: non conta
+     * quale delle due sia stata fissata prima.
+     *
+     * @param oreMinime da `CalendarConfig.minHoursBetweenMatches`.
+     */
+    fun troppoVicine(uno: LocalDateTime, altro: LocalDateTime, oreMinime: Int): Boolean {
+        if (oreMinime <= 0) return false
+        val minuti = java.time.Duration.between(uno, altro).toMinutes()
+        return StrictMath.abs(minuti) < oreMinime * 60L
+    }
+
+    /**
+     * Perche' non si puo' giocare a quest'ora avendo gia' queste partite, o null se si puo'.
+     *
+     * [impegni] sono i fischi d'inizio delle altre partite dello stesso club, in ora di
+     * lega. La frase dice **quando si potrebbe**, non solo che non si puo': chi ha appena
+     * scelto un orario sa che ora ha scelto, e quello che non sa e' quale sarebbe libero.
+     */
+    fun problemaDiDistanza(
+        kickoff: LocalDateTime,
+        impegni: List<LocalDateTime>,
+        oreMinime: Int,
+    ): String? {
+        val scontro = impegni.firstOrNull { troppoVicine(kickoff, it, oreMinime) } ?: return null
+        val libero = scontro.plusHours(oreMinime.toLong())
+        return "Gioca già alle ${ora(scontro)}: fra due partite devono passare $oreMinime ore. " +
+            "Dalle ${ora(libero)} in poi va bene."
+    }
+
     /** Come sopra, ragionando su istanti veri invece che su ore di lega. */
     fun isPlayable(kickoff: Instant, now: Instant): Boolean =
         !kickoff.isBefore(now.plusSeconds(MARGINE_MINUTI * 60))
@@ -117,6 +156,25 @@ object KickoffRules {
             primo != null && !isPlayable(primo, now) ->
                 problemi += "La prima partita cadrebbe il ${giorno(primo)} alle ${ora(primo)}, " +
                     "che è già passato: sposta l'inizio o togli gli orari più presti."
+        }
+
+        // LE FASCE TROPPO VICINE FRA LORO
+        //
+        // Dal 2026-08-29 una partita occupa 110 minuti reali. Due fasce a mezz'ora di
+        // distanza non sono due occasioni di giocare: sono una partita che comincia mentre
+        // la precedente e' ancora in corso. Il risolutore lo sa e semplicemente non ci
+        // colloca niente, ma quello che si legge in quel caso e' «non c'e' stato spazio per
+        // otto turni» — che descrive il sintomo e non la causa, e manda a cercare il difetto
+        // nel periodo invece che negli orari.
+        val ore = calendar.minHoursBetweenMatches
+        val ordinate = calendar.kickoffSlots.sorted()
+        val vicine = ordinate.zipWithNext().firstOrNull { (uno, due) ->
+            java.time.Duration.between(uno, due).toMinutes() < ore * 60L
+        }
+        if (ore > 0 && vicine != null) {
+            problemi += "Le ${vicine.first} e le ${vicine.second} sono troppo vicine: una partita " +
+                "dura novanta minuti più l'intervallo, e fra due partite dello stesso club " +
+                "devono passare $ore ore."
         }
 
         return problemi

@@ -374,9 +374,9 @@ class StaminaEngineTest {
     }
 
     @Test
-    fun `matchDaysToFullRecovery e coerente`() {
-        assertEquals(0, StaminaEngine.matchDaysToFullRecovery(player(stamina = 100), 3, engine))
-        assertTrue(StaminaEngine.matchDaysToFullRecovery(player(stamina = 20), 1, engine) > 1)
+    fun `hoursToFullRecovery e coerente`() {
+        assertEquals(0, StaminaEngine.hoursToFullRecovery(player(stamina = 100), 3, engine))
+        assertTrue(StaminaEngine.hoursToFullRecovery(player(stamina = 20), 1, engine) > 1)
     }
 }
 

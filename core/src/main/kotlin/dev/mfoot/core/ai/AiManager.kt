@@ -65,15 +65,7 @@ object AiManager {
     ): TargetAppeal {
         val personality = state.personality
 
-        // Regola 6: la stima usa la stessa incertezza che ha un umano. Un'AI che
-        // leggesse i potenziali veri comprerebbe sempre i giovani giusti e sembrerebbe
-        // truccata.
-        val estimate = PotentialEstimator.estimate(
-            player = player,
-            observerId = club.id.value,
-            minutesObserved = 0,
-            scoutAccuracy = 0.0,
-        )
+        val estimate = stimaDi(player, club)
         val estimatedValue = Valuation.estimatedValue(player, estimate, config)
 
         var appeal = qualityAppeal(player, estimate)
@@ -191,7 +183,7 @@ object AiManager {
         val available = club.availableCredits.coerceAtLeast(0)
         if (available <= 0) return 0
 
-        val desired = estimatedValue * (0.75 + personality.marketAggression * 0.55) * appeal
+        val desired = estimatedValue * (0.75 + personality.marketAggression * 0.55) * voglia(appeal, config)
 
         val mancanti = config.setup.minSquadSize - squadSize
         val hardCap = if (mancanti <= 0) {
@@ -216,6 +208,73 @@ object AiManager {
 
         return StrictMath.round(minOf(desired, hardCap)).toInt().coerceIn(0, available)
     }
+
+    /**
+     * Quanto vale un giocatore **secondo questa AI**.
+     *
+     * Regola 6 dell'anti-sciame: la stima usa la stessa incertezza che ha un umano. Un'AI
+     * che leggesse i potenziali veri comprerebbe sempre i giovani giusti e sembrerebbe
+     * truccata.
+     *
+     * E' pubblica perche' serve anche a chi guarda un **prezzo**: decidere se una cifra e'
+     * un affare vuol dire confrontarla con un valore, e quel valore dev'essere lo stesso
+     * che l'AI usa per fissare il proprio tetto. Due stime diverse per lo stesso giocatore
+     * produrrebbero un'AI che contesta affari che non avrebbe comprato.
+     */
+    fun estimatedValueOf(player: Player, club: Club, config: LeagueConfig): Int =
+        Valuation.estimatedValue(player, stimaDi(player, club), config)
+
+    private fun stimaDi(player: Player, club: Club): IntRange = PotentialEstimator.estimate(
+        player = player,
+        observerId = club.id.value,
+        minutesObserved = 0,
+        scoutAccuracy = 0.0,
+    )
+
+    /**
+     * Da gradimento a **disponibilita' a pagare**, e sono due cose diverse.
+     *
+     * ## Il difetto che questa funzione toglie di mezzo
+     *
+     * Il tetto era `valore × carattere × gradimento`, con il gradimento usato come se
+     * andasse da zero a uno. Non ci va: [qualityAppeal] passa per la curva cubica del
+     * valore, quindi un settantacinque vale 0,42 e un settanta 0,2, e sotto la rosa minima
+     * il pavimento [OBBLIGO_DI_ROSA] li schiaccia tutti a 0,2. Moltiplicare per quel
+     * numero voleva dire **pagare un quinto del valore**.
+     *
+     * L'effetto, misurato: un umano metteva in vendita al prezzo consigliato — che e' il
+     * valore di mercato — e il tetto di ogni AI stava cinque volte sotto. Nessuno comprava
+     * mai niente da nessuno, e da fuori sembrava che il listino non funzionasse.
+     *
+     * ## Cosa fa adesso
+     *
+     * Legge il gradimento sulla scala vera, dove [AiConfig.fullInterestAppeal] e' pieno
+     * interesse, e lo traduce in uno sconto o un sovrapprezzo. Chi e' appena interessato
+     * offre [SCONTO_MASSIMO] del valore — meno del prezzo di listino, ed e' giusto: non lo
+     * cercava. Chi lo vuole davvero arriva a [PREMIO_MASSIMO], cioe' sopra il valore, che
+     * e' esattamente quello che si fa quando un giocatore serve.
+     *
+     * Il carattere resta il moltiplicatore di prima e continua a separare i prudenti dagli
+     * spregiudicati; il tetto per casella resta intoccato e continua a impedire che un
+     * club si rovini sul primo nome che gli piace.
+     */
+    private fun voglia(appeal: Double, config: LeagueConfig): Double {
+        val pieno = config.ai.fullInterestAppeal.coerceAtLeast(0.01)
+        return MathX.lerp(SCONTO_MASSIMO, PREMIO_MASSIMO, (appeal / pieno).coerceIn(0.0, 1.0))
+    }
+
+    /** Quanto offre del valore chi e' appena interessato. */
+    private const val SCONTO_MASSIMO = 0.70
+
+    /**
+     * Quanto offre del valore chi lo vuole davvero.
+     *
+     * Appena sopra il valore, non molto: il tetto e' anche cio' che un'AI **offre all'asta**
+     * — la offre tutta — quindi ogni punto qui sopra e' budget che se ne va sui primi
+     * acquisti. A 1,15 la simulazione del ritmo lasciava un club su otto fermo a quindici
+     * giocatori su diciotto. Misurato, non stimato: `MarketRhythmTest` lo prova a ogni giro.
+     */
+    private const val PREMIO_MASSIMO = 1.05
 
     /**
      * Quante volte la media per casella si puo' spendere su un giocatore solo.
@@ -350,9 +409,29 @@ object AiManager {
     // ------------------------------------------------------------------ interni
 
     /** Quanto e' forte e promettente, sulla base della sola stima. */
+    /**
+     * Quanto e' bravo, fra zero e uno.
+     *
+     * ## Perche' **non** usa la curva dei prezzi
+     *
+     * La usava, ed e' stato il difetto piu' costoso di tutto il mercato. [Valuation.overallScore]
+     * ha esponente 7,5 perche' deve dire quanto un giocatore **costa**, dove dieci punti in
+     * cima valgono un ordine di grandezza. Letto come gradimento diceva che un settantasette
+     * interessa 0,068 su 1 — e siccome quel numero moltiplica anche il tetto di spesa, il
+     * tetto finiva cinque volte sotto il prezzo di listino.
+     *
+     * Conseguenze misurate, tutte e tre segnalate dal proprietario come cose separate:
+     * nessuna AI comprava mai al prezzo consigliato; sotto la rosa minima ogni giocatore
+     * finiva schiacciato sul pavimento [OBBLIGO_DI_ROSA], quindi il gradimento **smetteva di
+     * distinguere** e il ruolo restava l'unico criterio; e sopra la rosa minima quasi niente
+     * superava la soglia di interesse, quindi il mercato si fermava del tutto.
+     *
+     * Su scala lineare un settantasette vale 0,70 e un cinquantacinque 0,28, che e' quello
+     * che una persona direbbe guardandoli.
+     */
     private fun qualityAppeal(player: Player, estimate: IntRange): Double {
-        val now = Valuation.overallScore(player.overall.toDouble())
-        val potential = Valuation.overallScore(((estimate.first + estimate.last) / 2).toDouble())
+        val now = Valuation.qualityLevel(player.overall.toDouble())
+        val potential = Valuation.qualityLevel(((estimate.first + estimate.last) / 2).toDouble())
         return (now * 0.55 + potential * 0.45).coerceIn(0.0, 1.0)
     }
 

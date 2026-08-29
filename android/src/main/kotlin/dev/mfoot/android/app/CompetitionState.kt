@@ -188,10 +188,20 @@ data class CompetitionsState(
     val existing: List<CompetitionInfo> = emptyList(),
     /** Non null quando si sta creando: e' la differenza fra elenco e modulo. */
     val draft: CompetitionDraft? = null,
+    /**
+     * Le divisioni della lega, per raggruppare i partecipanti.
+     *
+     * Serve a rispondere «in che serie gioca questa squadra» proprio mentre si sceglie chi
+     * iscrivere: il dato sta nei club da sempre, ma senza i **nomi** decisi dall'admin
+     * l'intestazione direbbe «livello 2» invece di «Serie B».
+     */
+    val divisioni: dev.mfoot.core.config.DivisionsConfig = dev.mfoot.core.config.DivisionsConfig(),
     val avviso: String? = null,
     val errore: String? = null,
 ) {
     fun clubName(id: Long): String = clubs.firstOrNull { it.id == id }?.name ?: "Club #$id"
+
+    fun divisionName(level: Int): String = divisioni.nameOf(level)
 }
 
 /**

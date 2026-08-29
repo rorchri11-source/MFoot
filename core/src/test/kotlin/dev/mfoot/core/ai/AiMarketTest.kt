@@ -147,6 +147,60 @@ class AiMarketTest {
         )
     }
 
+    /**
+     * Il difetto per cui nessuno vendeva mai niente a nessuno.
+     *
+     * Un umano mette in vendita al prezzo che l'app gli consiglia — che e'
+     * `ListingRules.suggestedPrice`, cioe' il valore di mercato — e per mesi non e'
+     * successo niente. Non era il ritmo delle AI: era che il tetto veniva moltiplicato per
+     * il gradimento letto come se andasse da zero a uno, e sotto la rosa minima il
+     * gradimento e' inchiodato a 0,2. Il tetto stava **cinque volte sotto** il prezzo
+     * consigliato, e nessuna AI poteva comprare nemmeno volendo.
+     */
+    @Test
+    fun `compra al prezzo che l'app consiglia a un umano`() {
+        val squad = rosaSenza(Position.ATT, 14)
+        val consigliato = Valuation.marketValue(puntaForte, config)
+
+        assertNotNull(
+            AiMarket.playerToBuy(
+                statoNeutro(), club(), squad,
+                listOf(inVendita(puntaForte, consigliato) to puntaForte),
+                config,
+            ),
+            "al prezzo consigliato non ha comprato: e' il prezzo che l'app propone a chi vende, " +
+                "quindi il listino resterebbe fermo per sempre",
+        )
+    }
+
+    /**
+     * L'affare si prende anche quando non serviva.
+     *
+     * Il gradimento non sa quanto costa: dice quanto quel giocatore servirebbe. Con la rosa
+     * gia' piena di attaccanti un'AI rispondeva no a un fuoriclasse a un decimo del valore,
+     * che e' l'unica cosa che nessuno che faccia mercato rifiuterebbe mai.
+     */
+    @Test
+    fun `un affare vero lo prende anche in un ruolo che ha gia' coperto`() {
+        // Senza escluderlo, `puntaForte` finirebbe **dentro** la rosa che dovrebbe
+        // desiderarlo, e `playerToBuy` scarta chi si ha gia': il test misurerebbe quel
+        // filtro invece dell'affare.
+        val attaccanti = world.players
+            .filter { it.primaryPosition == Position.ATT && it.id != puntaForte.id }
+        val pieno = attaccanti.take(6) +
+            world.players.filter { it.primaryPosition == Position.DC }.take(12)
+        val svenduto = Valuation.marketValue(puntaForte, config) / 10
+
+        assertNotNull(
+            AiMarket.playerToBuy(
+                statoNeutro(), club(), pieno,
+                listOf(inVendita(puntaForte, svenduto.coerceAtLeast(1)) to puntaForte),
+                config,
+            ),
+            "a un decimo del valore non l'ha preso: un affare e' un affare anche in un ruolo pieno",
+        )
+    }
+
     @Test
     fun `non compra sopra il proprio tetto, per quanto comodo sia`() {
         val squad = rosaSenza(Position.ATT, 14)

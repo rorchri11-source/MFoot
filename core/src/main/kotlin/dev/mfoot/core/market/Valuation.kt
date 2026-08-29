@@ -86,14 +86,47 @@ object Valuation {
         config.economy.startingCredits * config.economy.topPlayerBudgetShare
 
     /**
-     * Da overall a punteggio 0..1, con curva cubica.
+     * Da overall a punteggio 0..1, con la curva dei **prezzi**.
      *
-     * 40 -> 0.00 | 60 -> 0.07 | 75 -> 0.42 | 85 -> 0.74 | 93 -> 1.00
+     * 40 -> 0,000 | 62 -> 0,006 | 70 -> 0,014 | 77 -> 0,068 | 85 -> 0,293 | 93 -> 1,000
+     *
+     * L'esponente e' 7,5, ed e' voluto: dieci punti di overall in cima valgono un ordine di
+     * grandezza, come nel calcio vero. E' quello che rende un fuoriclasse un investimento e
+     * un onesto un acquisto qualsiasi.
+     *
+     * ## Non e' una misura di quanto un giocatore e' bravo
+     *
+     * Per quello c'e' [qualityLevel]. La distinzione e' costata cara: `AiManager` usava
+     * questa curva per decidere **quanto gli interessa** un giocatore, quindi un settantasette
+     * gli interessava 0,068 su 1 — e siccome quel numero moltiplicava anche il tetto di
+     * spesa, nessuna AI ha mai potuto comprare niente al prezzo di listino.
+     *
+     * (La tabella qui sopra era sbagliata e diceva «curva cubica» con 75 -> 0,42: numeri di
+     * una versione precedente, mai aggiornati. Sono misurati.)
      */
     fun overallScore(overall: Double): Double {
-        val t = ((overall - FLOOR_OVERALL) / (CEILING_OVERALL - FLOOR_OVERALL)).coerceIn(0.0, 1.0)
-        return MathX.pow(t, PRICE_EXPONENT)
+        val t = MathX.pow(normalizza(overall), PRICE_EXPONENT)
+        return t
     }
+
+    /**
+     * Da overall a punteggio 0..1, su scala **lineare**.
+     *
+     * 40 -> 0,00 | 55 -> 0,28 | 68 -> 0,53 | 77 -> 0,70 | 85 -> 0,85 | 93 -> 1,00
+     *
+     * Serve a chi deve misurare **quanto un giocatore e' bravo**, non quanto costa: il
+     * gradimento di un'AI, il confronto con la rosa che ha gia'. Sulla curva dei prezzi
+     * quelle domande davano risposte assurde — fra un sessanta e un settantacinque non c'era
+     * praticamente differenza, perche' costano quasi uguale entrambi rispetto a un
+     * novantatre'.
+     *
+     * Estremi condivisi con [overallScore] di proposito: cosa vuol dire 40 e cosa vuol dire
+     * 93 e' una proprieta' della scala, e deve restare scritto in un posto solo.
+     */
+    fun qualityLevel(overall: Double): Double = normalizza(overall)
+
+    private fun normalizza(overall: Double): Double =
+        ((overall - FLOOR_OVERALL) / (CEILING_OVERALL - FLOOR_OVERALL)).coerceIn(0.0, 1.0)
 
     /**
      * Quanto pesa l'eta' sul valore.

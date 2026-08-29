@@ -24,10 +24,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.ui.icons.MFootIcons
+import dev.mfoot.android.ui.kit.CrestBadge
 import dev.mfoot.android.ui.theme.comparsa
 import dev.mfoot.android.ui.theme.ricordaIntro
 import dev.mfoot.android.app.AppState
@@ -302,15 +305,21 @@ private fun PlayerListRow(
                 // forma abbreviata: appiccicato dopo l'eta' si legge come un altro dato
                 // del giocatore invece che come il suo proprietario, ed e' la prima cosa
                 // che si cerca scorrendo il listone. Chiesto esplicitamente il 2026-08-25.
+                //
+                // Dal 2026-08-29 non e' piu' una riga di testo grigia ma un **riquadro nei
+                // colori della maglia**, con lo stemma. Il motivo e' che «di Matletico
+                // Mangao» in grigio chiaro, sotto l'eta', si legge come l'ultimo dei dati
+                // anagrafici: il proprietario e' la prima cosa che si cerca scorrendo un
+                // listone, e con la stessa importanza visiva della nazionalita' non si
+                // trova. Colorato si riconosce senza leggerlo.
+                //
+                // Chi non e' di nessuno **non ha nessun riquadro**: uno svincolato non ha un
+                // proprietario vuoto, non ha proprio un proprietario, e disegnargli una
+                // targhetta neutra vorrebbe dire dare una risposta a una domanda che non
+                // esiste.
                 row.club?.let { proprietario ->
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "di ${proprietario.name}",
-                        style = MFootType.chip,
-                        color = if (proprietario.isMine) MFootColors.elite else MFootColors.ink3,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Spacer(Modifier.height(4.dp))
+                    TargaProprietario(proprietario)
                 }
             }
 
@@ -325,17 +334,24 @@ private fun PlayerListRow(
             // i quali il listino esisterebbe solo dentro le schede — cioe' per nessuno.
             val acquisto = row.acquisto?.takeIf { it.aperto() }
             when {
-                row.inVendita != null -> Text(
-                    "${row.inVendita.price}",
-                    style = MFootType.value,
-                    color = MFootColors.onAccent,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .width(52.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(MFootColors.elite)
-                        .padding(vertical = 4.dp),
-                )
+                // Il cartellino del prezzo cambia colore sui propri: lavanda piena vuol
+                // dire «lo puoi comprare», spento vuol dire «lo stai vendendo tu». Senza
+                // la differenza, in un listino in cui adesso compaiono anche i propri,
+                // ogni riga sembrerebbe un acquisto possibile.
+                row.inVendita != null -> {
+                    val mio = row.club?.isMine == true
+                    Text(
+                        "${row.inVendita.price}",
+                        style = MFootType.value,
+                        color = if (mio) MFootColors.ink else MFootColors.onAccent,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .width(52.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(if (mio) MFootColors.raised else MFootColors.elite)
+                            .padding(vertical = 4.dp),
+                    )
+                }
 
                 acquisto != null -> Text(
                     acquisto.tempoRimasto(),
@@ -353,5 +369,50 @@ private fun PlayerListRow(
                 )
             }
         }
+    }
+}
+
+/**
+ * Di chi e' questo giocatore: un riquadro nei colori del club, con lo stemma e il nome.
+ *
+ * ## Perche' i colori del club e non un colore del tema
+ *
+ * Perche' in una lega fra amici le squadre si riconoscono dalla maglia prima che dal nome.
+ * Scorrendo duecento righe, il colore risponde da solo alla domanda «questo di chi e'?»,
+ * e il nome serve solo a confermare.
+ *
+ * ## Il testo si legge sopra qualunque maglia
+ *
+ * Il colore lo sceglie il proprietario, quindi puo' essere bianco come nero: l'inchiostro
+ * non si puo' fissare. Si decide dalla **luminanza percepita** del fondo — la formula
+ * classica, con il verde che pesa piu' del rosso e il blu quasi niente, perche' e' come
+ * l'occhio funziona. Con un inchiostro fisso, meta' delle leghe avrebbe avuto targhette
+ * illeggibili e nessuno avrebbe saputo dire perche'.
+ *
+ * Il bordo sottile serve al caso opposto: una maglia quasi del colore dello sfondo
+ * sparirebbe, e il riquadro sembrerebbe non esserci.
+ */
+@Composable
+private fun TargaProprietario(club: dev.mfoot.android.data.ClubInfo) {
+    val fondo = Color(club.kit.primary)
+    val inchiostro = if (fondo.luminance() > 0.5f) Color(0xFF12151A) else Color(0xFFF2F4F7)
+
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(fondo)
+            .border(1.dp, MFootColors.line, RoundedCornerShape(50))
+            .padding(start = 4.dp, top = 3.dp, end = 9.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CrestBadge(club.crest, Modifier.size(14.dp))
+        Spacer(Modifier.width(5.dp))
+        Text(
+            club.name,
+            style = MFootType.label,
+            color = inchiostro,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

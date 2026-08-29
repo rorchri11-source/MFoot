@@ -405,17 +405,22 @@ private fun Composizione(
 
             when (bozza.kind) {
                 TradeKind.SCAMBIO -> {
+                    // I due giocatori costruiti dai proprietari restano fuori, in
+                    // **tutti e due** gli elenchi. Il proprio perche' non si cede; il suo
+                    // perche' il divieto varrebbe la meta' se bastasse essere l'altro a
+                    // scrivere la proposta. Nel prestito ricompaiono: prestare non toglie
+                    // il giocatore a chi l'ha costruito, ed e' scritto in `docs/REGOLE.md`.
                     Spacer(Modifier.height(MFootSpacing.section))
                     Label("Chiedi a lui · ${bozza.wanted.size}")
                     Spacer(Modifier.height(8.dp))
-                    Scelta(suaRosa, bozza.wanted) { id ->
+                    Scelta(suaRosa.filterNot { it.isCustom }, bozza.wanted) { id ->
                         onEdit(bozza.copy(wanted = bozza.wanted.toggle(id)))
                     }
 
                     Spacer(Modifier.height(MFootSpacing.section))
                     Label("Offri tu · ${bozza.offered.size}")
                     Spacer(Modifier.height(8.dp))
-                    Scelta(miaRosa, bozza.offered) { id ->
+                    Scelta(miaRosa.filterNot { it.isCustom }, bozza.offered) { id ->
                         onEdit(bozza.copy(offered = bozza.offered.toggle(id)))
                     }
 
@@ -450,7 +455,12 @@ private fun Composizione(
 
                 TradeKind.PRESTITO -> Prestito(miaRosa, bozza, onEdit)
 
-                TradeKind.AMICHEVOLE -> Amichevole(bozza, state.lega.league.config.calendar.timeZone, onEdit)
+                TradeKind.AMICHEVOLE -> Amichevole(
+                    bozza,
+                    state.lega.league.config.calendar.timeZone,
+                    state.lega.league.config.calendar.minHoursBetweenMatches,
+                    onEdit,
+                )
             }
 
             // Due righe da scrivere.
@@ -566,6 +576,8 @@ private fun Prestito(miaRosa: List<Player>, bozza: TradeDraft, onEdit: (TradeDra
 private fun Amichevole(
     bozza: TradeDraft,
     fuso: java.time.ZoneId,
+    /** Le ore che devono passare fra due partite: `calendar.minHoursBetweenMatches`. */
+    oreFraPartite: Int,
     onEdit: (TradeDraft) -> Unit,
 ) {
     // «Adesso» in ora di lega, non in ora del telefono: le fasce che si scelgono qui sono
@@ -580,8 +592,8 @@ private fun Amichevole(
     Label("Quando")
     Spacer(Modifier.height(4.dp))
     Text(
-        "Ora della lega. Se una delle due squadre gioca già in quella fascia, la " +
-            "proposta viene rifiutata.",
+        "Ora della lega. Una partita dura novanta minuti veri più l'intervallo: se una " +
+            "delle due squadre ne ha un'altra entro $oreFraPartite ore, la proposta viene rifiutata.",
         style = MFootType.chip,
         color = MFootColors.ink3,
     )

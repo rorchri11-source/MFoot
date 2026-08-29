@@ -37,6 +37,53 @@ riciclaggio.
 
 ---
 
+## Le competizioni
+
+**Un campionato per divisione, e si compone a mano.**
+Le divisioni dicono in che serie gioca un club; una competizione e' un calendario fra i
+club che l'admin sceglie. Le due cose restano separate — una coppa e un torneo a gironi
+*devono* poter mescolare le serie — ma nella scelta dei partecipanti i club adesso sono
+**raggruppati per divisione**, con il conto di quanti ne sono dentro e un «tutte» per
+gruppo. Scartata la creazione automatica di N campionati in un gesto: la composizione
+resta una scelta.
+Il motivo era che l'elenco era piatto. Il livello sta in `clubs.division_level` da sempre e
+lo mostrano la Casa, la rosa e Squadre — non lo mostrava l'unica schermata in cui serve a
+decidere, quindi si componevano campionati con dentro due serie e una classifica sola senza
+accorgersene.
+*Detta il 2026-08-29 · `ui/Competitions.kt` (`Partecipanti`), `CompetitionsState.divisioni`*
+
+**Le coppe camminano da sole: finito un turno, il successivo nasce dopo tre giorni.**
+Il numero di giorni e' `calendar.cupRoundGapDays`. Vale per l'eliminazione diretta, per la
+fase finale dei gironi e per playoff e playout. Chi gioca riceve l'avviso con l'ora.
+Prima non succedeva **niente**: la coppa giocava gli ottavi e restava ferma per sempre.
+`FixtureGenerator.nextKnockoutRound` esisteva con i suoi test dal primo giorno e non lo
+chiamava nessuno — ne' il server, ne' l'app, ne' una funzione del database.
+*Detta il 2026-08-29 · `core/calendar/CompetitionProgress.kt`, `TickRunner.avanzaLeCompetizioni`*
+
+**Chi resta senza avversario passa il turno, e al turno dopo gioca lui.**
+Con un numero dispari il tabellone accoppia a due a due e uno resta fuori: e' un turno di
+riposo, non un'eliminazione. Al turno successivo il riposato viene messo davanti, cosi' a
+saltare e' un altro — altrimenti con un numero che resta dispari la stessa squadra
+arriverebbe in finale senza giocare.
+*Detta il 2026-08-29 · `CompetitionProgress.tabellone`*
+
+**Nella coppa «doppia sfida» vuol dire andata e ritorno, e sono due turni distinti.**
+L'interruttore c'era nella schermata e non faceva niente: il generatore leggeva
+`twoLeggedKnockout`, che nessuno impostava mai. E le due gare finivano nello stesso turno,
+cioe' nella stessa fascia oraria: la stessa squadra in casa e in trasferta allo stesso
+istante. La finale resta in gara secca.
+*Corretta il 2026-08-29 · `FixtureGenerator.buildKnockoutRound`, `CompetitionRepository.preview`*
+
+**Un campionato si cancella anche a stagione cominciata.**
+Se ne vanno partite, risultati, classifica e presenze. **Restano** i premi gia' incassati,
+la crescita e il morale: sono cose successe, e disfarle richiederebbe di conoscere lo stato
+del mondo prima di ogni partita, che nessuno conserva. La conferma dice quante partite si
+portano via, e compare solo se ce n'e' almeno una giocata.
+Prima era vietato dalla prima partita in poi — cioe' proprio da quando serve.
+*Detta il 2026-08-29 · `delete_competition`, `CompetitionInfo.canDelete`, `ui/Competitions.kt`*
+
+---
+
 ## Il mercato
 
 > Le voci che seguono sono state decise il **2026-08-24** e implementate nella stessa
@@ -82,6 +129,32 @@ listino il minuto dopo, compreso il rivale diretto. Ogni svincolo è annunciato 
 lega. *Scartato nella stessa sessione* il divieto di ricomprare chi si è svincolato: resta
 quindi possibile riscrivere un contratto svincolando e ricomprando.
 *Detta il 2026-08-24 · `release_player` in `schema.sql`*
+
+**Il giocatore costruito dal proprietario non se ne va per nessuna strada.**
+Non si vende a listino, non si mette all'asta, non si scambia — e non si puo' nemmeno
+**chiedere** in uno scambio, o il divieto varrebbe la meta': basterebbe essere l'altro dei
+due a scrivere la proposta. Resta possibile prestarlo.
+La regola c'era dal principio in `core` e in `list_player`, e mancava in `start_auction` e
+in `propose_trade`: due strade su quattro erano aperte, quindi il giocatore unico **si
+vendeva davvero**. In piu' l'app mostrava «Metti in vendita» e «Metti all'asta» sulla sua
+scheda, e il rifiuto arrivava dal server dopo aver premuto.
+*Chiusa il 2026-08-29 · `start_auction`, `propose_trade`, `ui/PlayerDetail.kt`, `ui/screens/Scambi.kt`*
+
+**I propri giocatori in vendita si vedono nel listino, marcati.**
+Compaiono in mezzo agli altri con il cartellino del prezzo spento invece che lavanda, e
+senza pulsante per comprarli. Prima venivano filtrati via: metterne uno in vendita lo faceva
+**sparire** dall'unico posto in cui si guarda il mercato, e da fuori la vendita non
+risultava avvenuta. Vedere il proprio prezzo accanto a quelli degli altri e' anche l'unico
+modo di accorgersi di averlo messo fuori mercato.
+*Detta il 2026-08-29 · `AppState.visible`, `ui/PlayerList.kt`*
+
+**Il prezzo di vendita si scrive con la tastiera, e il consigliato sta scritto.**
+C'erano solo un meno e un piu': per mettere 4.000 partendo da 12.000 servivano quaranta
+tocchi. Il valore di partenza **era** gia' il consigliato ma non lo diceva, quindi chi lo
+cambiava non poteva piu' tornarci. Adesso c'e' scritto «Consigliato: N» e lo si rimette con
+un tocco; il consigliato lo calcola `ListingRules.suggestedPrice`, che esisteva e non
+chiamava nessuno.
+*Detta il 2026-08-29 · `ui/PlayerDetail.kt` (`FoglioPrezzo`)*
 
 **L'admin può aggiungere e togliere giocatori a qualsiasi club, senza registro pubblico.**
 Serve a riparare le leghe rotte. Il registro visibile a tutti è stato proposto e scartato:
@@ -142,6 +215,79 @@ un'asta invece di controllare il telefono ogni ora.
 ---
 
 ## Le partite
+
+> Le sei voci che seguono sono state decise **e implementate** il 2026-08-29. Sono un blocco
+> solo — cambiano insieme il ritmo di tutto il gioco — e vanno lette insieme.
+
+**La partita dura novanta minuti veri.**
+Non piu' quindici secondi di riproduzione accelerata: il minuto di gioco e' un minuto vero,
+e non e' un contatore che l'app fa avanzare ma una **funzione dell'ora**. Due telefoni
+aperti nello stesso istante vedono lo stesso minuto, e chi arriva al 63' vede il 63'. La
+timeline resta simulata una volta sola dal server e riprodotta in locale: il tempo reale non
+costa nessuna richiesta in piu'.
+A partita finita torna la riproduzione accelerata di sempre, con pausa e salto alla fine:
+quello che si rivede e' *come e' andata*, e novanta minuti per raccontarlo sarebbero novanta
+minuti. In diretta invece non ci sono comandi — non si mette in pausa una partita.
+*Detta il 2026-08-29 · `core/match/MatchClock.kt`, `MatchState`, `AppViewModel.segui`*
+
+**Due tick per partita, con venti minuti di pausa.**
+Il primo simula tutto fino al 45'; il secondo parte alla fine dell'intervallo, che dura
+**venti minuti e non di piu'**. La ripresa si conta dal fischio d'inizio — `kickoff + 45 +
+pausa` — e non da quando il server e' passato: contandola da «adesso» ogni ritardo del tick
+si sommerebbe alla partita, e la partita finirebbe a un'ora che nessuno aveva letto.
+Puntualita': non serviva niente di nuovo. `pg_cron` chiama `sveglia_il_tick()` ogni cinque
+minuti e quello fa `workflow_dispatch` su GitHub. La pausa dura quindi fra venti e
+venticinque minuti, e finche' il secondo tempo non e' scritto **il minuto resta al 45'**,
+con scritto che si sta aspettando la ripresa: un cronometro che corre sopra un campo di cui
+non si sa niente e' peggio di un'attesa dichiarata.
+*Detta il 2026-08-29 · `TickRunner.giocaPrimoTempo`, `MatchClock.ripresaDi`, `CalendarConfig.halfTimeWindowMinutes`*
+
+**Il primo tempo si guarda mentre si gioca.**
+Per quarantacinque minuti reali `match_results` non esiste ancora — e non deve: e' la riga
+che significa «giocata», e scriverla a meta' vorrebbe dire una partita che entra in
+classifica all'intervallo. Quindi il primo tempo viaggia dentro `fixtures.first_half`,
+accanto agli schieramenti che gia' ci stavano. Il server non lo rilegge mai: serve solo a
+chi guarda.
+*Detta il 2026-08-29 · `HalfTimeJson.write`, `MatchRepository.load`*
+
+**Fra due partite dello stesso club passano almeno due ore.**
+Configurabile (`calendar.minHoursBetweenMatches`), di serie due — appena sopra i 110 minuti
+che una partita occupa davvero (45 + 20 + 45). «Se la fai alle 10 non puoi alle 11, alle 12
+minimo.» Vale in quattro posti con **una regola sola** in `core`: il risolutore del
+calendario, la proposta di amichevole, la risposta dell'AI e il database.
+Toglie di mezzo anche un numero scritto a mano: `propose_friendly` aveva tre ore fisse
+dentro l'SQL, mentre il calendario non guardava l'orario affatto — due risposte diverse alla
+stessa domanda. E il modulo della competizione adesso avvisa **prima** se due fasce orarie
+sono troppo vicine, invece di produrre «non c'e' stato spazio per otto turni».
+*Detta il 2026-08-29 · `KickoffRules.troppoVicine`, `CalendarSolver.fits`, `propose_friendly`, `respond_deal`*
+
+**Il mondo resta sveglio fino alle 23.**
+`ora_riposo` e' passata da 21 a 22 in `sveglia_il_tick()`: l'ultimo giro parte alle 22:55.
+Serve al tempo reale — una partita delle 21 finisce alle 22:50, e con la finestra di prima
+il suo secondo tempo sarebbe caduto a mondo dormiente, giocato alle 9 del mattino dopo.
+**L'ultimo fischio d'inizio sensato resta quindi le 21.** Scartato lo spostare indietro
+l'ultimo orario utile alle 20: le nove di sera sono l'ora in cui una lega di amici gioca.
+*Detta il 2026-08-29 · `sveglia_il_tick()` in `schema.sql`*
+
+**La stamina si recupera per ore vere, e piu' in fretta.**
+Sette punti l'ora (`engine.staminaRecoveryPerHour`) invece di 34 per giornata di gioco: due
+ore fra una partita e l'altra ne rendono quattordici, una notte riporta al massimo chiunque.
+Sono circa due volte e mezzo il ritmo di prima — «tempi recuperi accelerati, ora troppo
+lenti».
+Il cambio di unita' conta quanto il numero: una «giornata» e' una fascia oraria del
+calendario, quindi valeva dodici ore in una lega con due fasce e sei in una con quattro. Lo
+stesso riposo pagava il doppio o la meta' a seconda della configurazione, e non c'era modo
+di accorgersene. Il recupero si accredita a ogni giro del server sulle ore passate davvero,
+con un tetto di dodici per giro.
+*Detta il 2026-08-29 · `StaminaEngine`, `TickRunner.recoverStamina`, `tick_state.last_stamina_at`*
+
+**Il campo si guarda, con la palla che segue l'azione.**
+Decorativo e basta: nessun gameplay, nessun tocco, non cambia il risultato. La palla si
+muove fra le nove zone che il motore usa gia' per simulare, l'azione pericolosa accende un
+alone, il gol fa un'onda, e una barra dice da che parte sta andando la partita negli ultimi
+dieci minuti. I dati c'erano tutti — `MatchEvent.zone` viene scritto dal primo giorno e non
+lo leggeva nessuno.
+*Detta il 2026-08-29 · `ui/pitch/CampoLive.kt`*
 
 **Gli ordini condizionali si vedono e si scrivono.**
 «Se sono sotto dal 60', dentro la punta», «se scende sotto 40 di stamina, cambialo». Sono
@@ -214,6 +360,32 @@ proporre solo giocatore contro giocatore); **chiedere a parole** — «il mio at
 gioca mai, lo prendi in prestito?»; e **reagire a quello che fai** — contestare se compri
 il loro obiettivo, rinforzarsi se le batti 5-0, farsi avanti quando metti in vendita.
 *Detta il 2026-08-24 · `core/ai/AiMarket.kt`, `AiInitiative.playerToLoanOut`, `AiTurn`*
+
+**Un'amichevole si accetta per cortesia, non per carattere.**
+Chiedere resta una scelta — i temerari ne cercano piu' dei prudenti — ma **accettare** no:
+si rifiuta solo con le gambe davvero a terra (stamina media sotto 55) o con una partita
+vera lo stesso giorno. E il rifiuto dice il motivo vero.
+Erano la stessa identica regola, e quasi ogni amichevole veniva rifiutata. Tre condizioni
+pensate per decidere se *proporre* una partita, girate, diventavano tre motivi per dire di
+no a un amico: due giornate libere davanti — impossibile con un campionato in corso, quindi
+falso **sempre**; la rosa sotto il minimo di diciotto, cioe' per giorni; e
+`marketAggression > 0.45`, che escludeva un quarto dei club **per sempre**. In piu' il
+conto delle giornate era sbagliato in tutti e due i sensi: chi rispondeva riceveva la
+giornata assoluta meno quella corrente con un ripiego che invecchiava, e chi chiedeva
+riceveva la giornata assoluta e basta.
+*Detta il 2026-08-29 · `AiInitiative.friendlyRefusal`, `TickRunner.giornateAllaProssimaPartita`*
+
+**Le AI comprano al prezzo che l'app consiglia a chi vende. E un affare lo prendono comunque.**
+Segnalato come «nessuno li acquista, anche se non forti o molto poco costosi e di grande
+qualita' prezzo». Non era il ritmo: era che il gradimento veniva letto sulla **curva dei
+prezzi** — esponente 7,5, dove un settantasette vale 0,068 su 1 — e quel numero moltiplicava
+anche il tetto di spesa. Il tetto stava cinque volte sotto il prezzo consigliato: nessuna
+AI poteva comprare niente da nessuno nemmeno volendo.
+Adesso il gradimento sta su scala lineare (`Valuation.qualityLevel`), e il prezzo e' un
+criterio **separato** dal gusto: sotto `ai.bargainShare` del valore stimato un'AI compra
+anche cio' che non cercava, perche' un affare lo prende chiunque faccia mercato sul serio.
+Il tetto per casella resta dov'era e continua a impedire che un club si rovini.
+*Corretta il 2026-08-29 · `AiManager.qualityAppeal`, `AiManager.voglia`, `AiMarket.playerToBuy`*
 
 **Restano scaglionate.**
 «Più reattive» non deve mai voler dire venticinque notifiche in due secondi: l'anti-sciame
@@ -295,6 +467,16 @@ che si riapre venti volte al giorno.
 appiccicato dopo l'età si legge come un altro dato del giocatore invece che come il suo
 proprietario.
 *Detta il 2026-08-25 · `ui/PlayerList.kt`*
+
+**E lo dice con un riquadro nei colori della squadra, con lo stemma.**
+Non piu' una riga di testo grigia: una targhetta col fondo del colore della maglia, lo
+stemma e il nome del club per intero. In grigio chiaro sotto l'eta' si leggeva ancora come
+l'ultimo dei dati anagrafici, mentre e' la prima cosa che si cerca scorrendo. Colorata si
+riconosce senza leggerla.
+**Chi non è di nessuno non ha nessun riquadro:** uno svincolato non ha un proprietario
+vuoto, non ha proprio un proprietario. L'inchiostro lo decide la luminanza del fondo, o
+meta' delle maglie darebbe targhette illeggibili.
+*Detta il 2026-08-29 · `ui/PlayerList.kt` (`TargaProprietario`)*
 
 **Chi compra uno svincolato lo vede sparire dagli svincolati nello stesso istante.**
 Non dopo la rilettura dal server: subito. Il server ha già risposto sì, quindi il contratto

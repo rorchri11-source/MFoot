@@ -192,7 +192,15 @@ create table if not exists competitions (
     participants bigint[] not null default '{}',
     -- 'UFFICIALE' oppure 'AMICHEVOLE': le amichevoli non contano per la classifica e,
     -- se l'admin lo vuole, nemmeno per la crescita.
-    kind         text   not null default 'UFFICIALE'
+    kind         text   not null default 'UFFICIALE',
+    -- Quando il torneo si e' concluso, e chi l'ha vinto.
+    --
+    -- Serve al server per sapere quando **smettere** di cercare il turno successivo. Senza,
+    -- una coppa finita resterebbe per sempre nello stato «tutte le partite giocate», che e'
+    -- esattamente la condizione con cui il tick capisce che deve generare il turno dopo:
+    -- ogni giro riaprirebbe la domanda su un torneo concluso da settimane.
+    finished_at  timestamptz,
+    winner_club_id bigint references clubs(id) on delete set null
 );
 
 create table if not exists fixtures (
@@ -325,7 +333,13 @@ create table if not exists tick_state (
     -- transazione fallisce a meta' e il tick rigira sulla stessa finestra.
     settled_match_days integer[] not null default '{}',
     last_run_at        timestamptz,
-    last_run_notes     text
+    last_run_notes     text,
+    -- Quando si e' accreditato il recupero l'ultima volta.
+    --
+    -- Dal 2026-08-29 la stamina si recupera per **ore reali** e non per giornata di gioco:
+    -- serve un punto da cui contarle. Senza, ogni giro del server accrediterebbe di nuovo
+    -- lo stesso riposo, e cinque minuti varrebbero quanto una notte.
+    last_stamina_at    timestamptz
 );
 
 create table if not exists notifications (
@@ -542,6 +556,24 @@ create table if not exists purchases (
                               check (status in ('IN_FINESTRA', 'CONFERMATO', 'CONTESTATO', 'REVOCATO')),
     auction_id        bigint  references auctions(id) on delete set null
 );
+
+
+-- -------------------------------------------------------------------------------------
+--  LE COLONNE ARRIVATE DOPO
+--
+--  `create table if not exists` non tocca una tabella che c'e' gia': su un database in cui
+--  la lega sta girando, una colonna aggiunta qui sopra **non comparirebbe mai**. Il file
+--  resterebbe rieseguibile e non farebbe niente, che e' il modo piu' silenzioso di
+--  rompere un aggiornamento.
+--
+--  Quindi ogni colonna nuova si scrive due volte: nella tabella, per chi installa da zero,
+--  e qui, per chi ha gia' i dati. `if not exists` rende questo blocco innocuo la seconda
+--  volta che si esegue il file.
+-- -------------------------------------------------------------------------------------
+
+alter table competitions add column if not exists finished_at    timestamptz;
+alter table competitions add column if not exists winner_club_id bigint references clubs(id) on delete set null;
+alter table tick_state   add column if not exists last_stamina_at timestamptz;
 
 
 -- =====================================================================================
@@ -1536,6 +1568,18 @@ begin
             raise exception 'Giocatore inesistente in questa lega.' using errcode = '22023';
         end if;
 
+        -- IL GIOCATORE COSTRUITO DAL PROPRIETARIO NON SI VENDE
+        --
+        -- La regola era gia' scritta in `core` (`ListingRules.rejection`) e in
+        -- `list_player`, e mancava **qui**: si metteva all'asta e se ne andava. Una regola
+        -- applicata in due strade su tre non e' una regola, e' un cartello.
+        --
+        -- Il prestito resta possibile, ed e' un'altra funzione: prestare non toglie il
+        -- giocatore a chi l'ha costruito.
+        if exists (select 1 from players where id = p_target_id and is_custom) then
+            raise exception 'Il tuo giocatore non si vende.' using errcode = '42501';
+        end if;
+
         select club_id into v_owner from contracts where player_id = p_target_id;
 
         -- Uno svincolato sotto i vent'anni non si compra: si trova.
@@ -1730,11 +1774,23 @@ begin
             using errcode = '42501';
     end if;
 
-    if exists (select 1 from fixtures where competition_id = p_competition_id and played) then
-        raise exception 'Questa competizione ha gia'' partite giocate: non si puo'' cancellare.'
-            using errcode = '22023';
-    end if;
-
+    -- SI CANCELLA ANCHE QUELLO GIA' COMINCIATO
+    --
+    -- Prima no: una partita giocata bloccava per sempre la cancellazione, e una lega con
+    -- un campionato sbagliato — squadre di due divisioni mescolate, date storte — se lo
+    -- teneva fino alla fine dei tempi. E' esattamente il caso in cui l'admin ha piu'
+    -- bisogno del pulsante, ed era l'unico in cui non ce l'aveva.
+    --
+    -- COSA SE NE VA E COSA RESTA
+    --
+    -- Se ne vanno le partite, i risultati, le presenze e le formazioni: sono in cascata su
+    -- `fixtures`. **Restano** i crediti dei premi gia' accreditati, la crescita, il morale
+    -- e le condizioni dei giocatori. Non e' una svista: quelle cose sono gia' successe, e
+    -- disfarle richiederebbe di conoscere lo stato del mondo prima di ogni partita — che
+    -- nessuno conserva, e che sarebbe una bugia ricostruire a ritroso.
+    --
+    -- Chi preme lo deve sapere prima: l'app lo scrive nella conferma, con il conto delle
+    -- partite che spariscono.
     delete from competitions where id = p_competition_id;
 end;
 $$;
@@ -1839,6 +1895,22 @@ begin
     );
     if v_mancano > 0 then
         return jsonb_build_object('ok', false, 'reason', 'Chiedi giocatori che non sono suoi.');
+    end if;
+
+    -- IL GIOCATORE COSTRUITO DAL PROPRIETARIO NON PASSA DA UNO SCAMBIO
+    --
+    -- Vale nei due sensi, e il secondo e' quello che conta di piu': non si vende il
+    -- proprio, e non si puo' **chiedere** il suo. Chiederlo trasformerebbe il divieto in
+    -- un invito — basta essere l'altro dei due a scrivere la proposta.
+    --
+    -- Il prestito e' un'altra strada e resta aperta: e' scritto in `docs/REGOLE.md`.
+    if exists (
+        select 1 from players
+        where id = any (coalesce(p_offered, '{}'::bigint[]) || coalesce(p_wanted, '{}'::bigint[]))
+          and is_custom
+    ) then
+        return jsonb_build_object('ok', false, 'reason',
+            'Il giocatore costruito da un proprietario non si scambia. Si puo'' prestare.');
     end if;
 
     -- Il denaro promesso deve esserci adesso. Non viene impegnato: una proposta non e' un
@@ -2311,6 +2383,7 @@ declare
     v_from clubs%rowtype;
     v_to   clubs%rowtype;
     v_id   bigint;
+    v_ore  integer;
 begin
     select * into v_from from clubs where id = p_from_club;
     if not found or v_from.owner_user_id is distinct from auth.uid() then
@@ -2326,18 +2399,30 @@ begin
         return jsonb_build_object('ok', false, 'reason', 'L''orario e'' gia'' passato.');
     end if;
 
-    -- Nessuno dei due deve avere gia' un impegno in quell'ora. Un'amichevole che si
-    -- sovrappone a una partita di campionato manderebbe in campo la stessa rosa due volte,
-    -- e la stanchezza pagherebbe il conto nella partita che conta.
-    if exists (
+    -- LA DISTANZA FRA DUE PARTITE
+    --
+    -- Nessuno dei due deve avere un altro impegno troppo vicino. Un'amichevole
+    -- sovrapposta a una partita di campionato manderebbe in campo la stessa rosa due
+    -- volte, e la stanchezza pagherebbe il conto nella partita che conta.
+    --
+    -- Le ore le decide la lega (`calendar.minHoursBetweenMatches`, di serie due) e non
+    -- sono piu' scritte qui: erano tre, fisse dentro questa funzione, mentre la regola vive
+    -- in `core` ed e' quella che il calendario e l'app applicano. Tre numeri diversi per la
+    -- stessa domanda sono tre occasioni di rispondere in modo diverso — e infatti il
+    -- calendario ne accettava due a mezz'ora di distanza mentre qui ne servivano tre.
+    select coalesce((config -> 'calendar' ->> 'minHoursBetweenMatches')::integer, 2)
+    into v_ore from leagues where id = v_from.league_id;
+
+    if v_ore > 0 and exists (
         select 1 from fixtures f
         where f.league_id = v_from.league_id and not f.played
-          and f.kickoff between p_kickoff - interval '3 hours' and p_kickoff + interval '3 hours'
+          and f.kickoff > p_kickoff - make_interval(hours => v_ore)
+          and f.kickoff < p_kickoff + make_interval(hours => v_ore)
           and (f.home_club_id in (p_from_club, p_to_club)
             or f.away_club_id in (p_from_club, p_to_club))
     ) then
         return jsonb_build_object('ok', false, 'reason',
-            'Una delle due squadre gioca gia'' a quell''ora.');
+            format('Una delle due squadre gioca gia'' troppo vicino: fra due partite devono passare %s ore.', v_ore));
     end if;
 
     insert into trades (league_id, from_club, to_club, offered, wanted, cash, message,
@@ -2371,6 +2456,7 @@ declare
     v_oggi    integer;
     v_comp    bigint;
     v_kickoff timestamptz;
+    v_ore     integer;
 begin
     select * into v_trade from trades where id = p_trade_id for update;
     if not found then
@@ -2438,6 +2524,31 @@ begin
                 answer = 'L''orario e'' passato.', answered_at = now()
             where id = p_trade_id;
             return jsonb_build_object('ok', false, 'reason', 'L''orario e'' passato.');
+        end if;
+
+        -- LA DISTANZA SI RICONTROLLA QUI, NON SOLO QUANDO SI PROPONE
+        --
+        -- Fra la proposta e la risposta possono passare ore, e in quelle ore l'admin puo'
+        -- aver scritto una giornata di campionato o una delle due squadre puo' aver
+        -- combinato un'altra amichevole. Controllarlo solo alla proposta vorrebbe dire che
+        -- basta rispondere tardi per sovrapporre due partite — e chi accetta non ha modo
+        -- di saperlo.
+        select coalesce((config -> 'calendar' ->> 'minHoursBetweenMatches')::integer, 2)
+        into v_ore from leagues where id = v_trade.league_id;
+
+        if v_ore > 0 and exists (
+            select 1 from fixtures f
+            where f.league_id = v_trade.league_id and not f.played
+              and f.kickoff > v_kickoff - make_interval(hours => v_ore)
+              and f.kickoff < v_kickoff + make_interval(hours => v_ore)
+              and (f.home_club_id in (v_trade.from_club, v_trade.to_club)
+                or f.away_club_id in (v_trade.from_club, v_trade.to_club))
+        ) then
+            update trades set status = 'SCADUTA',
+                answer = 'Nel frattempo una delle due gioca a quell''ora.', answered_at = now()
+            where id = p_trade_id;
+            return jsonb_build_object('ok', false, 'reason',
+                format('Una delle due squadre gioca gia'' troppo vicino: servono %s ore fra due partite.', v_ore));
         end if;
 
         select id into v_comp from competitions
@@ -4074,9 +4185,17 @@ set search_path = public, extensions
 as $$
 declare
     -- Le due ore che decidono tutto. Si cambiano qui, e basta rieseguire questa funzione.
-    -- Sveglio dalle 9; l'ultimo giro parte alle 21:55 e finisce prima delle 22.
+    --
+    -- Sveglio dalle 9; l'ultimo giro parte alle 22:55 e finisce prima delle 23.
+    --
+    -- Era fino alle 21:59, e andava bene finche' una partita si liquidava in un istante.
+    -- Dal 2026-08-29 dura **novanta minuti veri piu' venti di intervallo**: una partita
+    -- delle 21 finisce alle 22:50, e con la finestra di prima il suo secondo tempo sarebbe
+    -- caduto a mondo dormiente — giocato alle 9 del mattino dopo, con dodici ore di ritardo
+    -- e nessuno a guardarlo. Scartato lo spostare indietro l'ultimo orario utile alle 20:
+    -- le nove di sera sono l'ora in cui una lega di amici gioca davvero.
     ora_sveglia constant integer := 9;
-    ora_riposo  constant integer := 21;
+    ora_riposo  constant integer := 22;
 
     v_token text;
     v_id    bigint;
@@ -4103,11 +4222,16 @@ begin
      * funzione risponde «no» in microsecondi, senza chiamare GitHub e senza consumare un
      * byte di traffico.
      *
-     * ## Le ore, decise dal proprietario il 2026-08-26
+     * ## Le ore, decise dal proprietario il 2026-08-26 e allargate il 2026-08-29
      *
-     * Sveglio **dalle 9 alle 21:59**, ora italiana. Le partite si programmano quando si
+     * Sveglio **dalle 9 alle 22:59**, ora italiana. Le partite si programmano quando si
      * vuole, ma dentro quella fascia: una partita delle 21 fa in tempo a finire, intervallo
      * compreso.
+     *
+     * Era fino alle 21:59, e la frase qui sopra era vera solo finche' una partita durava un
+     * istante. Con novanta minuti veri piu' venti di intervallo, quella delle 21 finisce
+     * alle 22:50 — fuori dalla vecchia finestra — e il suo secondo tempo sarebbe stato
+     * giocato la mattina dopo.
      *
      * Quello che scade di notte non si perde: il tick non chiede «cosa succede adesso» ma
      * «cosa sarebbe dovuto succedere da quando sono passato», quindi il primo giro del

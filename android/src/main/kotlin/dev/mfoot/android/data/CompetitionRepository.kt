@@ -23,7 +23,18 @@ data class CompetitionInfo(
     val fixtures: Int,
     val played: Int,
 ) {
-    val canDelete: Boolean get() = played == 0
+    /**
+     * Si cancella sempre, anche a stagione cominciata.
+     *
+     * Prima era `played == 0`, e il pulsante spariva alla prima partita giocata: una lega
+     * con un campionato sbagliato — squadre di due divisioni mescolate, date storte — se lo
+     * teneva per sempre. E' il momento in cui l'admin ha **piu'** bisogno di quel comando,
+     * ed era l'unico in cui non ce l'aveva.
+     *
+     * [played] resta perche' e' quello che la conferma deve dire: quante partite si
+     * portano via.
+     */
+    val canDelete: Boolean get() = true
     val isFinished: Boolean get() = fixtures > 0 && played == fixtures
 }
 
@@ -106,6 +117,12 @@ object CompetitionRepository {
             type = type,
             participants = participants.map(::ClubId),
             doubleRound = doubleRound,
+            // Nel tabellone la stessa casella si chiama «doppia sfida», ed erano due
+            // campi diversi: `doubleRound` andava nel girone e il generatore del
+            // tabellone leggeva solo `twoLeggedKnockout`, che nessuno impostava mai.
+            // Risultato: nella coppa l'interruttore c'era, si accendeva, e non faceva
+            // niente — ne' nell'anteprima ne' nelle partite.
+            twoLeggedKnockout = doubleRound && type != CompetitionType.GIRONE,
         )
         val rounds = FixtureGenerator.generate(competition, seed)
         return CalendarSolver.schedule(
