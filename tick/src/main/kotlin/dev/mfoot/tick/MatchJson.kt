@@ -69,6 +69,19 @@ object MatchJson {
             w.field("gialli", s.yellowCards)
             w.field("rossi", s.redCards)
             w.field("infortunato", s.injured)
+            // I duelli. Vanno qui e non in `appearances` di proposito: `player_stats` e'
+            // gia' `jsonb`, quindi sei chiavi in piu' non sono sei colonne in piu'.
+            // `appearances` invece l'app la legge con una `select` a lista esplicita, e
+            // PostgREST per una colonna che non esiste rifiuta l'intera query — non la
+            // riga, tutta la SELECT. Chi apre una partita vecchia non trova queste chiavi
+            // e legge zero, che e' la verita'.
+            w.field("duelliVinti", s.duelsWon)
+            w.field("duelliPersi", s.duelsLost)
+            w.field("dribbling", s.dribblesCompleted)
+            w.field("dribblingTentati", s.dribblesAttempted)
+            w.field("dribblingSubiti", s.dribblesSuffered)
+            w.field("passaggi", s.passesCompleted)
+            w.field("passaggiTentati", s.passesAttempted)
             w.endObject()
         }
         w.endObject()

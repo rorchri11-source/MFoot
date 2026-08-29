@@ -753,11 +753,11 @@ data class EngineConfig(
      * fatto che ognuna si legga in una statistica diversa: quella del dribbling nei
      * dribbling riusciti a partita, non nei gol.
      */
-    val kCorsa: Double = 9.0,
-    val kDribbling: Double = 16.0,
-    val kContrasto: Double = 26.0,
-    val kAereo: Double = 15.0,
-    val kPassaggio: Double = 13.0,
+    val kCorsa: Double = 10.0,
+    val kDribbling: Double = 30.0,
+    val kContrasto: Double = 55.0,
+    val kAereo: Double = 32.0,
+    val kPassaggio: Double = 45.0,
 
     /**
      * Quanto spesso la spunta chi ha la palla, **a parita' di valore**.
@@ -791,7 +791,7 @@ data class EngineConfig(
      * zona d'attacco ci si resta piu' a lungo: senza, si tirerebbe sessanta volte a
      * partita.
      */
-    val shotChanceDuelli: Double = 0.20,
+    val shotChanceDuelli: Double = 0.162,
 
     /**
      * Bonus ai rating di zona per chi gioca in casa.

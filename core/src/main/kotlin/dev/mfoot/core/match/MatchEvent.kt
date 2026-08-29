@@ -27,6 +27,32 @@ enum class MatchEventType(val baseDanger: Int, val label: String) {
     FALLO(28, "Fallo"),
     ANGOLO(40, "Angolo"),
 
+    // ------------------------------------------------------------------ i duelli
+    //
+    // Sei tipi nuovi, tutti a pericolosita' bassa **di proposito**: sono il tessuto della
+    // partita, non l'highlight. Servono a una cosa sola, che il motore vecchio non poteva
+    // dare — dire due nomi invece di uno. «Rossi porta avanti l'azione» era tutto quello
+    // che si poteva scrivere quando l'esito lo decideva la media di due reparti: non
+    // esisteva nessun avversario da nominare, perche' non c'era nessun avversario.
+
+    /** «Rossi salta Bianchi sulla fascia» */
+    DRIBBLING_RIUSCITO(16, "Dribbling"),
+
+    /** «Bianchi lo chiude in scivolata» */
+    DRIBBLING_FALLITO(14, "Dribbling fallito"),
+
+    /** «Rossi brucia Bianchi in velocita'» */
+    SCATTO(15, "Scatto"),
+
+    /** «Verdi anticipa di testa» */
+    ANTICIPO(16, "Anticipo"),
+
+    /** «Neri apre per Rossi dentro l'area» */
+    PASSAGGIO_FILTRANTE(20, "Passaggio filtrante"),
+
+    /** «Cross di Rossi, testa di Verdi» */
+    CROSS(24, "Cross"),
+
     /**
      * Fuorigioco: non esisteva, e nel calcio vero capita quattro volte a partita.
      *
@@ -124,8 +150,42 @@ data class PlayerMatchStats(
     val redCards: Int = 0,
     val staminaSpent: Int = 0,
     val injured: Boolean = false,
+
+    /**
+     * Le sei che raccontano cosa ha fatto davvero, non solo cosa e' finito in porta.
+     *
+     * Prima di queste, di un difensore centrale il tabellino diceva soltanto quanti
+     * cartellini aveva preso: un grande centrale e un centrale scarso producevano lo
+     * stesso identico foglio. Sono anche il modo in cui si legge la taratura di ogni
+     * singola contesa — la pendenza del dribbling si vede in [dribblesCompleted] a
+     * partita, non nei gol.
+     *
+     * Viaggiano dentro `match_results.player_stats`, che e' gia' `jsonb`: un campo in piu'
+     * nel JSON non e' una colonna in piu'. Non si toccano le colonne di `appearances`, che
+     * l'app legge con una `select` a lista esplicita — e PostgREST, per una colonna che
+     * non c'e', rifiuta l'intera query.
+     */
+    val duelsWon: Int = 0,
+    val duelsLost: Int = 0,
+    /** Dribbling riusciti, e quanti ne ha provati: due campi perche' il tasso serve. */
+    val dribblesCompleted: Int = 0,
+    val dribblesAttempted: Int = 0,
+    /** Quante volte **lui** e' stato saltato. */
+    val dribblesSuffered: Int = 0,
+    val passesCompleted: Int = 0,
+    val passesAttempted: Int = 0,
 ) {
     val started: Boolean get() = minutesPlayed > 0
+
+    /** Quanti duelli ha giocato in tutto. Zero se la partita e' del motore vecchio. */
+    val duels: Int get() = duelsWon + duelsLost
+
+    /** Percentuale di duelli vinti, o null se non ne ha giocato nessuno. */
+    val duelSuccess: Double? get() = if (duels == 0) null else duelsWon.toDouble() / duels
+
+    /** Precisione nei passaggi, o null se non ne ha tentato nessuno. */
+    val passAccuracy: Double?
+        get() = if (passesAttempted == 0) null else passesCompleted.toDouble() / passesAttempted
 
     /**
      * Voto 1-10.
@@ -143,6 +203,18 @@ data class PlayerMatchStats(
         rating += keyActions * 0.16
         rating += tackles * 0.07
         rating -= fouls * 0.06
+
+        // I duelli. Un centrale che ne vince dodici deve prendere piu' di 6, e prima non
+        // poteva: l'unica voce che lo riguardava era `tackles * 0.07`. Con il motore
+        // vecchio questi contatori sono tutti a zero e il voto resta identico a prima.
+        rating += duelsWon * 0.05
+        rating -= duelsLost * 0.035
+        rating += dribblesCompleted * 0.10
+        rating -= dribblesSuffered * 0.08
+        if (passesAttempted >= 5) {
+            // Sopra o sotto l'80%, che e' la precisione media di chi gioca a calcio.
+            rating += (passesCompleted.toDouble() / passesAttempted - 0.80) * 2.0
+        }
         rating -= yellowCards * 0.35
         rating -= redCards * 1.6
 

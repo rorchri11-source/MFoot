@@ -216,9 +216,37 @@ object MatchEngine {
         private fun actionsFor(minutes: Int): Int {
             val tempoFactor = (home.tactics.tempo.actionMultiplier +
                 away.tactics.tempo.actionMultiplier) / 2.0
-            val scaled = engine.actionsPerMatch * tempoFactor * (minutes / FULL_MINUTES.toDouble())
+            val scaled = azioniPerPartita * tempoFactor * (minutes / FULL_MINUTES.toDouble())
             return StrictMath.round(scaled).toInt().coerceAtLeast(1)
         }
+
+        /**
+         * Quante azioni dura una partita.
+         *
+         * Col motore a duelli sono piu' del doppio, e non e' una manopola da tarare a
+         * gusto: e' aritmetica. Prima un'azione era **una** decisione — passi o perdi —
+         * mentre adesso una catena di possesso e' fatta di episodi, e per arrivare in
+         * porta ne servono diversi. Con lo stesso numero si giocherebbe una partita lunga
+         * un terzo.
+         */
+        private val azioniPerPartita: Int
+            get() = if (engine.duelliAttivi) engine.actionsPerMatchDuelli else engine.actionsPerMatch
+
+        /**
+         * Rimette in scala una probabilita' **per azione**.
+         *
+         * Falli, infortuni e fuorigioco erano tarati su 118 azioni. Con i duelli le azioni
+         * sono piu' del doppio, quindi le stesse probabilita' produrrebbero il doppio dei
+         * falli e il doppio degli infortuni senza che nessuno abbia deciso niente. Una
+         * riga sola invece di cinque manopole nuove: sono la stessa identica cosa espressa
+         * su una partita piu' lunga.
+         */
+        private fun perAzione(p: Double): Double =
+            if (engine.duelliAttivi) {
+                p * engine.actionsPerMatch.toDouble() / engine.actionsPerMatchDuelli
+            } else {
+                p
+            }
 
         private fun step(minute: Int) {
             totalActions++
@@ -231,11 +259,9 @@ object MatchEngine {
 
             val toucher = pickToucher(attacker, zone)
 
-            val delta = attacker.rating(zone) - defender.rating(zone.mirror())
-            val advanceChance = MathX.sigmoid(delta, engine.sigmoidK)
-
             // Il fallo puo' interrompere qualsiasi azione; il pressing alto ne produce di piu'.
-            val foulChance = engine.foulChance * defenderSetup.tactics.pressing.foulMultiplier
+            val foulChance = perAzione(engine.foulChance) *
+                defenderSetup.tactics.pressing.foulMultiplier
             if (rng.chance(foulChance)) {
                 resolveFoul(minute, defenderSetup)
                 return
@@ -246,13 +272,14 @@ object MatchEngine {
                 return
             }
 
-            val shotChance = engine.shotChanceInAttackingZone *
-                attackerSetup.tactics.stance.shotChanceFactor
+            val shotChance = (
+                if (engine.duelliAttivi) engine.shotChanceDuelli else engine.shotChanceInAttackingZone
+                ) * attackerSetup.tactics.stance.shotChanceFactor
             // Fuorigioco: l'azione muore prima di diventare una conclusione. Non esisteva
             // affatto — nemmeno come evento — e nel calcio vero capita quattro volte a
             // partita. Chi gioca alto ne prende di piu': la linea difensiva avversaria
             // alza la probabilita'.
-            if (zone.isAttacking && rng.chance(engine.offsideChance)) {
+            if (zone.isAttacking && rng.chance(perAzione(engine.offsideChance))) {
                 emit(
                     minute, MatchEventType.FUORIGIOCO, possession, zone = zone, player = toucher,
                     description = "${nameOf(toucher)} parte in fuorigioco",
@@ -267,6 +294,17 @@ object MatchEngine {
                 resolveShot(minute, toucher, defenderSetup)
                 return
             }
+
+            // Da qui in poi si decide se l'azione va avanti. E' l'unico punto in cui i due
+            // motori si separano: tutto quello che sta sopra — falli, infortuni,
+            // fuorigioco, conclusioni — e' identico.
+            if (engine.duelliAttivi) {
+                risolviDuello(minute, toucher, attacker, defender, attackerSetup, defenderSetup)
+                return
+            }
+
+            val delta = attacker.rating(zone) - defender.rating(zone.mirror())
+            val advanceChance = MathX.sigmoid(delta, engine.sigmoidK)
 
             if (rng.chance(advanceChance)) {
                 val next = zone.advance()
@@ -287,6 +325,283 @@ object MatchEngine {
                 resolveTurnover(minute, defenderSetup)
             }
         }
+
+        // ------------------------------------------------------------------ i duelli
+
+        /**
+         * Un'azione decisa da una contesa fra due giocatori con un nome.
+         *
+         * ## Cosa sostituisce
+         *
+         * Due righe: `rating(zona) - rating(zona specchiata)` dentro una sigmoide. Il
+         * problema non era che fossero sbagliate, era che **decidevano prima che ci fosse
+         * qualcuno**. [ZoneRatings] schiaccia gli undici in una media, e da li' in poi i
+         * nomi sono decorazione applicata a un esito gia' scelto: e' il motivo per cui due
+         * giocatori con lo stesso overall giocavano la stessa identica partita, e per cui
+         * `DRIBBLING`, `VELOCITA`, `DIFESA` e `INTERCETTAZIONE` non vincevano mai niente.
+         *
+         * ## I modificatori restano gli stessi
+         *
+         * Vantaggio del campo, allenatore, assetto, pressing, inerzia, quanti uomini
+         * gravitano li', stanchezza, morale, forma: tutto passa da [ZoneContext] e da
+         * [ZoneRatings.condizione], che sono **le stesse funzioni** che compongono il
+         * rating di zona. Se fossero due formule separate, il giorno che si ritocca il
+         * vantaggio del campo se ne aggiusterebbe una sola.
+         */
+        private fun risolviDuello(
+            minute: Int,
+            toucherId: PlayerId,
+            attacker: ZoneStrength,
+            defender: ZoneStrength,
+            attackerSetup: TeamSetup,
+            defenderSetup: TeamSetup,
+        ) {
+            val slot = slotDi(attackerSetup, toucherId)
+            if (slot == null) {
+                resolveTurnover(minute, defenderSetup)
+                return
+            }
+
+            val duello = Intenzioni.scegli(slot.player, zone.band, attackerSetup.tactics, rng)
+
+            // Il passaggio non si gioca contro chi ti sta addosso, ma contro chi legge dove
+            // stai per mandarla: la zona che conta e' quella d'arrivo.
+            val bersaglio = if (duello == Duello.PASSAGGIO) (zone.advance() ?: zone) else zone
+            val zonaDifesa = bersaglio.mirror()
+
+            val avversarioId = pickToucher(defender, zonaDifesa)
+            val avversario = slotDi(defenderSetup, avversarioId)
+
+            // Sul cross chi ha la palla non salta: la mette in mezzo, e a saltare e' chi
+            // attacca l'area. Senza questa riga i cross li incornerebbe l'ala che li batte,
+            // che e' lo stesso difetto per cui i corner li segnava sempre lo stesso uomo.
+            val contende = if (duello == Duello.AEREO) incornatore(attackerSetup) ?: slot else slot
+
+            val forzaAttacco = forzaInDuello(contende, duello, Lato.ATTACCO, bersaglio, attacker)
+            val forzaDifesa = avversario
+                ?.let { forzaInDuello(it, duello, Lato.DIFESA, zonaDifesa, defender) }
+                ?: ZoneStrength.EMPTY_ZONE_RATING
+
+            val vinto = rng.chance(Duelli.esito(duello, forzaAttacco, forzaDifesa, engine))
+
+            // Il passaggio non entra nel conto dei duelli: nel calcio un passaggio non e' un
+            // duello, ed e' la giocata piu' frequente di tutte. Contarlo gonfierebbe la voce
+            // «duelli vinti» fino a renderla la stessa cosa di «palloni toccati».
+            if (duello != Duello.PASSAGGIO) {
+                bump(contende.player.id) {
+                    if (vinto) {
+                        it.copy(duelsWon = it.duelsWon + 1)
+                    } else {
+                        it.copy(duelsLost = it.duelsLost + 1)
+                    }
+                }
+                avversario?.let { a ->
+                    bump(a.player.id) {
+                        if (vinto) {
+                            it.copy(duelsLost = it.duelsLost + 1)
+                        } else {
+                            it.copy(duelsWon = it.duelsWon + 1)
+                        }
+                    }
+                }
+            }
+
+            if (duello == Duello.DRIBBLING) {
+                bump(contende.player.id) { it.copy(dribblesAttempted = it.dribblesAttempted + 1) }
+            }
+            if (duello == Duello.PASSAGGIO) {
+                bump(contende.player.id) { it.copy(passesAttempted = it.passesAttempted + 1) }
+            }
+
+            if (vinto) {
+                duelloVinto(minute, duello, contende, avversario, defenderSetup)
+            } else {
+                duelloPerso(minute, duello, contende, avversario, defenderSetup)
+            }
+        }
+
+        private fun duelloVinto(
+            minute: Int,
+            duello: Duello,
+            chi: LineupSlot,
+            avversario: LineupSlot?,
+            defenderSetup: TeamSetup,
+        ) {
+            val id = chi.player.id
+
+            when (duello) {
+                // Reggere il pallone non fa guadagnare campo: fa restare la palla dov'e'.
+                // E' il mestiere del centravanti di peso, ed e' giusto che costi un'azione.
+                Duello.CONTRASTO -> {
+                    lastToucher = id
+                    return
+                }
+
+                // Il cross vinto in area **e'** l'occasione: non si avanza, si conclude.
+                Duello.AEREO -> if (zone.isAttacking) {
+                    emit(
+                        minute, MatchEventType.CROSS, possession, zone = zone, player = id,
+                        secondaryPlayer = avversario?.player?.id,
+                        description = "Cross in mezzo, ci arriva ${nameOf(id)}",
+                    )
+                    lastToucher = id
+                    resolveShot(minute, id, defenderSetup)
+                    return
+                }
+
+                else -> Unit
+            }
+
+            if (duello == Duello.PASSAGGIO) {
+                bump(id) { it.copy(passesCompleted = it.passesCompleted + 1) }
+            }
+            if (duello == Duello.DRIBBLING) {
+                bump(id) { it.copy(dribblesCompleted = it.dribblesCompleted + 1) }
+                avversario?.let { a ->
+                    bump(a.player.id) { it.copy(dribblesSuffered = it.dribblesSuffered + 1) }
+                }
+            }
+
+            val next = zone.advance()
+            lastToucher = id
+            bump(id) { it.copy(keyActions = it.keyActions + 1) }
+
+            if (next == null) {
+                // Gia' in area: la palla ci resta e gira. Il motore vecchio qui concludeva,
+                // e aveva ragione — arrivarci era raro. Coi duelli si sta in zona d'attacco
+                // per piu' episodi di fila, e far diventare un tiro **ogni** duello vinto
+                // li' dentro produceva quarantatre' tiri a partita invece di ventiquattro.
+                // A concludere ci pensa il tiro di dado in cima all'azione.
+                return
+            }
+            zone = next
+
+            // Non ogni episodio riuscito diventa una riga di cronaca. Un passaggio dentro
+            // la propria meta' campo e' rumore, e con piu' del doppio delle azioni di prima
+            // la timeline diventerebbe illeggibile — e pesante, visto che viaggia dentro
+            // `match_results.timeline` e la rilegge ogni telefono. Si racconta quello che
+            // ha due nomi e un merito: chi salta l'uomo, chi va via in velocita', chi apre
+            // il gioco dentro l'ultimo terzo.
+            when (duello) {
+                Duello.DRIBBLING -> emit(
+                    minute, MatchEventType.DRIBBLING_RIUSCITO, possession, zone = next,
+                    player = id, secondaryPlayer = avversario?.player?.id,
+                    description = avversario
+                        ?.let { "${nameOf(id)} salta ${nameOf(it.player.id)}" }
+                        ?: "${nameOf(id)} salta l'uomo",
+                )
+
+                Duello.CORSA -> emit(
+                    minute, MatchEventType.SCATTO, possession, zone = next,
+                    player = id, secondaryPlayer = avversario?.player?.id,
+                    description = avversario
+                        ?.let { "${nameOf(id)} brucia ${nameOf(it.player.id)} in velocita'" }
+                        ?: "${nameOf(id)} va via in velocita'",
+                )
+
+                Duello.AEREO -> emit(
+                    minute, MatchEventType.CROSS, possession, zone = next, player = id,
+                    description = "${nameOf(id)} apre il gioco lungo",
+                )
+
+                Duello.PASSAGGIO -> if (next.isAttacking) {
+                    emit(
+                        minute, MatchEventType.PASSAGGIO_FILTRANTE, possession, zone = next,
+                        player = id,
+                        description = "${nameOf(id)} apre il gioco dentro l'ultimo terzo",
+                    )
+                }
+
+                Duello.CONTRASTO -> Unit
+            }
+        }
+
+        private fun duelloPerso(
+            minute: Int,
+            duello: Duello,
+            chi: LineupSlot,
+            avversario: LineupSlot?,
+            defenderSetup: TeamSetup,
+        ) {
+            val vincitore = avversario?.player?.id
+            if (vincitore != null) {
+                bump(vincitore) { it.copy(tackles = it.tackles + 1) }
+
+                val tipo = when (duello) {
+                    Duello.DRIBBLING -> MatchEventType.DRIBBLING_FALLITO
+                    Duello.PASSAGGIO, Duello.AEREO -> MatchEventType.ANTICIPO
+                    else -> MatchEventType.CONTRASTO
+                }
+                val racconto = when (duello) {
+                    Duello.DRIBBLING -> "${nameOf(vincitore)} chiude su ${nameOf(chi.player.id)}"
+                    Duello.PASSAGGIO -> "${nameOf(vincitore)} legge il passaggio e intercetta"
+                    Duello.AEREO -> "${nameOf(vincitore)} anticipa di testa"
+                    Duello.CORSA -> "${nameOf(vincitore)} arriva prima su ${nameOf(chi.player.id)}"
+                    Duello.CONTRASTO -> "${nameOf(vincitore)} gli porta via il pallone"
+                }
+                emit(
+                    minute, tipo, possession.other(), zone = zone.mirror(),
+                    player = vincitore, secondaryPlayer = chi.player.id,
+                    description = racconto,
+                )
+            }
+
+            // L'angolo su attacco spento resta com'era, e con lui tutta la catena delle
+            // palle inattive: [resolveTurnover] emetterebbe un secondo evento di recupero
+            // sopra quello appena scritto, quindi qui si cambia possesso a mano.
+            if (zone.isAttacking && rng.chance(engine.cornerChanceOnLostAttack)) {
+                val attackerSetup = if (possession == Side.CASA) home else away
+                emit(
+                    minute, MatchEventType.ANGOLO, possession, zone = zone,
+                    player = SetPieces.taker(attackerSetup.lineup, MatchDuty.ANGOLI)?.id,
+                    description = "Angolo per ${teamName(possession)}",
+                )
+                resolveCorner(minute, attackerSetup, defenderSetup)
+                return
+            }
+
+            possession = possession.other()
+            zone = zone.mirror()
+            lastToucher = null
+        }
+
+        /**
+         * Quanto vale questo giocatore in questa contesa, qui e adesso.
+         *
+         * La formula ricalca riga per riga quella del rating di zona — `(qualita' +
+         * condizione) * fattore + bonus` — perche' deve valere la stessa cosa applicata a
+         * uno invece che a undici. L'unica sostituzione e' la **qualita'**: al posto della
+         * media di reparto di `BandWeights` c'e' quanto vale lui *in quel gesto*.
+         */
+        private fun forzaInDuello(
+            slot: LineupSlot,
+            duello: Duello,
+            lato: Lato,
+            inZone: Zone,
+            strength: ZoneStrength,
+        ): Double {
+            val qualita = Duelli.valore(duello, lato, slot.player.attributes) * slot.fitness
+            val condizione = ZoneRatings.condizione(slot.player, importance, engine)
+            return strength.contesto(inZone).applica(qualita + condizione).coerceIn(1.0, 99.0)
+        }
+
+        private fun slotDi(setup: TeamSetup, id: PlayerId): LineupSlot? =
+            setup.lineup.slots.firstOrNull { it.player.id == id }
+
+        /**
+         * Chi attacca l'area sul cross.
+         *
+         * Stessi pesi dei colpi di testa di [Conclusioni]: un centrale vale 5,5 contro l'1
+         * di un terzino. Sceglierlo col solo stacco migliore darebbe di nuovo il difetto
+         * dei corner — un uomo solo che si prende tutti i palloni alti della stagione.
+         */
+        private fun incornatore(setup: TeamSetup): LineupSlot? =
+            setup.lineup.outfield.takeIf { it.isNotEmpty() }?.let { candidati ->
+                rng.pickWeighted(candidati) { slot ->
+                    Conclusioni.peso(TipoConclusione.DI_TESTA, slot.position) *
+                        MathX.remap(staccoDi(slot.player), 40.0, 95.0, 0.6, 1.6)
+                }
+            }
 
         // ------------------------------------------------------------ risoluzioni
 
@@ -777,7 +1092,8 @@ object MatchEngine {
             }
             // Stanchi e fragili si fanno male molto piu' spesso.
             val fatigue = 1.0 + (100 - player.stamina) / 100.0
-            return engine.injuryChancePerAction * severity * fatigue * player.traits.injuryFactor()
+            return perAzione(engine.injuryChancePerAction) * severity * fatigue *
+                player.traits.injuryFactor()
         }
 
         // ------------------------------------------------------------------ ordini
@@ -907,7 +1223,7 @@ object MatchEngine {
         private fun totalActionsTarget(): Double {
             val tempoFactor = (home.tactics.tempo.actionMultiplier +
                 away.tactics.tempo.actionMultiplier) / 2.0
-            return engine.actionsPerMatch * tempoFactor
+            return azioniPerPartita * tempoFactor
         }
 
         private fun decayMomentum() {
