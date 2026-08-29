@@ -31,6 +31,8 @@ data class MatchMoment(
 /** Come ha giocato un singolo giocatore. */
 data class MatchRating(
     val playerId: Long,
+    /** Di che squadra era in campo: serve a dividere le due formazioni. */
+    val clubId: Long = 0L,
     val started: Boolean,
     val minutes: Int,
     val goals: Int,
@@ -60,10 +62,35 @@ data class PlayedMatch(
     val homeGoals: Int,
     val awayGoals: Int,
     val homePossession: Double,
+    /** Tiri totali, come li conta il motore: comprendono angoli e punizioni. */
+    val homeShots: Int = 0,
+    val awayShots: Int = 0,
     val moments: List<MatchMoment>,
     val ratings: List<MatchRating>,
 ) {
     val scoreline: String get() = "$homeGoals - $awayGoals"
+
+    /**
+     * Quante volte un tipo di evento e' capitato per parte.
+     *
+     * ## Perche' si contano gli eventi invece di salvare i totali
+     *
+     * Perche' i totali sarebbero un secondo posto in cui la stessa verita' puo' sbagliarsi.
+     * La timeline **e'** la partita: se dice quattro angoli, quattro angoli sono. Salvare
+     * anche un contatore vorrebbe dire poterlo trovare a tre, e non sapere a quale dei due
+     * credere.
+     *
+     * I tiri fanno eccezione e arrivano dal motore: comprendono conclusioni che non
+     * generano un evento a se'.
+     */
+    fun conta(vararg tipi: String): Pair<Int, Int> {
+        val presi = moments.filter { it.type in tipi }
+        return presi.count { it.homeSide } to presi.count { !it.homeSide }
+    }
+
+    /** Chi ha giocato dall'inizio, e chi e' entrato dopo. */
+    val titolari: List<MatchRating> get() = ratings.filter { it.started }
+    val subentrati: List<MatchRating> get() = ratings.filter { !it.started && it.minutes > 0 }
 }
 
 /**
@@ -195,6 +222,8 @@ object MatchRepository {
                     homeGoals = dati["home_goals"].int(dati["homeGoals"].int(0)),
                     awayGoals = dati["away_goals"].int(dati["awayGoals"].int(0)),
                     homePossession = dati["home_possession"].double(dati["homePossession"].double(0.5)),
+                    homeShots = timeline["homeShots"].int(0),
+                    awayShots = timeline["awayShots"].int(0),
                     moments = timeline["events"].asList().map { e ->
                         MatchMoment(
                             minute = e["minute"].int(0),
@@ -227,13 +256,14 @@ object MatchRepository {
      */
     suspend fun ratings(fixtureId: Long): List<MatchRating> {
         val path = "/rest/v1/appearances?select=player_id,started,minutes,goals,assists," +
-            "yellow,red,rating&fixture_id=eq.$fixtureId&order=rating.desc"
+            "yellow,red,rating,club_id&fixture_id=eq.$fixtureId&order=rating.desc"
 
         return when (val esito = SupabaseApi.get(path)) {
             is ApiResult.Error -> emptyList()
             is ApiResult.Ok -> JsonNode.parse(esito.value).asList().map { row ->
                 MatchRating(
                     playerId = row["player_id"].long(0),
+                    clubId = row["club_id"].long(0),
                     started = row["started"].bool(false),
                     minutes = row["minutes"].int(0),
                     goals = row["goals"].int(0),

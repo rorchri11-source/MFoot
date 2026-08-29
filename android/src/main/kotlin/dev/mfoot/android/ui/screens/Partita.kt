@@ -12,12 +12,15 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -25,6 +28,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.MatchState
+import dev.mfoot.android.app.MatchTab
 import dev.mfoot.android.data.MatchMoment
 import dev.mfoot.android.data.MatchRating
 import dev.mfoot.android.ui.GhostButton
@@ -75,6 +82,7 @@ import dev.mfoot.android.ui.theme.MFootType
 @Composable
 fun PartitaScreen(
     state: MatchState,
+    onScheda: (MatchTab) -> Unit,
     onPausa: () -> Unit,
     onFine: () -> Unit,
     onChiudi: () -> Unit,
@@ -100,69 +108,348 @@ fun PartitaScreen(
             return
         }
 
-        // IL CAMPO
-        //
-        // Sta sotto il tabellone e sopra la telecronaca perche' e' quello che si guarda
-        // per novanta minuti: l'elenco degli eventi lo si legge quando succede qualcosa,
-        // il campo lo si guarda anche quando non succede niente — che nel calcio vero e'
-        // la maggior parte del tempo.
-        val azione = state.azione
-        Box(Modifier.padding(MFootSpacing.section, 12.dp, MFootSpacing.section, 0.dp)) {
-            CampoLive(
-                zona = azione?.zone,
-                casa = azione?.homeSide ?: true,
-                pericolo = azione?.danger ?: 0,
-                golTotali = state.golCasa + state.golFuori,
-            )
-            if (state.inIntervallo) Sipario(state, Modifier.matchParentSize())
-        }
-
-        // L'inerzia: da che parte sta andando la partita.
-        //
-        // Non e' il possesso della partita intera, che a fine gara e' un numero e basta:
-        // e' come sono andati gli **ultimi dieci minuti**, cioe' la domanda che ci si fa
-        // guardando. Una squadra puo' avere il 60% di possesso e stare subendo, e con la
-        // sola percentuale finale quella cosa non si vede.
-        Inerzia(state)
-
         Comandi(state, onPausa, onFine, onChiudi)
+        Schede(state, onScheda)
         Hairline()
 
-        val accaduto = state.accaduto
-        val pagelle = state.partita?.ratings.orEmpty()
-
-        LazyColumn(Modifier.weight(1f)) {
-            if (state.finita && pagelle.isNotEmpty()) {
-                item {
-                    Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 8.dp)) {
-                        Label("Pagelle")
-                    }
-                }
-                items(pagelle, key = { it.playerId }) { voto ->
-                    Pagella(voto, nomeGiocatore(voto.playerId))
-                }
-                item { Spacer(Modifier.height(MFootSpacing.section)) }
-            }
-
-            if (accaduto.isEmpty()) {
-                item {
-                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            "Si comincia.",
-                            style = MFootType.secondary,
-                            color = MFootColors.ink3,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
-            }
-
-            items(accaduto, key = { "${it.minute}-${it.text.hashCode()}" }) { momento ->
-                Momento(momento, state)
-            }
-
-            item { Spacer(Modifier.height(30.dp)) }
+        when (state.scheda) {
+            MatchTab.CAMPO -> SchedaCampo(state)
+            MatchTab.RIASSUNTO -> SchedaRiassunto(state, nomeGiocatore)
+            MatchTab.NUMERI -> SchedaNumeri(state)
+            MatchTab.FORMAZIONI -> SchedaFormazioni(state, nomeGiocatore)
         }
+    }
+}
+
+/**
+ * Le schede.
+ *
+ * ## Perche' sono arrivate
+ *
+ * Prima era una pagina sola: campo, sotto la telecronaca, e le pagelle in fondo a tutto.
+ * La risposta a «chi ha giocato bene» stava a due schermate di distanza da quella a «com'e'
+ * finita», e le statistiche non c'erano proprio — malgrado il motore le calcoli tutte.
+ *
+ * L'ordine e' quello in cui una persona fa le domande: cosa sta succedendo, cosa e'
+ * successo di importante, chi ha dominato, chi ha giocato.
+ */
+@Composable
+private fun Schede(state: MatchState, onScheda: (MatchTab) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(MFootSpacing.section, 4.dp, MFootSpacing.section, 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        MatchTab.entries.forEach { scheda ->
+            val attiva = scheda == state.scheda
+            Text(
+                scheda.label,
+                style = MFootType.chip,
+                color = if (attiva) MFootColors.bg else MFootColors.ink2,
+                modifier = Modifier
+                    .background(
+                        if (attiva) MFootColors.ink else MFootColors.core,
+                        MFootShapes.pill,
+                    )
+                    .clickable { onScheda(scheda) }
+                    .padding(horizontal = 15.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/** Il campo, l'inerzia e la telecronaca: quello che si guarda mentre si gioca. */
+@Composable
+private fun ColumnScope.SchedaCampo(state: MatchState) {
+    // Il campo lo si guarda anche quando non succede niente — che nel calcio vero e' la
+    // maggior parte del tempo — mentre la telecronaca si legge solo quando succede.
+    val azione = state.azione
+    Box(Modifier.padding(MFootSpacing.section, 0.dp, MFootSpacing.section, 0.dp)) {
+        CampoLive(
+            zona = azione?.zone,
+            casa = azione?.homeSide ?: true,
+            pericolo = azione?.danger ?: 0,
+            golTotali = state.golCasa + state.golFuori,
+        )
+        if (state.inIntervallo) Sipario(state, Modifier.matchParentSize())
+    }
+
+    Inerzia(state)
+    Hairline()
+
+    val accaduto = state.accaduto
+    LazyColumn(Modifier.weight(1f)) {
+        if (accaduto.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Si comincia.",
+                        style = MFootType.secondary,
+                        color = MFootColors.ink3,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+        items(accaduto, key = { "${it.minute}-${it.text.hashCode()}" }) { momento ->
+            Momento(momento, state)
+        }
+        item { Spacer(Modifier.height(30.dp)) }
+    }
+}
+
+/**
+ * La partita in dieci righe: gol, cambi, cartellini pesanti.
+ *
+ * ## Perche' non e' la telecronaca filtrata
+ *
+ * Perche' risponde a un'altra domanda. La telecronaca racconta *com'e' andata* e si legge
+ * dall'alto; questa risponde a *cos'e' successo* e si guarda in un colpo — chi ha segnato e
+ * al minuto, chi e' entrato per chi. E' la scheda che si apre a partita finita per capire
+ * la gara in cinque secondi, senza scorrere trenta righe di occasioni sbagliate.
+ */
+@Composable
+private fun ColumnScope.SchedaRiassunto(state: MatchState, nomeGiocatore: (Long) -> String) {
+    val pesanti = state.partita?.moments.orEmpty()
+        .filter { it.minute <= state.minuto }
+        .filter { it.isGoal || it.type in TIPI_RIASSUNTO }
+
+    if (pesanti.isEmpty()) {
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Text(
+                "Ancora niente da raccontare.",
+                style = MFootType.secondary,
+                color = MFootColors.ink3,
+            )
+        }
+        return
+    }
+
+    LazyColumn(Modifier.weight(1f)) {
+        items(pesanti, key = { "${it.minute}-${it.type}-${it.text.hashCode()}" }) { m ->
+            RigaRiassunto(m, nomeGiocatore)
+        }
+        item { Spacer(Modifier.height(30.dp)) }
+    }
+}
+
+private val TIPI_RIASSUNTO = setOf(
+    "SOSTITUZIONE", "ESPULSIONE", "AMMONIZIONE", "RIGORE_SBAGLIATO", "INFORTUNIO",
+)
+
+/**
+ * Una riga del riassunto: minuto a sinistra o a destra secondo la squadra.
+ *
+ * Il lato dice **di chi e'** senza doverlo scrivere: e' il modo in cui un tabellino si
+ * legge da sempre, e con due nomi di club lunghi e' anche l'unico che ci sta in larghezza.
+ */
+@Composable
+private fun RigaRiassunto(m: MatchMoment, nomeGiocatore: (Long) -> String) {
+    val icona = when {
+        m.isGoal -> "⚽"
+        m.type == "SOSTITUZIONE" -> "⇄"
+        m.type == "ESPULSIONE" -> "▮"
+        m.type == "AMMONIZIONE" -> "▯"
+        m.type == "INFORTUNIO" -> "✚"
+        else -> "•"
+    }
+    val colore = when {
+        m.isGoal -> MFootColors.elite
+        m.type == "ESPULSIONE" -> MFootColors.low
+        m.type == "AMMONIZIONE" -> MFootColors.gamble
+        else -> MFootColors.ink2
+    }
+    val chi = m.playerId?.let(nomeGiocatore).orEmpty()
+
+    Row(
+        Modifier.fillMaxWidth().padding(MFootSpacing.section, 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (m.homeSide) {
+            Text("${m.minute}'", style = MFootType.label, color = MFootColors.ink3, modifier = Modifier.width(38.dp))
+            Text(icona, style = MFootType.chip, color = colore)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                chi.ifBlank { m.text },
+                style = MFootType.rowTitle,
+                color = MFootColors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Text(
+                chi.ifBlank { m.text },
+                style = MFootType.rowTitle,
+                color = MFootColors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(icona, style = MFootType.chip, color = colore)
+            Text(
+                "${m.minute}'",
+                style = MFootType.label,
+                color = MFootColors.ink3,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(38.dp),
+            )
+        }
+    }
+    Hairline()
+}
+
+/**
+ * I numeri, a confronto.
+ *
+ * ## Perche' si contano dagli eventi
+ *
+ * Perche' la timeline **e'** la partita. Salvare anche dei totali vorrebbe dire un secondo
+ * posto in cui la stessa verita' puo' sbagliarsi, e non sapere a quale dei due credere. I
+ * tiri fanno eccezione e arrivano dal motore: comprendono conclusioni che non producono un
+ * evento a se'.
+ */
+@Composable
+private fun ColumnScope.SchedaNumeri(state: MatchState) {
+    val p = state.partita ?: return
+
+    val angoli = p.conta("ANGOLO")
+    val falli = p.conta("FALLO")
+    val parate = p.conta("PARATA")
+    val legni = p.conta("PALO")
+    val gialli = p.conta("AMMONIZIONE")
+    val rossi = p.conta("ESPULSIONE")
+    val possessoCasa = StrictMath.round(p.homePossession * 100).toInt()
+
+    Column(
+        Modifier
+            .weight(1f)
+            .verticalScroll(rememberScrollState())
+            .padding(MFootSpacing.section),
+    ) {
+        Confronto("Gol", state.golCasa, state.golFuori)
+        Confronto("Tiri", p.homeShots, p.awayShots)
+        // Le parate dell'una sono i tiri nello specchio dell'altra: si incrociano.
+        Confronto("In porta", parate.second + state.golCasa, parate.first + state.golFuori)
+        Confronto("Legni", legni.first, legni.second)
+        Confronto("Angoli", angoli.first, angoli.second)
+        Confronto("Possesso", possessoCasa, 100 - possessoCasa, suffisso = "%")
+        Confronto("Falli", falli.first, falli.second)
+        Confronto("Ammonizioni", gialli.first, gialli.second)
+        if (rossi.first + rossi.second > 0) Confronto("Espulsioni", rossi.first, rossi.second)
+
+        if (!p.completa) {
+            Spacer(Modifier.height(MFootSpacing.section))
+            Text(
+                "Sono i numeri del primo tempo: il resto arriva quando la partita finisce.",
+                style = MFootType.chip,
+                color = MFootColors.ink3,
+            )
+        }
+        Spacer(Modifier.height(30.dp))
+    }
+}
+
+/** Una riga di confronto: due numeri e una barra che li pesa. */
+@Composable
+private fun Confronto(titolo: String, casa: Int, fuori: Int, suffisso: String = "") {
+    val totale = (casa + fuori).coerceAtLeast(1)
+    val quota by animateFloatAsState(casa.toFloat() / totale, tween(600), label = titolo)
+
+    Column(Modifier.padding(vertical = 10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "$casa$suffisso",
+                style = MFootType.value,
+                color = if (casa >= fuori) MFootColors.ink else MFootColors.ink3,
+                modifier = Modifier.width(52.dp),
+            )
+            Text(
+                titolo,
+                style = MFootType.chip,
+                color = MFootColors.ink2,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "$fuori$suffisso",
+                style = MFootType.value,
+                color = if (fuori >= casa) MFootColors.ink else MFootColors.ink3,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(52.dp),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(MFootShapes.pill)
+                .background(MFootColors.core),
+        ) {
+            Box(Modifier.fillMaxWidth(quota).fillMaxHeight().background(MFootColors.elite))
+            Box(Modifier.weight(1f).fillMaxHeight().background(MFootColors.gamble))
+        }
+    }
+}
+
+/**
+ * Le pagelle, divise per squadra.
+ *
+ * ## Perche' divise, e non in un elenco solo ordinato per voto
+ *
+ * Perche' l'elenco unico rispondeva a «chi ha giocato meglio in campo», che non e' la
+ * domanda: quella e' **«come ha giocato la mia squadra»**. Con ventidue nomi mescolati per
+ * voto bisognava leggerli tutti per trovare i propri.
+ */
+@Composable
+private fun ColumnScope.SchedaFormazioni(state: MatchState, nomeGiocatore: (Long) -> String) {
+    val p = state.partita ?: return
+
+    if (p.ratings.isEmpty()) {
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Text(
+                if (p.completa) "Per questa partita non ci sono pagelle."
+                else "Le pagelle arrivano a fine partita.",
+                style = MFootType.secondary,
+                color = MFootColors.ink3,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(40.dp),
+            )
+        }
+        return
+    }
+
+    LazyColumn(Modifier.weight(1f)) {
+        listOf(p.homeClubId to state.homeName, p.awayClubId to state.awayName).forEach { (club, nome) ->
+            val suoi = p.ratings.filter { it.clubId == club }
+            if (suoi.isEmpty()) return@forEach
+
+            item(key = "t-$club") {
+                Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 8.dp)) {
+                    Label(nome)
+                }
+            }
+            items(suoi.filter { it.started }, key = { "s${it.playerId}" }) { v ->
+                Pagella(v, nomeGiocatore(v.playerId))
+            }
+            val dentro = suoi.filter { !it.started && it.minutes > 0 }
+            if (dentro.isNotEmpty()) {
+                item(key = "p-$club") {
+                    Column(Modifier.padding(MFootSpacing.section, 10.dp, MFootSpacing.section, 6.dp)) {
+                        Text("Entrati", style = MFootType.label, color = MFootColors.ink3)
+                    }
+                }
+                items(dentro, key = { "e${it.playerId}" }) { v ->
+                    Pagella(v, nomeGiocatore(v.playerId))
+                }
+            }
+        }
+        item { Spacer(Modifier.height(30.dp)) }
     }
 }
 

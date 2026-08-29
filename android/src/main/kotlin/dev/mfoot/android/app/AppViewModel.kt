@@ -1131,6 +1131,18 @@ class AppViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Cambia scheda dentro la partita.
+     *
+     * La scheda vive nello stato e non nella composizione: cambiarla non deve rimettere in
+     * pausa la riproduzione, e tornando dal Campo alle Formazioni e viceversa il minuto
+     * dev'essere lo stesso di prima.
+     */
+    fun cambiaSchedaPartita(scheda: MatchTab) {
+        val corrente = (_state.value as? AppState.Partita)?.partita ?: return
+        _state.value = AppState.Partita(corrente.copy(scheda = scheda))
+    }
+
     /** In diretta non si mette in pausa: non si mette in pausa una partita. */
     fun pausaPartita() {
         val corrente = (_state.value as? AppState.Partita)?.partita ?: return

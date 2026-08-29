@@ -48,6 +48,8 @@ data class MatchState(
     val attesaRipresa: Boolean = false,
     val caricamento: Boolean = true,
     val errore: String? = null,
+    /** Quale scheda si sta guardando. */
+    val scheda: MatchTab = MatchTab.CAMPO,
 ) {
     /** Quello che e' gia' successo, dal piu' recente. */
     val accaduto: List<MatchMoment>
@@ -141,4 +143,31 @@ data class MatchState(
             )
         }
     }
+}
+
+/**
+ * Le quattro domande che si fanno a una partita.
+ *
+ * ## Perche' quattro schede e non una pagina sola
+ *
+ * Perche' erano una pagina sola — campo, poi telecronaca, poi pagelle in fondo — e la
+ * risposta a «com'e' andata» stava a due schermate di distanza da quella a «chi ha giocato
+ * bene». Segnalato dal proprietario con la frase che chiude ogni discussione:
+ * *«interfaccia partita molto brutta e non si capisce niente»*.
+ *
+ * Le quattro sono quelle che una persona chiede davvero, nell'ordine in cui le chiede:
+ * cosa sta succedendo, cosa e' successo di importante, chi ha dominato, chi ha giocato.
+ */
+enum class MatchTab(val label: String) {
+    /** Il campo con la palla: e' quello che si guarda mentre si gioca. */
+    CAMPO("Campo"),
+
+    /** Gol, cambi ed espulsioni in fila: la partita in dieci righe. */
+    RIASSUNTO("Riassunto"),
+
+    /** Le statistiche a confronto, con le barre. */
+    NUMERI("Numeri"),
+
+    /** Le pagelle, divise per squadra. */
+    FORMAZIONI("Formazioni"),
 }

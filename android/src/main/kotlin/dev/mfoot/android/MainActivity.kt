@@ -224,6 +224,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
             is AppState.Partita -> PartitaScreen(
                 state = current.partita,
+                onScheda = viewModel::cambiaSchedaPartita,
                 onPausa = viewModel::pausaPartita,
                 onFine = viewModel::saltaAllaFine,
                 onChiudi = viewModel::chiudiPartita,
