@@ -40,6 +40,8 @@ data class MatchRating(
     val yellow: Int,
     val red: Int,
     val rating: Double,
+    /** Il ruolo in cui ha giocato questa partita: serve a disegnarlo sul campo. */
+    val position: String? = null,
 )
 
 /** Una partita giocata, pronta da rivedere. */
@@ -65,6 +67,9 @@ data class PlayedMatch(
     /** Tiri totali, come li conta il motore: comprendono angoli e punizioni. */
     val homeShots: Int = 0,
     val awayShots: Int = 0,
+    /** I moduli con cui si e giocato, per disegnare il campo del tabellino. */
+    val homeFormation: String? = null,
+    val awayFormation: String? = null,
     val moments: List<MatchMoment>,
     val ratings: List<MatchRating>,
 ) {
@@ -191,7 +196,7 @@ object MatchRepository {
     suspend fun load(fixtureId: Long): ApiResult<PlayedMatch> {
         val path = "/rest/v1/fixtures?select=id,home_club_id,away_club_id,match_day,kickoff," +
             "resume_at,first_half," +
-            "match_results(home_goals,away_goals,timeline,home_possession)" +
+            "match_results(home_goals,away_goals,timeline,home_possession,home_formation,away_formation)" +
             "&id=eq.$fixtureId&limit=1"
 
         return SupabaseApi.get(path).then { body ->
@@ -224,6 +229,8 @@ object MatchRepository {
                     homePossession = dati["home_possession"].double(dati["homePossession"].double(0.5)),
                     homeShots = timeline["homeShots"].int(0),
                     awayShots = timeline["awayShots"].int(0),
+                    homeFormation = dati["home_formation"].strOrNull(),
+                    awayFormation = dati["away_formation"].strOrNull(),
                     moments = timeline["events"].asList().map { e ->
                         MatchMoment(
                             minute = e["minute"].int(0),
@@ -256,7 +263,7 @@ object MatchRepository {
      */
     suspend fun ratings(fixtureId: Long): List<MatchRating> {
         val path = "/rest/v1/appearances?select=player_id,started,minutes,goals,assists," +
-            "yellow,red,rating,club_id&fixture_id=eq.$fixtureId&order=rating.desc"
+            "yellow,red,rating,club_id,position&fixture_id=eq.$fixtureId&order=rating.desc"
 
         return when (val esito = SupabaseApi.get(path)) {
             is ApiResult.Error -> emptyList()
@@ -271,6 +278,7 @@ object MatchRepository {
                     yellow = row["yellow"].int(0),
                     red = row["red"].int(0),
                     rating = row["rating"].double(0.0),
+                    position = row["position"].strOrNull(),
                 )
             }
         }

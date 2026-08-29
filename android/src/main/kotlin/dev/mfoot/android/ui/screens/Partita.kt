@@ -48,6 +48,7 @@ import dev.mfoot.android.ui.GhostButton
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Notice
+import dev.mfoot.android.ui.pitch.CampoFormazione
 import dev.mfoot.android.ui.pitch.CampoLive
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootShapes
@@ -424,6 +425,8 @@ private fun ColumnScope.SchedaFormazioni(state: MatchState, nomeGiocatore: (Long
         return
     }
 
+    val moduli = mapOf(p.homeClubId to p.homeFormation, p.awayClubId to p.awayFormation)
+
     LazyColumn(Modifier.weight(1f)) {
         listOf(p.homeClubId to state.homeName, p.awayClubId to state.awayName).forEach { (club, nome) ->
             val suoi = p.ratings.filter { it.clubId == club }
@@ -431,7 +434,23 @@ private fun ColumnScope.SchedaFormazioni(state: MatchState, nomeGiocatore: (Long
 
             item(key = "t-$club") {
                 Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 8.dp)) {
-                    Label(nome)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Label(nome, Modifier.weight(1f))
+                        // Il modulo accanto al nome, come nel riferimento: dice **come**
+                        // e' scesa in campo, che e' la prima cosa che si guarda insieme ai
+                        // voti.
+                        moduli[club]?.let { m ->
+                            Text(
+                                m.removePrefix("F_").replace('_', '-'),
+                                style = MFootType.chip,
+                                color = MFootColors.ink3,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    CampoFormazione(moduli[club], suoi, nomeGiocatore)
+                    Spacer(Modifier.height(14.dp))
+                    Text("In campo dall'inizio", style = MFootType.label, color = MFootColors.ink3)
                 }
             }
             items(suoi.filter { it.started }, key = { "s${it.playerId}" }) { v ->

@@ -3348,8 +3348,9 @@ class TickRunner(
         connection.prepareStatement(
             """
             insert into match_results (fixture_id, league_id, home_goals, away_goals, seed,
-                                       timeline, player_stats, home_possession)
-            values (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?)
+                                       timeline, player_stats, home_possession,
+                                       home_formation, away_formation)
+            values (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?)
             on conflict (fixture_id) do nothing
             """.trimIndent(),
         ).use { st ->
@@ -3361,6 +3362,11 @@ class TickRunner(
             st.setString(6, MatchJson.timeline(result))
             st.setString(7, MatchJson.playerStats(result))
             st.setDouble(8, result.homePossession)
+            // I moduli con cui si e giocato davvero: il campo del tabellino li disegna, e
+            // rileggerli dalla formazione salvata darebbe quella di adesso, non quella
+            // scesa in campo un ora fa.
+            st.setString(9, home.lineup.formation.name)
+            st.setString(10, away.lineup.formation.name)
             st.executeUpdate()
         }
 
@@ -3415,13 +3421,17 @@ class TickRunner(
             """
             insert into appearances (fixture_id, player_id, league_id, club_id, match_day,
                                      started, minutes, goals, assists, yellow, red,
-                                     injured, rating)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     injured, rating, position)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             on conflict (fixture_id, player_id) do nothing
             """.trimIndent(),
         ).use { st ->
             listOf(home, away).forEach { team ->
                 val titolari = team.lineup.playerIds
+                // Il ruolo **in cui ha giocato**, non quello naturale: un centrale schierato
+                // terzino va disegnato dove stava, o il campo del tabellino racconta una
+                // formazione che non e mai scesa in campo.
+                val ruoli = team.lineup.slots.associate { it.player.id to it.position }
                 loadSquad(league.id, team.clubId).forEach { player ->
                     val stats = result.stats[player.id]
                     val minuti = stats?.minutesPlayed ?: 0
@@ -3448,6 +3458,9 @@ class TickRunner(
                             0.0
                         },
                     )
+                    val ruolo = ruoli[player.id]
+                    if (ruolo == null) st.setNull(14, java.sql.Types.VARCHAR)
+                    else st.setString(14, ruolo.name)
                     st.addBatch()
                 }
             }

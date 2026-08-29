@@ -236,6 +236,9 @@ create table if not exists match_results (
     timeline    jsonb   not null,
     player_stats jsonb  not null,
     home_possession real not null default 0.5,
+    -- I moduli con cui si e giocato: servono a ricostruire il campo del tabellino.
+    home_formation  text,
+    away_formation  text,
     simulated_at timestamptz not null default now()
 );
 
@@ -415,6 +418,9 @@ create table if not exists appearances (
     -- Titolare vuol dire "era in campo al fischio d'inizio", e lo sa solo la formazione
     -- con cui la partita e' cominciata. Dedurlo dai minuti darebbe titolare anche a chi
     -- entra all'ottantesimo.
+    -- Il ruolo in cui ha giocato **questa** partita, per disegnare il campo del tabellino.
+    -- Non e il ruolo naturale: un centrale schierato terzino va disegnato dove ha giocato.
+    position    text,
     started     boolean not null default false,
     minutes     integer not null default 0,
     goals       integer not null default 0,
@@ -574,6 +580,9 @@ create table if not exists purchases (
 alter table competitions add column if not exists finished_at    timestamptz;
 alter table competitions add column if not exists winner_club_id bigint references clubs(id) on delete set null;
 alter table tick_state   add column if not exists last_stamina_at timestamptz;
+alter table appearances  add column if not exists position       text;
+alter table match_results add column if not exists home_formation text;
+alter table match_results add column if not exists away_formation text;
 
 
 -- =====================================================================================
