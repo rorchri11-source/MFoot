@@ -317,6 +317,38 @@ e un quarto delle conclusioni murate: senza, ogni tiro era gol, parata o fuori, 
 portiere risultava impegnato il doppio del vero.
 *Detta il 2026-08-29 · `MatchEventType.FUORIGIOCO`, `TIRO_MURATO`*
 
+**Le azioni le decidono i duelli fra due giocatori, non la media di due reparti.**
+*Decisa il 2026-08-29, ancora da implementare.*
+Oggi un'azione è un numero contro un numero: `rating(zona) − rating(zona specchiata)` dentro
+una sigmoide. `ZoneRatings` schiaccia gli undici in una media **prima** che succeda
+qualcosa, e i nomi arrivano dopo, su un esito già deciso. Conseguenza verificata: nessuno
+dei dodici attributi decide mai un episodio — `DRIBBLING`, `VELOCITÀ`, `DIFESA` e
+`INTERCETTAZIONE` entrano soltanto dentro la media di zona — e due giocatori con lo stesso
+overall giocano la stessa identica partita. Detta così: *«i giocatori sono numeri, non
+persone»*.
+Si riscrive su **cinque contese**, ognuna con la sua decisività: corsa (velocità quasi
+decisiva), dribbling, contrasto (dove contano posizione, rimbalzo e arbitro), duello aereo,
+passaggio. *«Nella corsa chi è più veloce ci arriva prima, punto; nel contrasto e nel
+dribbling conta di più il caso»* — quindi cinque manopole da tarare, non una.
+Le zone restano come **geografia** e come anagrafe di chi c'è: servono a estrarre
+l'avversario. Il livello del tiro — `Conclusioni`, misurato oggi a 66/20/12 con venti
+marcatori — **non si tocca**: i duelli riguardano come si arriva al tiro.
+Scelta contro il consiglio di innestare i duelli dentro l'avanzamento esistente, sapendo
+che il costo è rifare la taratura. Difesa: la banda misurata diventa un test, e il motore
+nuovo nasce dietro un interruttore spento.
+*Progetto: [`superpowers/specs/2026-08-29-duelli-in-campo-design.md`](superpowers/specs/2026-08-29-duelli-in-campo-design.md)*
+
+**La profondità si ferma dentro i novanta minuti.**
+*Decisa il 2026-08-29.*
+Nessun intervento in diretta: niente cambi manuali mentre si gioca, niente istruzioni al
+volo. Con partite di novanta minuti veri, chi può stare attaccato al telefono batterebbe
+chi lavora — e le migliaia di partite fra squadre del computer resterebbero comunque
+automatiche, cioè povere. Chi prepara bene gioca bene.
+Restano gli ordini condizionali, che sono già completi in `core` e servono esattamente a
+dare voce a chi alle 21 non c'è.
+
+
+
 **Gli ordini condizionali si vedono e si scrivono.**
 «Se sono sotto dal 60', dentro la punta», «se scende sotto 40 di stamina, cambialo». Sono
 completi in `core` dal principio, il database ha la colonna `orders` che li aspetta, e
