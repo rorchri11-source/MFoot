@@ -19,6 +19,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -137,7 +139,14 @@ private fun CreateForm(
     // Le scelte ripartono dal preset ogni volta che se ne cambia uno: e' il senso di un
     // preset. Tenere i ritocchi attraverso il cambio darebbe una lega che non e' ne' quella
     // scelta ne' quella impostata, e nessuno saprebbe piu' da dove vengono i suoi numeri.
-    var scelte by remember(preset) {
+    //
+    // **`rememberSaveable`, non `remember`.** Era l'unico pezzo di stato di questo modulo a
+    // non sopravvivere a una ricreazione della schermata: una rotazione, o un ritorno
+    // nell'app dopo che Android aveva liberato memoria, riportava i numeri a quelli del
+    // preset **lasciando pieni i campi di testo**. Non si vedeva niente di storto, e la lega
+    // nasceva con otto squadre del computer e cento milioni al posto di quelle impostate.
+    // Riprodotto ruotando lo schermo con le impostazioni a vista.
+    var scelte by rememberSaveable(preset, stateSaver = SCELTE_SAVER) {
         mutableStateOf(SetupChoices.from(ConfigPresets.byId(preset)!!.build(16, 8, LocalDate.now())))
     }
     val pronto = nome.isNotBlank() && codice.isNotBlank() && nickname.isNotBlank()
@@ -400,3 +409,15 @@ private fun Impostazioni(scelte: SetupChoices, onChange: (SetupChoices) -> Unit)
         },
     ) { IntStepper(scelte.divisions, 1..6, true) { onChange(scelte.copy(divisions = it)) } }
 }
+
+/**
+ * Come si salvano le scelte quando Android ricrea la schermata.
+ *
+ * `SetupChoices` e' una data class di sei interi: non e' `Parcelable`, quindi
+ * `rememberSaveable` da solo non saprebbe conservarla. Sei numeri in una lista sono la
+ * forma piu' semplice che il salvataggio di stato sa gia' gestire.
+ */
+private val SCELTE_SAVER: Saver<SetupChoices, Any> = listSaver(
+    save = { it.toList() },
+    restore = { SetupChoices.fromList(it.map { n -> (n as Number).toInt() }) },
+)

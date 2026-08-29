@@ -400,6 +400,38 @@ sbagliato dentro.
 Vale la pena tenere il metodo: nessuno di questi sarebbe uscito da un test, perche' i test
 provano il codice che qualcuno chiama. Sono usciti perche' **qualcuno ha guardato l'app**.
 
+### La lega nasceva con i numeri sbagliati, 2026-08-29
+
+Segnalato dal proprietario: «ho impostato 10 squadre AI ma me ne ha fatte 8, ho impostato
+60M e sono partiti a 100M». **Otto e cento milioni sono esattamente i valori di serie del
+preset `sprint`** — misurato, non dedotto — quindi le scelte non arrivavano alla creazione.
+
+Due difetti diversi, tutti e due in Compose, tutti e due riprodotti sull'emulatore.
+
+**Le scelte non sopravvivevano alla ricreazione della schermata.** Nel modulo di creazione
+il nome, il codice, il nickname e il preset erano `rememberSaveable`; le scelte erano un
+`remember` normale. Bastava una rotazione — o un ritorno nell'app dopo che Android aveva
+liberato memoria — perche' i numeri tornassero a quelli del preset **lasciando pieni i campi
+di testo**: niente sembrava andato storto. Riprodotto ruotando lo schermo con le
+impostazioni a vista: `10` tornava `8`, e il budget tornava `100M`.
+
+**E i campi di testo si riscrivevano sotto le dita.** `MoneyField`, `NameField` e
+`DecimalField` scrivevano `remember(value) { mutableStateOf(...) }`, cioe' usavano come
+chiave del ricordo **il valore che loro stessi cambiano**: si digita un carattere, il testo
+viene interpretato, `onChange` aggiorna il valore, la chiave cambia, il testo viene
+riscritto normalizzato. Il cursore salta, e se il testo a meta' non e' piu' interpretabile
+`onChange` smette di essere chiamato — quindi il valore resta quello di partenza e il campo,
+perdendo il fuoco, si ridisegna com'era. In `NameField` lo stesso difetto impediva di
+scrivere uno **spazio**, perche' `onChange` manda il nome ripulito.
+
+Corretti: le scelte passano da `rememberSaveable` con un `Saver`, e i tre campi tengono il
+testo finche' hanno il fuoco. Verificato sul dispositivo: `10` e `60M` sopravvivono sia alla
+perdita del fuoco sia alla rotazione.
+
+Vale la pena tenere il metodo. La prima ipotesi — «forse il preset viene riapplicato» — era
+sbagliata, e a smontarla e' stato **guardare i numeri**: coincidevano al valore con i
+predefiniti di `sprint`, e quella coincidenza diceva dove cercare.
+
 ### Due difetti trovati dentro le prove, mentre si correggeva
 
 Tutte e due nascondevano il resto, ed erano li' da prima.

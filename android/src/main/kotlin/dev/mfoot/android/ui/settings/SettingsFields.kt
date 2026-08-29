@@ -19,6 +19,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,6 +89,43 @@ fun SettingRow(
 }
 
 /**
+ * Riallinea il testo di un campo al valore che arriva da fuori, ma **non mentre si scrive**.
+ *
+ * ## Il difetto che questa funzione toglie di mezzo
+ *
+ * I tre campi qui sotto scrivevano `remember(value) { mutableStateOf(...) }`, cioe' usavano
+ * come chiave del ricordo **il valore che loro stessi cambiano**. La sequenza era questa:
+ * si digita un carattere, il testo viene interpretato, `onChange` aggiorna il valore, la
+ * chiave cambia, e il `remember` **riscrive il testo sotto le dita** con la forma
+ * normalizzata del numero digitato a meta'.
+ *
+ * Il risultato e' un campo che si combatte mentre ci scrivi: il cursore salta, le cifre si
+ * riordinano, e se a un certo punto il testo non e' piu' interpretabile `onChange` smette
+ * di essere chiamato — quindi il valore resta quello di partenza e, appena il campo perde
+ * il fuoco, **si ridisegna com'era prima**. Da fuori sembra che il numero scritto non venga
+ * accettato.
+ *
+ * E' esattamente cosi' che un budget impostato a 60M e' rimasto a 100M.
+ *
+ * ## La regola
+ *
+ * Mentre il campo ha il fuoco comanda il testo; quando non ce l'ha comanda il valore. Cosi'
+ * si continua a vedere la forma normalizzata appena si esce — che era la cosa giusta del
+ * disegno originale — senza che nessuno riscriva quello che si sta battendo.
+ */
+@Composable
+private fun rememberCampo(value: String): Pair<MutableState<String>, (Boolean) -> Unit> {
+    val testo = remember { mutableStateOf(value) }
+    val fuoco = remember { mutableStateOf(false) }
+
+    LaunchedEffect(value, fuoco.value) {
+        if (!fuoco.value) testo.value = value
+    }
+
+    return testo to { attivo: Boolean -> fuoco.value = attivo }
+}
+
+/**
  * Un campo di denaro.
  *
  * Accetta `1,5M`, `1500`, `700K`: chi viene dal fantacalcio digita il numero nudo, chi
@@ -95,7 +134,7 @@ fun SettingRow(
  */
 @Composable
 fun MoneyField(value: Int, enabled: Boolean, onChange: (Int) -> Unit) {
-    var text by remember(value) { mutableStateOf(Money(value).format()) }
+    val (text, segnalaFuoco) = rememberCampo(Money(value).format())
 
     Box(
         Modifier
@@ -104,10 +143,10 @@ fun MoneyField(value: Int, enabled: Boolean, onChange: (Int) -> Unit) {
             .padding(horizontal = 11.dp, vertical = 9.dp),
     ) {
         BasicTextField(
-            value = text,
+            value = text.value,
             onValueChange = { raw ->
-                text = raw.filter { it.isDigit() || it in ",.MmKkRrDd" }.take(10)
-                Money.parse(text)?.let { onChange(it.thousands) }
+                text.value = raw.filter { it.isDigit() || it in ",.MmKkRrDd" }.take(10)
+                Money.parse(text.value)?.let { onChange(it.thousands) }
             },
             enabled = enabled,
             singleLine = true,
@@ -116,7 +155,7 @@ fun MoneyField(value: Int, enabled: Boolean, onChange: (Int) -> Unit) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             modifier = Modifier
                 .fillMaxWidth()
-                .onFocusChanged { if (!it.isFocused) text = Money(value).format() },
+                .onFocusChanged { segnalaFuoco(it.isFocused) },
         )
     }
 }
@@ -135,7 +174,11 @@ fun NameField(
     modifier: Modifier = Modifier,
     onChange: (String) -> Unit,
 ) {
-    var text by remember(value) { mutableStateOf(value) }
+    // Qui il difetto morde in modo diverso ma per lo stesso motivo: `onChange` manda il
+    // nome **ripulito dagli spazi**, quindi digitando «Serie A» lo spazio veniva tolto dal
+    // valore, la chiave del ricordo cambiava, e il testo tornava «Serie» — lo spazio non si
+    // riusciva a scrivere.
+    val (text, segnalaFuoco) = rememberCampo(value)
 
     Box(
         modifier
@@ -144,18 +187,20 @@ fun NameField(
             .padding(horizontal = 11.dp, vertical = 9.dp),
     ) {
         BasicTextField(
-            value = text,
+            value = text.value,
             onValueChange = { raw ->
                 // Un tetto c'e', ma generoso: serve a impedire che qualcuno incolli un
                 // romanzo, non a dettare come si chiamano le divisioni.
-                text = raw.take(28)
-                onChange(text.trim())
+                text.value = raw.take(28)
+                onChange(text.value.trim())
             },
             enabled = enabled,
             singleLine = true,
             textStyle = MFootType.value.copy(color = MFootColors.ink),
             cursorBrush = SolidColor(MFootColors.elite),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { segnalaFuoco(it.isFocused) },
         )
     }
 }
@@ -178,7 +223,10 @@ fun IntStepper(value: Int, range: IntRange, enabled: Boolean, onChange: (Int) ->
 /** Un decimale, per le manopole fini: peso stipendi, frazioni, moltiplicatori. */
 @Composable
 fun DecimalField(value: Double, enabled: Boolean, onChange: (Double) -> Unit) {
-    var text by remember(value) { mutableStateOf(trim(value)) }
+    // Stesso difetto degli altri due, e qui si vedeva sulla virgola: scrivendo «1,» il
+    // testo non era ancora un numero, poi «1,5» lo diventava, il valore cambiava e il
+    // campo si riscriveva — con il cursore che tornava in testa.
+    val (text, segnalaFuoco) = rememberCampo(trim(value))
 
     Box(
         Modifier
@@ -187,10 +235,10 @@ fun DecimalField(value: Double, enabled: Boolean, onChange: (Double) -> Unit) {
             .padding(horizontal = 11.dp, vertical = 9.dp),
     ) {
         BasicTextField(
-            value = text,
+            value = text.value,
             onValueChange = { raw ->
-                text = raw.filter { it.isDigit() || it == ',' || it == '.' }.take(8)
-                text.replace(',', '.').toDoubleOrNull()?.let(onChange)
+                text.value = raw.filter { it.isDigit() || it == ',' || it == '.' }.take(8)
+                text.value.replace(',', '.').toDoubleOrNull()?.let(onChange)
             },
             enabled = enabled,
             singleLine = true,
@@ -199,7 +247,7 @@ fun DecimalField(value: Double, enabled: Boolean, onChange: (Double) -> Unit) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier
                 .fillMaxWidth()
-                .onFocusChanged { if (!it.isFocused) text = trim(value) },
+                .onFocusChanged { segnalaFuoco(it.isFocused) },
         )
     }
 }

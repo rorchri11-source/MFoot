@@ -203,6 +203,16 @@ data class SetupChoices(
     val humanClubs: Int get() = totalClubs - aiClubs
 
     companion object {
+        /** Rimette insieme quello che [toList] ha smontato. */
+        fun fromList(v: List<Int>) = SetupChoices(
+            totalClubs = v[0],
+            aiClubs = v[1],
+            minSquadSize = v[2],
+            maxSquadSize = v[3],
+            startingCredits = v[4],
+            divisions = v[5],
+        )
+
         /** I valori del preset scelto, come punto di partenza da ritoccare. */
         fun from(config: LeagueConfig) = SetupChoices(
             totalClubs = config.setup.totalClubs,
@@ -213,6 +223,25 @@ data class SetupChoices(
             divisions = config.divisions.count,
         )
     }
+
+    /**
+     * I sei numeri in fila, per poterli salvare quando Android ricrea la schermata.
+     *
+     * ## Perche' serve
+     *
+     * Perche' senza, **le scelte si perdevano in silenzio**. Nel modulo di creazione il
+     * nome, il codice, il nickname e il preset erano `rememberSaveable` e sopravvivevano a
+     * una rotazione o a un ritorno nell'app dopo che il sistema aveva liberato memoria; le
+     * scelte no, ed erano un `remember` normale. Al ritorno i campi di testo erano ancora
+     * pieni — quindi niente sembrava andato storto — e i numeri erano tornati a quelli del
+     * preset. Chi aveva impostato dieci squadre del computer e sessanta milioni si
+     * ritrovava una lega con otto e cento, senza nessun avviso e senza capire perche'.
+     *
+     * `SetupChoices` non e' `Parcelable`, quindi `rememberSaveable` da solo non sa
+     * conservarlo: gli serve questa conversione.
+     */
+    fun toList(): List<Int> =
+        listOf(totalClubs, aiClubs, minSquadSize, maxSquadSize, startingCredits, divisions)
 
     /** Le scelte applicate alla configurazione del preset. */
     fun applyTo(config: LeagueConfig): LeagueConfig = config.copy(
