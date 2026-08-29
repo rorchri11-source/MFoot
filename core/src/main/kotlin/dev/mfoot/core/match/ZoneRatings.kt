@@ -20,8 +20,12 @@ data class ZoneStrength(
     val presence: Map<Zone, Double>,
     /** Peso di ciascun giocatore su ciascuna zona, per estrarre chi tocca il pallone. */
     val contributions: Map<Zone, List<PlayerWeight>>,
+    /** Tutto quello che non dipende dal singolo: campo, allenatore, assetto, inerzia. */
+    val contesto: Map<Zone, ZoneContext> = emptyMap(),
 ) {
     fun rating(zone: Zone): Double = ratings[zone] ?: EMPTY_ZONE_RATING
+
+    fun contesto(zone: Zone): ZoneContext = contesto[zone] ?: ZoneContext.NEUTRO
 
     companion object {
         /** Quanto vale una zona in cui non c'e' nessuno. */
@@ -30,6 +34,27 @@ data class ZoneStrength(
 }
 
 data class PlayerWeight(val playerId: PlayerId, val weight: Double)
+
+/**
+ * Quello che vale per tutta la zona, chiunque ci sia dentro.
+ *
+ * Esiste per un motivo solo: il livello dei duelli deve poter applicare a un **singolo
+ * giocatore** gli stessi identici modificatori che il rating di zona applica alla media —
+ * vantaggio del campo, allenatore, assetto, pressing, inerzia, quanti uomini ci sono. Se
+ * fossero due formule diverse, spostare il vantaggio del campo aggiusterebbe una delle due
+ * e romperebbe l'altra, e nessuno se ne accorgerebbe fino alla prossima taratura.
+ *
+ * `rating = qualita' * fattore + bonus` e' esattamente la formula di prima, riscritta in
+ * due pezzi riusabili invece che in una riga sola.
+ */
+data class ZoneContext(val fattore: Double, val bonus: Double) {
+    /** Quanto vale li' un giocatore che vale [qualita]. */
+    fun applica(qualita: Double): Double = qualita * fattore + bonus
+
+    companion object {
+        val NEUTRO = ZoneContext(fattore = 1.0, bonus = 0.0)
+    }
+}
 
 /**
  * Costruisce i rating di zona a partire dalla formazione schierata.
@@ -89,23 +114,29 @@ object ZoneRatings {
         val coachBonus = coachBonus(coachStars)
         val homeBonus = if (isHome) engine.homeAdvantage else 0.0
 
+        val contesto = Zone.entries.associateWith { zone ->
+            val bodies = presence[zone] ?: 0.0
+            val tacticalFactor = tactics.stance.factorFor(zone.band) *
+                tactics.width.factorFor(zone.lane)
+            val pressingBonus = if (zone.band == dev.mfoot.core.model.Band.MID) {
+                tactics.pressing.midfieldBonus
+            } else {
+                0.0
+            }
+
+            ZoneContext(
+                fattore = presenceFactor(bodies) * tacticalFactor,
+                bonus = homeBonus + coachBonus + pressingBonus + momentum,
+            )
+        }
+
         val ratings = Zone.entries.associateWith { zone ->
             val bodies = presence[zone] ?: 0.0
             if (bodies < DESERTED_THRESHOLD) {
                 ZoneStrength.EMPTY_ZONE_RATING
             } else {
                 val quality = (weighted[zone] ?: 0.0) / bodies
-                val tacticalFactor = tactics.stance.factorFor(zone.band) *
-                    tactics.width.factorFor(zone.lane)
-                val pressingBonus = if (zone.band == dev.mfoot.core.model.Band.MID) {
-                    tactics.pressing.midfieldBonus
-                } else {
-                    0.0
-                }
-
-                (quality * presenceFactor(bodies) * tacticalFactor +
-                    homeBonus + coachBonus + pressingBonus + momentum)
-                    .coerceAtLeast(1.0)
+                contesto.getValue(zone).applica(quality).coerceAtLeast(1.0)
             }
         }
 
@@ -113,6 +144,7 @@ object ZoneRatings {
             ratings = ratings,
             presence = Zone.entries.associateWith { presence[it] ?: 0.0 },
             contributions = contributions.mapValues { it.value.toList() },
+            contesto = contesto,
         )
     }
 
@@ -127,17 +159,33 @@ object ZoneRatings {
         zone: Zone,
         importance: MatchImportance,
         engine: EngineConfig,
-    ): Double {
-        val player = slot.player
-        val base = BandWeights.rate(player.attributes, zone.band) * slot.fitness
+    ): Double = (
+        BandWeights.rate(slot.player.attributes, zone.band) * slot.fitness +
+            condizione(slot.player, importance, engine)
+        ).coerceIn(1.0, 99.0)
 
+    /**
+     * In che condizioni si presenta oggi: stanchezza, morale, forma, e il tratto di chi
+     * cresce nelle partite che contano.
+     *
+     * Additiva sulla stessa scala degli attributi, cosi' resta leggibile — «-8 per la
+     * stanchezza» si capisce, «x0,91» no.
+     *
+     * Estratta perche' la usano in due: il rating di zona, che la applica alla media dei
+     * reparti, e il livello dei duelli, che la applica al singolo. Se fossero due formule
+     * separate, il giorno che si ritocca il peso della forma se ne aggiusterebbe una sola.
+     */
+    fun condizione(
+        player: Player,
+        importance: MatchImportance,
+        engine: EngineConfig,
+    ): Double {
         val staminaPenalty = staminaPenalty(player, engine)
         val moralePenalty = (player.morale - 50) * engine.moraleWeight
         val formBonus = player.form * engine.formWeight
         val bigMatch = if (importance.isBig) player.traits.bigMatchBonus() else 0.0
 
-        return (base - staminaPenalty + moralePenalty + formBonus + bigMatch)
-            .coerceIn(1.0, 99.0)
+        return -staminaPenalty + moralePenalty + formBonus + bigMatch
     }
 
     /**

@@ -726,6 +726,73 @@ data class EngineConfig(
      */
     val sigmoidK: Double = 34.0,
 
+    // ------------------------------------------------------------------- i duelli
+
+    /**
+     * Se le azioni le decidono i duelli fra due giocatori invece della media dei reparti.
+     *
+     * Nasce **spento**. Il motore nuovo sostituisce il decisore dell'azione, quindi la
+     * taratura misurata su migliaia di partite — 2,64 gol, 45/27/28, 23,8 tiri, 11,1% di
+     * conversione — va rifatta da capo. Finche' [MatchBalanceTest] non e' verde con i
+     * duelli accesi, il gioco continua a girare sul motore vecchio: non esiste un giorno
+     * in cui e' rotto, e se la taratura non converge si torna indietro togliendo una riga.
+     */
+    val duelliAttivi: Boolean = false,
+
+    /**
+     * Quanto conta essere piu' forte, in ciascuna delle cinque contese.
+     *
+     * Sono differenze di **attributo** (scala 1-99), non di rating di zona: `k = 9`
+     * significa che venti punti di velocita' in piu' fanno vincere lo scatto nove volte
+     * su dieci, `k = 26` che gli stessi venti punti nel contrasto valgono poco piu' di due
+     * volte su tre.
+     *
+     * Detta dal proprietario il 2026-08-29: *«nella corsa la velocita' e' quasi decisiva;
+     * nel contrasto e nel dribbling conta di piu' il caso, perche' c'entrano la posizione,
+     * il rimbalzo e l'arbitro»*. Da qui la scelta di cinque manopole invece di una — e il
+     * fatto che ognuna si legga in una statistica diversa: quella del dribbling nei
+     * dribbling riusciti a partita, non nei gol.
+     */
+    val kCorsa: Double = 9.0,
+    val kDribbling: Double = 16.0,
+    val kContrasto: Double = 26.0,
+    val kAereo: Double = 15.0,
+    val kPassaggio: Double = 13.0,
+
+    /**
+     * Quanto spesso la spunta chi ha la palla, **a parita' di valore**.
+     *
+     * Distinta dalla pendenza di proposito. Un passaggio riesce quattro volte su cinque e
+     * un dribbling meno di una su due, ed e' vero anche fra due giocatori identici: e' il
+     * gesto a essere piu' o meno difficile, non il divario. Con una sola manopola le due
+     * cose si confonderebbero e non si potrebbe avere un passaggio facile *e* molto
+     * sensibile alla qualita' di chi lo da'.
+     */
+    val equilibrioCorsa: Double = 0.50,
+    val equilibrioDribbling: Double = 0.46,
+    val equilibrioContrasto: Double = 0.52,
+    val equilibrioAereo: Double = 0.50,
+    val equilibrioPassaggio: Double = 0.80,
+
+    /**
+     * Quante azioni si giocano quando le decidono i duelli.
+     *
+     * Serve separata da [actionsPerMatch] perche' con i duelli una catena di possesso e'
+     * fatta di piu' episodi: un passaggio riuscito non e' un avanzamento, e per arrivare
+     * in porta ne servono diversi. Con lo stesso numero di azioni si giocherebbe una
+     * partita lunga un terzo.
+     */
+    val actionsPerMatchDuelli: Int = 280,
+
+    /**
+     * Probabilita' di concludere in zona offensiva, col motore a duelli.
+     *
+     * Piu' bassa di [shotChanceInAttackingZone] perche' le azioni sono piu' numerose e in
+     * zona d'attacco ci si resta piu' a lungo: senza, si tirerebbe sessanta volte a
+     * partita.
+     */
+    val shotChanceDuelli: Double = 0.20,
+
     /**
      * Bonus ai rating di zona per chi gioca in casa.
      *
