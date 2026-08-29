@@ -19,11 +19,22 @@ import kotlin.test.Test
  */
 class DuelliReportTest {
 
-    private val base = ConfigPresets.sprint(20, 12, LocalDate.of(2026, 9, 1))
-    private val world = WorldGenerator.generate(base)
+    private val preset = ConfigPresets.sprint(20, 12, LocalDate.of(2026, 9, 1))
+    private val world = WorldGenerator.generate(preset)
+
+    /**
+     * Il motore vecchio va **spento a mano**.
+     *
+     * Da quando l'interruttore e' acceso di serie, prendere il preset e basta significa
+     * confrontare il motore con se stesso — ed e' esattamente quello che questo file ha
+     * fatto per una misura, stampando due colonne identiche senza che niente segnalasse
+     * niente. Uno strumento di misura rotto e' peggio di nessuno strumento.
+     */
+    private val base: LeagueConfig =
+        preset.copy(engine = preset.engine.copy(duelliAttivi = false))
 
     private val conDuelli: LeagueConfig =
-        base.copy(engine = base.engine.copy(duelliAttivi = true))
+        preset.copy(engine = preset.engine.copy(duelliAttivi = true))
 
     @Test
     fun `confronta il motore vecchio e quello a duelli`() {

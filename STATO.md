@@ -517,25 +517,40 @@ Misurati su migliaia di partite simulate, non stimati. Col **motore a duelli**, 
 2026-08-29; fra parentesi il motore vecchio, che resta in piedi dietro `duelliAttivi` e
 sul quale ogni prova gira comunque.
 
+| Metrica | Duelli | Motore vecchio | Riferimento |
+|---|---|---|---|
+| Squadre pari — casa / pari / trasferta | 46,0 / 28,4 / 25,6 | 46,0 / 27,4 / 26,6 | calcio vero: 45 / 27 / 28 |
+| Gol a partita | 2,89 | 2,70 | 2,5-3,0 |
+| Tiri a partita | 27,7 | 24,5 | 24-28 |
+| Conversione | 10,4% | 11,0% | 10-12% |
+| Chi segna: attacco / centrocampo / difesa | 64,6 / 21,4 / **13,9** | 67,3 / 20,9 / 11,7 | non solo gli attaccanti |
+| Marcatori diversi su 36 | 20 | 20 | non sempre gli stessi cinque |
+| **Angoli a partita** | **6,8** | **2,0** | calcio vero: circa 10 |
+| Falli a partita | 10,6 | 10,7 | calcio vero: circa 22 |
+| Squadra con +10 di overall | vince il 62% | | non deve essere una certezza |
+| Catenaccio vs Arrembante | 42,5% vs 54,8% | | nessun assetto domina (banda: 15 punti) |
+| Allenatore 5⭐ vs 1⭐ | 55,5% | | conta, ma meno della rosa |
+
+E le tre misure che prima non esistevano, perché non c'era niente da misurare:
+
 | Metrica | Valore | Riferimento |
 |---|---|---|
-| Squadre pari — casa / pari / trasferta | 46,0% / 28,4% / 25,6%  (46,0 / 26,0 / 28,0) | calcio vero: 45 / 27 / 28 |
-| Gol a partita | 2,89  (2,68) | 2,5-3,0 |
-| Tiri a partita | 27,7  (23,8) | 24-28 |
-| Conversione | 10,4%  (11,3%) | 10-12% |
-| Squadra con +10 di overall | vince il 62% | non deve essere una certezza |
-| Catenaccio vs Arrembante | 42,5% vs 54,8% | nessun assetto domina (banda: 15 punti) |
-| Allenatore 5⭐ vs 1⭐ | 55,5% | conta, ma meno della rosa |
-
-E le misure che prima non esistevano — quelle per cui i numeri d'insieme non bastavano:
-
-| Metrica | Valore | Riferimento |
-|---|---|---|
-| Chi segna: attacco / centrocampo / difesa | 64,6% / 21,4% / 13,9% | non solo gli attaccanti |
-| Marcatori diversi su 36 | 20 | non sempre gli stessi cinque |
 | Duelli a partita | 267 | non due tiri di dado |
 | Dribbling riusciti / tentati | 16,4 su 36,6 — **44,8%** | calcio vero: circa uno su due |
 | Precisione dei passaggi | 77,2% | calcio vero: circa 80% |
+
+**Col motore vecchio si battevano due angoli a partita.** Non era una scelta: si arrivava
+in zona d'attacco così di rado che `cornerChanceOnLostAttack` non aveva quasi mai occasione
+di scattare. Coi duelli in area ci si resta, e gli angoli salgono a quasi sette — ancora
+sotto i dieci del calcio vero, ma di un fattore tre più vicini. È anche il motivo per cui
+l'incarico «battitore d'angoli» adesso pesa cinque volte tanto: +0,22 gol a partita contro
++0,04.
+
+**I falli restano la metà del calcio vero** (10,6 contro circa 22), e con loro i cartellini.
+Vale per tutti e due i motori: è una taratura di prima, non una conseguenza dei duelli, e
+non è stata toccata in questa sessione. Se un giorno si vorrà alzarla, la manopola è
+`engine.foulChance` — ma va alzata insieme a `yellowCardChanceOnFoul`, o si raddoppiano le
+ammonizioni.
 
 **L'arrembante è più forte del catenaccio di dodici punti, e resta dentro la banda.** Va
 letto sapendo cosa il collaudo *non* misura: `BalanceHarness` gioca **una** partita con le

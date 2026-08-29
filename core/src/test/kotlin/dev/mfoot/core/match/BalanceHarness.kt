@@ -56,7 +56,19 @@ object BalanceHarness {
         val totalDribblesAttempted: Int = 0,
         val totalPassesCompleted: Int = 0,
         val totalPassesAttempted: Int = 0,
+        /**
+         * Angoli e falli si contano **dagli eventi**, non da un contatore.
+         *
+         * Stessa ragione gia' scritta in `PlayedMatch.conta`: la timeline e' la partita. Un
+         * totale salvato a parte sarebbe un secondo posto in cui la stessa verita' puo'
+         * sbagliarsi, e non si saprebbe a quale dei due credere.
+         */
+        val totalCorners: Int = 0,
+        val totalFouls: Int = 0,
     ) {
+        val cornersPerMatch: Double get() = totalCorners.toDouble() / matches
+        val foulsPerMatch: Double get() = totalFouls.toDouble() / matches
+
         val homeWinRate: Double get() = homeWins.toDouble() / matches
         val drawRate: Double get() = draws.toDouble() / matches
         val awayWinRate: Double get() = awayWins.toDouble() / matches
@@ -105,7 +117,8 @@ object BalanceHarness {
                     "dif ${pct(goalShare(Reparto.DIFESA))} · " +
                     "por ${pct(goalShare(Reparto.PORTIERE))}",
             )
-            append("  Marcatori diversi  $distinctScorers su $squadSize")
+            appendLine("  Marcatori diversi  $distinctScorers su $squadSize")
+            append("  Angoli ${fmt(cornersPerMatch)} · falli ${fmt(foulsPerMatch)}")
             if (duelsPerMatch > 0.0) {
                 appendLine()
                 appendLine("  Duelli/partita     ${fmt(duelsPerMatch)}")
@@ -175,6 +188,8 @@ object BalanceHarness {
         var dribblesAttempted = 0
         var passesCompleted = 0
         var passesAttempted = 0
+        var corners = 0
+        var fouls = 0
 
         repeat(matches) { index ->
             val result = MatchEngine.simulate(
@@ -212,7 +227,9 @@ object BalanceHarness {
                 dribblesAttempted += s.dribblesAttempted
                 passesCompleted += s.passesCompleted
                 passesAttempted += s.passesAttempted
+                fouls += s.fouls
             }
+            corners += result.events.count { it.type == MatchEventType.ANGOLO }
         }
 
         return Report(
@@ -237,6 +254,8 @@ object BalanceHarness {
             totalDribblesAttempted = dribblesAttempted,
             totalPassesCompleted = passesCompleted,
             totalPassesAttempted = passesAttempted,
+            totalCorners = corners,
+            totalFouls = fouls,
         )
     }
 }
