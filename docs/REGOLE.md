@@ -542,6 +542,14 @@ poter fare non esiste. Quello che non porta da nessuna parte, come un riepilogo 
 non si può premere: una riga cliccabile che non fa niente insegna a non fidarsi delle altre.
 *Detta il 2026-08-30 · `notifications.target_id`*
 
+**Il registro si filtra per tipo.**
+Duecento righe, e la domanda che ci si fa non è «cosa è successo» ma «cosa è successo di
+quella cosa lì»: com'è finita l'asta, chi mi ha proposto uno scambio. Ordinare non toglie di
+mezzo le centonovanta righe che non c'entrano; filtrare sì.
+Compaiono solo i tipi che ci sono davvero, col conto accanto: un filtro «Prestito» in una
+lega dove nessuno ha mai prestato nessuno è un pulsante che porta sempre a una lista vuota.
+*Detta il 2026-08-30 · `NovitaState.filtro`, `ui/screens/Novita.kt`*
+
 **La partita finita avvisa chi ha giocato.**
 Non lo faceva. Nel registro c'era una sola notifica di tipo partita, quella dell'intervallo:
 il fischio finale — cioè l'unica cosa che tutti aspettano — non lasciava traccia. E il

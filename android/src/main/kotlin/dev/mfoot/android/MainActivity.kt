@@ -410,6 +410,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onLineupSave = viewModel::salvaFormazione,
                         novita = novita,
                         onLoadNovita = viewModel::caricaNovita,
+                        onFiltraNovita = viewModel::filtraNovita,
                         // DOVE PORTA UNA NOTIFICA
                         //
                         // Il dispatch sta qui e non nel ViewModel perche' questo e' l'unico

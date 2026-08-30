@@ -2564,6 +2564,11 @@ class AppViewModel : ViewModel() {
      * Quindi: si prende la soglia vecchia, si costruisce l'elenco con quella, e solo dopo
      * si sposta la soglia a adesso.
      */
+    /** Cambia il tipo di notifiche che si sta guardando. */
+    fun filtraNovita(kind: String?) {
+        _novita.value = _novita.value.copy(filtro = kind)
+    }
+
     fun caricaNovita() {
         val dentro = statoCorrente() ?: return
         val soglia = Session.ultimaLetturaNotifiche

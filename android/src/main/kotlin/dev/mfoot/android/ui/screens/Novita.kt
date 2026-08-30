@@ -2,6 +2,9 @@ package dev.mfoot.android.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.NovitaState
 import dev.mfoot.android.data.NotificationRow
+import dev.mfoot.android.ui.Chip
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Scheda
 import dev.mfoot.android.ui.Vuoto
@@ -75,6 +79,8 @@ fun NovitaScreen(
      * preciso ma sempre meglio di una riga che non fa niente.
      */
     onApri: (NotificationRow) -> Unit = {},
+    /** Cambia il tipo che si sta guardando, o null per tutti. */
+    onFiltra: (String?) -> Unit = {},
 ) {
     LaunchedEffect(state.lega.league.id) { onCarica() }
 
@@ -100,11 +106,51 @@ fun NovitaScreen(
     }
 
     val mioClub = state.lega.myClub?.id
-    val mie = novita.righe.filter { it.clubId != null && it.clubId == mioClub }
-    val resto = novita.righe.filterNot { it.clubId != null && it.clubId == mioClub }
+    val visibili = novita.visibili
+    val mie = visibili.filter { it.clubId != null && it.clubId == mioClub }
+    val resto = visibili.filterNot { it.clubId != null && it.clubId == mioClub }
     val adesso = Instant.now()
 
     LazyColumn(fondo) {
+        // I FILTRI
+        //
+        // Il registro tiene duecento righe, e la domanda che ci si fa non e' «cosa e'
+        // successo» ma «cosa e' successo di quella cosa li'»: com'e' finita l'asta, chi mi
+        // ha proposto uno scambio. Ordinare non toglie di mezzo le centonovanta righe che
+        // non c'entrano; filtrare si'.
+        //
+        // Compaiono solo i tipi che ci sono davvero: un filtro «Prestito» in una lega dove
+        // nessuno ha mai prestato nessuno e' un pulsante che porta sempre a una lista vuota.
+        item {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Chip("Tutte · ${novita.righe.size}", novita.filtro == null) { onFiltra(null) }
+                novita.tipiPresenti.forEach { (kind, quante) ->
+                    Chip("${etichetta(kind)} · $quante", novita.filtro == kind) { onFiltra(kind) }
+                }
+            }
+        }
+
+        if (visibili.isEmpty()) {
+            item {
+                Box(
+                    Modifier.fillMaxWidth().padding(40.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Niente di questo tipo.",
+                        style = MFootType.secondary,
+                        color = MFootColors.ink3,
+                    )
+                }
+            }
+        }
+
         if (mie.isNotEmpty()) {
             item {
                 Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 8.dp)) {
