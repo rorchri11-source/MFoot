@@ -3803,6 +3803,18 @@ begin
 
         update purchases set status = 'CONTESTATO', auction_id = v_auction
         where id = p_purchase_id;
+
+        -- Notifica a tutta la lega: l'acquisto e' stato contestato e si apre l'asta
+        insert into notifications (league_id, club_id, kind, urgency, body, target_id)
+        select v_purchase.league_id, c.id, 'mercato', 'alta',
+               format('%s ha contestato l''acquisto di %s: si decide all''asta!',
+                      v_club.name,
+                      (select coalesce(nullif(trim(p.first_name || ' ' || p.last_name), ''), p.last_name)
+                       from players p where p.id = v_purchase.player_id)),
+               v_purchase.player_id
+        from clubs c
+        where c.league_id = v_purchase.league_id
+          and c.parent_club_id is null;
     else
         v_auction := v_purchase.auction_id;
     end if;
