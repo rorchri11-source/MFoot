@@ -550,6 +550,21 @@ Compaiono solo i tipi che ci sono davvero, col conto accanto: un filtro «Presti
 lega dove nessuno ha mai prestato nessuno è un pulsante che porta sempre a una lista vuota.
 *Detta il 2026-08-30 · `NovitaState.filtro`, `ui/screens/Novita.kt`*
 
+**Le righe uguali si raggruppano, e il registro scade.**
+Una giornata di campionato scrive una riga per ogni partita: cinque righe che dicono la
+stessa cosa con nomi diversi seppelliscono la proposta di scambio arrivata nel frattempo.
+Dalla terza in su, stesso tipo e stesso giorno diventano una riga sola che si apre — due non
+sono un mucchio, e nasconderle costringerebbe a un tocco per leggere quello che si leggeva
+già. Il gruppo prende il posto della prima delle sue righe e non si sposta: un registro è
+una cronologia.
+**«Riguarda te» non si raggruppa mai.** Sono poche e sono quelle che contano, e nascondere
+dietro un tocco la propria asta vinta sarebbe il contrario di quello che serve.
+E il registro **scade**: il server toglie le righe più vecchie di quattordici giorni. La
+pulizia non è un pulsante perché le notifiche di lega sono condivise, e un «cancella»
+darebbe a chiunque il potere di cancellare la cronologia degli altri — ma soprattutto
+perché il problema non è togliere le righe vecchie, è non arrivare a duecento.
+*Detta il 2026-08-30 · `raggruppa()`, `notifications.giorniDiRegistro`*
+
 **La partita finita avvisa chi ha giocato.**
 Non lo faceva. Nel registro c'era una sola notifica di tipo partita, quella dell'intervallo:
 il fischio finale — cioè l'unica cosa che tutti aspettano — non lasciava traccia. E il

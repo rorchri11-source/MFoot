@@ -21,6 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +33,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.NovitaState
+import dev.mfoot.android.app.VoceRegistro
+import dev.mfoot.android.app.raggruppa
 import dev.mfoot.android.data.NotificationRow
 import dev.mfoot.android.ui.Chip
 import dev.mfoot.android.ui.Label
@@ -169,8 +175,28 @@ fun NovitaScreen(
                     Label("Nella lega · ${resto.size}")
                 }
             }
-            items(resto, key = { it.id }) { riga ->
-                Riga(riga, adesso, novita.nuovaDopo, tua = false, onApri = onApri)
+
+            // IL RAGGRUPPAMENTO STA SOLO QUI
+            //
+            // Una giornata di campionato scrive una riga per ogni partita, e cinque righe
+            // che dicono la stessa cosa con nomi diversi seppelliscono la proposta di
+            // scambio arrivata nel frattempo.
+            //
+            // «Riguarda te» invece **non si raggruppa mai**: sono poche e sono quelle che
+            // contano, e nascondere dietro un tocco la propria asta vinta sarebbe il
+            // contrario di quello che serve.
+            items(raggruppa(resto), key = { voce ->
+                when (voce) {
+                    is VoceRegistro.Singola -> "s${voce.riga.id}"
+                    is VoceRegistro.Gruppo -> "g${voce.chiave}"
+                }
+            }) { voce ->
+                when (voce) {
+                    is VoceRegistro.Singola ->
+                        Riga(voce.riga, adesso, novita.nuovaDopo, tua = false, onApri = onApri)
+                    is VoceRegistro.Gruppo ->
+                        Mucchio(voce, adesso, novita.nuovaDopo, onApri)
+                }
             }
         }
 
@@ -273,4 +299,85 @@ private fun destinazione(kind: String): String = when (kind) {
     "scouting" -> "vedere l'osservatore"
     "primavera" -> "la Primavera"
     else -> "la rosa"
+}
+
+/**
+ * Un mucchio di righe dello stesso tipo, chiuso finché non lo si apre.
+ *
+ * Il pallino sulla testata dice che **almeno una** delle righe dentro non era ancora
+ * stata vista: senza, aprire il gruppo sarebbe l'unico modo di sapere se c'è qualcosa di
+ * nuovo, e un raggruppamento che costringe ad aprirlo non raggruppa niente.
+ */
+@Composable
+private fun Mucchio(
+    gruppo: VoceRegistro.Gruppo,
+    adesso: Instant,
+    nuovaDopo: Instant?,
+    onApri: (NotificationRow) -> Unit,
+) {
+    var aperto by rememberSaveable(gruppo.chiave) { mutableStateOf(false) }
+    val nuove = gruppo.righe.count { nuovaDopo == null || it.createdAt?.isAfter(nuovaDopo) == true }
+
+    Scheda(Modifier.padding(horizontal = MFootSpacing.section, vertical = 3.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { aperto = !aperto }
+                .padding(14.dp, 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(8.dp)) {
+                if (nuove > 0) {
+                    Box(
+                        Modifier
+                            .size(7.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(MFootColors.ink3),
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "${gruppo.righe.size} ${plurale(gruppo.kind, gruppo.righe.size)}",
+                    style = MFootType.secondary,
+                    color = if (nuove > 0) MFootColors.ink else MFootColors.ink2,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    buildString {
+                        append(gruppo.righe.first().quando(adesso))
+                        if (nuove > 0) append(" · $nuove ${if (nuove == 1) "nuova" else "nuove"}")
+                        append(if (aperto) " · chiudi" else " · apri")
+                    },
+                    style = MFootType.chip,
+                    color = MFootColors.ink3,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+
+    if (aperto) {
+        gruppo.righe.forEach { riga ->
+            Riga(riga, adesso, nuovaDopo, tua = false, onApri = onApri)
+        }
+    }
+}
+
+/** «12 partite», «4 aste». Il singolare non serve: un gruppo ne ha almeno tre. */
+private fun plurale(kind: String, quante: Int): String = when (kind) {
+    "asta" -> if (quante == 1) "asta" else "aste"
+    "mercato" -> "movimenti di mercato"
+    "partita" -> if (quante == 1) "partita" else "partite"
+    "scambio" -> if (quante == 1) "scambio" else "scambi"
+    "prestito" -> if (quante == 1) "prestito" else "prestiti"
+    "amichevole" -> if (quante == 1) "amichevole" else "amichevoli"
+    "contratto" -> if (quante == 1) "contratto" else "contratti"
+    "primavera" -> "novità dalla Primavera"
+    "scouting" -> if (quante == 1) "missione" else "missioni"
+    "competizione" -> if (quante == 1) "novità" else "novità sulle competizioni"
+    else -> etichetta(kind).lowercase()
 }

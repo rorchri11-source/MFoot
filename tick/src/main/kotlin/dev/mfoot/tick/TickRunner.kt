@@ -674,6 +674,9 @@ class TickRunner(
         // Lo scaffale dello staff: i comuni si ricompletano, i rari ogni tanto compaiono.
         notes += cronometro.fase("negozio") { rifornisciIlNegozio(league) }
 
+        // Il registro non deve diventare un archivio.
+        notes += cronometro.fase("registro") { pulisciIlRegistro(league) }
+
         // Gli osservatori tornati dal viaggio.
         notes += cronometro.fase("osservatori") { risolviLeMissioni(league, now) }
 
@@ -1221,6 +1224,33 @@ class TickRunner(
                 if (rari > 0) append("$rari da quattro stelle o piu'")
             },
         )
+    }
+
+    /**
+     * Toglie dal registro le righe piu' vecchie della scadenza.
+     *
+     * ## Perche' la pulizia la fa il server e non un pulsante
+     *
+     * Perche' le notifiche di lega sono **condivise**: quelle senza club le leggono tutti, e
+     * un pulsante «cancella» darebbe a chiunque il potere di cancellare la cronologia degli
+     * altri. E perche' il problema vero non e' togliere le righe vecchie — e' non arrivare
+     * a duecento: con una scadenza il registro resta «cosa e' successo mentre non c'ero»
+     * invece di diventare un archivio che nessuno sfoglia.
+     *
+     * Gira a ogni giro perche' costa una `delete` su un indice che esiste gia', e perche'
+     * legarla a una cadenza vorrebbe dire un altro stato da tenere.
+     */
+    private fun pulisciIlRegistro(league: LeagueRow): List<String> {
+        val giorni = league.config.notifications.giorniDiRegistro.coerceAtLeast(1)
+        val quante = connection.prepareStatement(
+            "delete from notifications where league_id = ? " +
+                "and created_at < now() - make_interval(days => ?)",
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setInt(2, giorni)
+            st.executeUpdate()
+        }
+        return if (quante > 0) listOf("registro: $quante righe scadute") else emptyList()
     }
 
     /** Quanti liberi di quel ruolo, in quella fascia di stelle, ci sono nel negozio. */

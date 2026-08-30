@@ -301,6 +301,7 @@ object ConfigJson {
         w.field("immediateEnabled", c.immediateEnabled)
         w.field("dailyDigestHour", c.dailyDigestHour.toString())
         w.field("maxAiEventsPerHumanClubPerDay", c.maxAiEventsPerHumanClubPerDay)
+        w.field("giorniDiRegistro", c.giorniDiRegistro)
         w.endObject()
     }
 
@@ -585,6 +586,7 @@ object ConfigJson {
         dailyDigestHour = n["dailyDigestHour"].strOrNull()?.let(LocalTime::parse) ?: d.dailyDigestHour,
         maxAiEventsPerHumanClubPerDay =
             n["maxAiEventsPerHumanClubPerDay"].int(d.maxAiEventsPerHumanClubPerDay),
+        giorniDiRegistro = n["giorniDiRegistro"].int(d.giorniDiRegistro),
     )
 
     private fun readAi(n: JsonNode, d: AiConfig) = AiConfig(

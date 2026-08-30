@@ -65,3 +65,67 @@ data class NovitaState(
             return righe.count { it.createdAt?.isAfter(soglia) == true }
         }
 }
+
+/**
+ * Una voce del registro: una riga sola, oppure un mucchio di righe uguali.
+ *
+ * ## Perché il raggruppamento
+ *
+ * Perché una giornata di campionato scrive una riga per ogni partita: con dieci squadre
+ * sono cinque righe che dicono la stessa cosa con nomi diversi, e la proposta di scambio
+ * arrivata nel frattempo finisce sepolta in mezzo. Il registro serve a far emergere quello
+ * che conta, e venti righe identiche fanno il contrario.
+ */
+sealed interface VoceRegistro {
+    data class Singola(val riga: NotificationRow) : VoceRegistro
+    data class Gruppo(
+        val kind: String,
+        val giorno: java.time.LocalDate,
+        val righe: List<NotificationRow>,
+    ) : VoceRegistro {
+        val chiave: String get() = "$kind-$giorno"
+    }
+}
+
+/**
+ * Raggruppa le righe dello stesso tipo dello stesso giorno.
+ *
+ * ## Perché solo dalla terza in poi
+ *
+ * Perché due righe non sono un mucchio: nasconderle dietro un «2 partite» costringerebbe a
+ * un tocco per leggere quello che si leggeva già. Da tre in su il guadagno c'è.
+ *
+ * ## Perché l'ordine non cambia
+ *
+ * Il gruppo prende il posto della **prima** delle sue righe, non va in fondo né in cima: un
+ * registro è una cronologia, e spostare le cose per comodità di raggruppamento vorrebbe
+ * dire che l'ordine non vuol più dire quando è successo.
+ */
+fun raggruppa(righe: List<NotificationRow>, minimo: Int = 3): List<VoceRegistro> {
+    if (righe.size < minimo) return righe.map(VoceRegistro::Singola)
+
+    val giornoDi = { r: NotificationRow ->
+        r.createdAt?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()
+    }
+    val conteggio = righe.groupingBy { it.kind to giornoDi(it) }.eachCount()
+
+    val fuori = mutableListOf<VoceRegistro>()
+    val gia = mutableSetOf<Pair<String, java.time.LocalDate?>>()
+
+    for (riga in righe) {
+        val chiave = riga.kind to giornoDi(riga)
+        val giorno = chiave.second
+        if (giorno == null || (conteggio[chiave] ?: 0) < minimo) {
+            fuori += VoceRegistro.Singola(riga)
+            continue
+        }
+        if (!gia.add(chiave)) continue
+
+        fuori += VoceRegistro.Gruppo(
+            kind = riga.kind,
+            giorno = giorno,
+            righe = righe.filter { it.kind == chiave.first && giornoDi(it) == giorno },
+        )
+    }
+    return fuori
+}

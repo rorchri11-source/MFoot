@@ -733,6 +733,24 @@ data class NotificationConfig(
      * disinstallata nel giro di tre giorni.
      */
     val maxAiEventsPerHumanClubPerDay: Int = 3,
+
+    /**
+     * Per quanti giorni si tiene una riga del registro.
+     *
+     * ## Perche' la pulizia la fa il server e non un pulsante
+     *
+     * Perche' le notifiche di lega sono **condivise**: quelle senza club le leggono tutti,
+     * e un pulsante «cancella» darebbe a chiunque il potere di cancellare la cronologia
+     * degli altri. Una regola sbagliata da dare a un amico distratto alle due di notte.
+     *
+     * E perche' il problema vero non e' togliere le righe vecchie: e' non arrivare a
+     * duecento. Con una scadenza il registro resta la cosa che era — «cosa e' successo
+     * mentre non c'ero» — invece di diventare un archivio che nessuno sfoglia.
+     *
+     * Quattordici giorni coprono due settimane di lega, che e' molto piu' di quanto
+     * chiunque torni indietro a guardare.
+     */
+    val giorniDiRegistro: Int = 14,
 )
 
 // --------------------------------------------------------------------------------- AI
