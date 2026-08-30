@@ -109,6 +109,7 @@ fun Router(
     staff: dev.mfoot.android.app.StaffState,
     onLoadStaff: () -> Unit,
     onMoveStaff: (Long, Long) -> Unit,
+    onBenchStaff: (Long) -> Unit = {},
     onAssumiStaff: (Long, Int) -> Unit = { _, _ -> },
     onVendiStaff: (Long, Int) -> Unit = { _, _ -> },
     onSendScout: (Long, String, String) -> Unit,
@@ -204,6 +205,7 @@ fun Router(
                     staff = staff,
                     onCarica = onLoadStaff,
                     onSposta = onMoveStaff,
+                    onPanchina = onBenchStaff,
                     onCompra = onAssumiStaff,
                     onVendi = onVendiStaff,
                 )

@@ -57,7 +57,32 @@ object ConfigJson {
         writeAi(w, config.ai)
         writeEngine(w, config.engine)
         writeObjectives(w, config.objectives)
+        writeStaff(w, config.staff)
         writeRoleWeights(w)
+    }
+
+    /**
+     * Quanto staff esiste e quanto se ne tiene.
+     *
+     * Viaggia con la lega per la stessa ragione delle manopole del motore: sono i numeri
+     * che decidono se il mercato dello staff e' vivo o finito, e correggerli non deve
+     * costare la pubblicazione di un APK. Due di questi — [StaffConfig.perClub] e
+     * [StaffConfig.pesiStelle] — stavano scritti dentro `WorldGenerator` fino al
+     * 2026-08-30, ed erano precisamente quelli che facevano due cinque stelle in tutta la
+     * lega.
+     */
+    private fun writeStaff(w: JsonWriter, c: StaffConfig) {
+        w.objectField("staff")
+        w.field("maxAllenatori", c.maxAllenatori)
+        w.field("maxPreparatori", c.maxPreparatori)
+        w.field("maxOsservatori", c.maxOsservatori)
+        w.field("scaffaleMinimo", c.scaffaleMinimo)
+        w.field("probabilitaRaro", c.probabilitaRaro)
+        w.field("perClub", c.perClub)
+        w.arrayField("pesiStelle")
+        c.pesiStelle.forEach { w.value(it) }
+        w.endArray()
+        w.endObject()
     }
 
     private fun writeObjectives(w: JsonWriter, c: ObjectivesConfig) {
@@ -372,8 +397,23 @@ object ConfigJson {
             ai = readAi(root["ai"], d.ai),
             engine = readEngine(root["engine"], d.engine),
             objectives = readObjectives(root["objectives"], d.objectives),
+            staff = readStaff(root["staff"], d.staff),
         )
     }
+
+    private fun readStaff(n: JsonNode, d: StaffConfig) = StaffConfig(
+        maxAllenatori = n["maxAllenatori"].int(d.maxAllenatori),
+        maxPreparatori = n["maxPreparatori"].int(d.maxPreparatori),
+        maxOsservatori = n["maxOsservatori"].int(d.maxOsservatori),
+        scaffaleMinimo = n["scaffaleMinimo"].int(d.scaffaleMinimo),
+        probabilitaRaro = n["probabilitaRaro"].double(d.probabilitaRaro),
+        perClub = n["perClub"].double(d.perClub),
+        // Una lista di cinque numeri: se e' assente o storta si torna a quella di serie,
+        // perche' pesi a meta' produrrebbero un mondo senza allenatori bravi e nessuno
+        // capirebbe da dove viene.
+        pesiStelle = n["pesiStelle"].listOr(d.pesiStelle) { it.double(0.0) }
+            .takeIf { it.size == 5 && it.sum() > 0.0 } ?: d.pesiStelle,
+    )
 
     private fun readObjectives(n: JsonNode, d: ObjectivesConfig) = ObjectivesConfig(
         enabled = n["enabled"].bool(d.enabled),

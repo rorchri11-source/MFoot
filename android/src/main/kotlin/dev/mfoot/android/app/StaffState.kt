@@ -21,15 +21,60 @@ data class StaffState(
      * prendersi solo all'asta, che e' come ha sempre funzionato.
      */
     val inVendita: Map<Long, Int> = emptyMap(),
+    /**
+     * Di chi e' ciascun membro, per identificativo della **prima squadra**.
+     *
+     * Lettura separata di proposito. `owner_club_id` e' arrivata il 2026-08-30, e chiederla
+     * dentro la lettura principale vorrebbe dire che una lega col database indietro non
+     * apre piu' la schermata dello staff — non perde le celle, sparisce: PostgREST per una
+     * colonna che non esiste rifiuta l'intera query. E' la trappola gia' pagata tre volte,
+     * l'ultima il 2026-08-29 con `match_results.home_formation`.
+     *
+     * Vuota significa «database indietro»: si torna al comportamento di prima, dove
+     * possedere e schierare erano la stessa cosa.
+     */
+    val proprieta: Map<Long, Long> = emptyMap(),
     val busy: String? = null,
     val avviso: String? = null,
     val errore: String? = null,
 ) {
+    /** Chi lavora in questa squadra, cioe' chi occupa una cella. */
     fun di(clubId: Long?): List<StaffMember> =
         if (clubId == null) emptyList() else tutti.filter { it.clubId == clubId }
 
-    /** Chi non lavora per nessuno: sono quelli che si possono battere all'asta. */
-    val liberi: List<StaffMember> get() = tutti.filter { it.clubId == null }
+    /** Se la proprieta' e' leggibile: senza, le celle non si possono disegnare. */
+    val celleAttive: Boolean get() = proprieta.isNotEmpty() || tutti.isEmpty()
+
+    /**
+     * Tutti quelli che possiedi, schierati o in panchina.
+     *
+     * Il proprietario e' sempre la prima squadra: si possiede come societa', si schiera
+     * come squadra.
+     */
+    fun posseduti(primaSquadra: Long?): List<StaffMember> =
+        if (primaSquadra == null) emptyList()
+        else tutti.filter { proprieta[it.id] == primaSquadra }
+
+    /** I tuoi di questo ruolo che non occupano nessuna cella. */
+    fun inPanchina(primaSquadra: Long?, role: String): List<StaffMember> =
+        posseduti(primaSquadra).filter { it.role == role && it.clubId == null }
+
+    /** Quanti ne possiedi di questo ruolo: e' il numero che il tetto confronta. */
+    fun quanti(primaSquadra: Long?, role: String): Int =
+        posseduti(primaSquadra).count { it.role == role }
+
+    /**
+     * Chi c'e' nel negozio.
+     *
+     * Non «chi non lavora per nessuno» ma «chi non e' di nessuno»: dal 2026-08-30 un membro
+     * puo' essere tuo e stare in panchina, e quello non e' in vendita.
+     */
+    val liberi: List<StaffMember>
+        get() = if (proprieta.isEmpty()) {
+            tutti.filter { it.clubId == null }
+        } else {
+            tutti.filter { proprieta[it.id] == null }
+        }
 
     /** Il prezzo di listino, se qualcuno lo ha messo in vendita. */
     fun prezzoDi(staffId: Long): Int? = inVendita[staffId]

@@ -77,11 +77,14 @@ import dev.mfoot.core.model.MatchDay
 import dev.mfoot.core.model.Player
 import dev.mfoot.core.model.PlayerId
 import dev.mfoot.core.model.Position
+import dev.mfoot.core.model.Staff
+import dev.mfoot.core.model.StaffRole
 import dev.mfoot.core.model.StaffId
 import dev.mfoot.core.rng.DeterministicRandom
 import dev.mfoot.core.rng.MathX
 import dev.mfoot.core.world.PotentialEstimator
 import dev.mfoot.core.world.Scouting
+import dev.mfoot.core.world.WorldGenerator
 import dev.mfoot.core.model.Trait
 import dev.mfoot.core.tick.PausedFixture
 import dev.mfoot.core.tick.TickEffect
@@ -667,6 +670,9 @@ class TickRunner(
         // scelta invece di un deposito.
         notes += cronometro.fase("promozioni") { promuoviChiEFuoriEta(league) }
 
+        // Lo scaffale dello staff: i comuni si ricompletano, i rari ogni tanto compaiono.
+        notes += cronometro.fase("negozio") { rifornisciIlNegozio(league) }
+
         // Gli osservatori tornati dal viaggio.
         notes += cronometro.fase("osservatori") { risolviLeMissioni(league, now) }
 
@@ -1126,6 +1132,127 @@ class TickRunner(
      * cinque stelle riporta uno da 52 che arrivera' a 88 e un una stella uno da 58 che si
      * ferma a 64. Chi guarda i due elenchi senza sapere le stelle sceglierebbe il secondo.
      */
+    /**
+     * Lo scaffale del negozio dello staff.
+     *
+     * ## Il difetto che chiude
+     *
+     * Il mondo genera lo staff **una volta sola**, e con i numeri di prima faceva due
+     * allenatori da cinque stelle in una lega da sedici squadre. Segnalato dal proprietario
+     * come *«troppo poco stuff, finisci subito mercato stelle»*: non era un mercato che si
+     * esauriva, era un mercato che non era mai esistito. E chi entrava in lega a stagione
+     * iniziata non trovava piu' niente, per sempre.
+     *
+     * ## Due regole diverse, di proposito
+     *
+     * **Comuni (1-3 stelle): un pavimento.** Si ricompleta fino a `scaffaleMinimo` liberi
+     * per ruolo. Se ti serve un preparatore lo trovi, sempre — restare bloccati per essere
+     * arrivati dopo e' il difetto che questa regola chiude.
+     *
+     * **Rari (4-5 stelle): una probabilita', e nessun pavimento.** Compaiono ogni tanto e
+     * quando qualcuno li prende non ci sono piu'. E' quello che tiene il cinque stelle un
+     * evento invece di una spesa, e che rende sensato riaprire il negozio domani.
+     *
+     * ## Perche' una volta al giorno e non a ogni giro
+     *
+     * Perche' il tick gira ogni cinque minuti. Senza il freno su `last_shop_match_day` il
+     * tiro di dado sui rari uscirebbe duecento volte al giorno, e il cinque stelle
+     * diventerebbe l'unica cosa che c'e'.
+     */
+    private fun rifornisciIlNegozio(league: LeagueRow): List<String> {
+        val oggi = league.currentMatchDay
+        val gia = connection.prepareStatement(
+            "select last_shop_match_day from tick_state where league_id = ?",
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getObject(1) as? Int else null }
+        }
+        if (gia == oggi) return emptyList()
+
+        val staffConfig = league.config.staff
+        val rng = DeterministicRandom(league.config.setup.worldSeed * 97L + oggi)
+        val usati = mutableSetOf<String>()
+        var comuni = 0
+        var rari = 0
+
+        for (role in StaffRole.entries) {
+            val liberi = liberiNelNegozio(league.id, role, 1, 3)
+            repeat((staffConfig.scaffaleMinimo - liberi).coerceAtLeast(0)) {
+                inserisciNelNegozio(
+                    league,
+                    WorldGenerator.staffMember(
+                        StaffId(0), role, league.config, rng, usati, minStars = 1, maxStars = 3,
+                    ),
+                )
+                comuni++
+            }
+
+            // Un raro alla volta per ruolo: finche' quello di ieri e' li', non ne arriva
+            // un altro. Due cinque stelle contemporanei sullo stesso scaffale li
+            // renderebbero una scelta invece di una fortuna.
+            if (liberiNelNegozio(league.id, role, 4, 5) == 0 &&
+                rng.chance(staffConfig.probabilitaRaro)
+            ) {
+                inserisciNelNegozio(
+                    league,
+                    WorldGenerator.staffMember(
+                        StaffId(0), role, league.config, rng, usati, minStars = 4, maxStars = 5,
+                    ),
+                )
+                rari++
+            }
+        }
+
+        connection.prepareStatement(
+            "update tick_state set last_shop_match_day = ? where league_id = ?",
+        ).use { st ->
+            st.setInt(1, oggi)
+            st.setLong(2, league.id)
+            st.executeUpdate()
+        }
+
+        if (comuni == 0 && rari == 0) return emptyList()
+        return listOf(
+            buildString {
+                append("negozio: ")
+                if (comuni > 0) append("$comuni comuni")
+                if (comuni > 0 && rari > 0) append(", ")
+                if (rari > 0) append("$rari da quattro stelle o piu'")
+            },
+        )
+    }
+
+    /** Quanti liberi di quel ruolo, in quella fascia di stelle, ci sono nel negozio. */
+    private fun liberiNelNegozio(leagueId: Long, role: StaffRole, min: Int, max: Int): Int =
+        connection.prepareStatement(
+            """
+            select count(*) from staff
+            where league_id = ? and owner_club_id is null and role = ?
+              and stars between ? and ?
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setString(2, role.name)
+            st.setInt(3, min)
+            st.setInt(4, max)
+            st.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
+        }
+
+    private fun inserisciNelNegozio(league: LeagueRow, membro: Staff) {
+        connection.prepareStatement(
+            "insert into staff (league_id, first_name, last_name, nationality, role, stars) " +
+                "values (?, ?, ?, ?, ?, ?)",
+        ).use { st ->
+            st.setLong(1, league.id)
+            st.setString(2, membro.firstName)
+            st.setString(3, membro.lastName)
+            st.setString(4, membro.nationality)
+            st.setString(5, membro.role.name)
+            st.setInt(6, membro.stars)
+            st.executeUpdate()
+        }
+    }
+
     private fun risolviLeMissioni(league: LeagueRow, now: Instant): List<String> {
         data class Missione(
             val id: Long,

@@ -90,7 +90,7 @@ object StaffRepository {
 
     suspend fun all(leagueId: Long): List<StaffMember> {
         val path = "/rest/v1/staff?select=id,first_name,last_name,nationality,role,stars," +
-            "club_id&league_id=eq.$leagueId&order=stars.desc&limit=400"
+            "club_id&league_id=eq.$leagueId&order=stars.desc&limit=1000"
 
         return when (val esito = SupabaseApi.get(path)) {
             is ApiResult.Error -> emptyList()
@@ -105,6 +105,36 @@ object StaffRepository {
                     clubId = row["club_id"].long(0).takeIf { it > 0 },
                 )
             }
+        }
+    }
+
+    /**
+     * Di chi e' ciascun membro dello staff.
+     *
+     * ## Perche' e' una lettura a parte
+     *
+     * `owner_club_id` e' arrivata il 2026-08-30. Chiederla dentro [all] vorrebbe dire che
+     * una lega col database indietro non apre piu' la schermata dello staff: PostgREST per
+     * una colonna che non esiste rifiuta **l'intera query**, non il campo. La schermata non
+     * perderebbe le celle — sparirebbe.
+     *
+     * E' la trappola gia' pagata con `clubs.division_level`, con `clubs.parent_club_id`, e
+     * il 2026-08-29 con `match_results.home_formation`, che ha tenuto ferme le partite.
+     *
+     * Qui, al peggio, fallisce da sola: la mappa torna vuota, le celle non si disegnano, e
+     * lo staff si vede come si vedeva prima.
+     */
+    suspend fun ownership(leagueId: Long): Map<Long, Long> {
+        val path = "/rest/v1/staff?select=id,owner_club_id" +
+            "&league_id=eq.$leagueId&owner_club_id=not.is.null&limit=1000"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            is ApiResult.Error -> emptyMap()
+            is ApiResult.Ok -> JsonNode.parse(esito.value).asList().mapNotNull { row ->
+                val id = row["id"].long(0)
+                val owner = row["owner_club_id"].long(0)
+                if (id > 0 && owner > 0) id to owner else null
+            }.toMap()
         }
     }
 
@@ -139,6 +169,21 @@ object StaffRepository {
         w.field("p_club_id", clubId)
         w.endObject()
         return SupabaseApi.rpc("assign_staff", w.toString()).then(::esito).mapMissing()
+    }
+
+    /**
+     * Svuota una cella senza cedere nessuno.
+     *
+     * Non esisteva, perche' non esisteva la panchina: prima l'unico modo di togliere un
+     * allenatore da una cella era metterci qualcun altro, e quel qualcun altro liberava il
+     * primo sul mercato.
+     */
+    suspend fun bench(staffId: Long): ApiResult<Unit> {
+        val w = JsonWriter(64)
+        w.beginObject()
+        w.field("p_staff_id", staffId)
+        w.endObject()
+        return SupabaseApi.rpc("bench_staff", w.toString()).then(::esito).mapMissing()
     }
 
     /** Manda un osservatore a cercare. */

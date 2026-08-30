@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,8 +31,13 @@ import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.StaffState
 import dev.mfoot.android.data.StaffMember
+import dev.mfoot.core.model.StaffRole
+import dev.mfoot.core.staff.Cella
+import dev.mfoot.core.staff.Celle
+import dev.mfoot.core.staff.Posto
 import dev.mfoot.core.market.Valuation
 import dev.mfoot.core.world.Scouting
+import dev.mfoot.android.ui.Chip
 import dev.mfoot.android.ui.Hairline
 import dev.mfoot.android.ui.Label
 import dev.mfoot.android.ui.Notice
@@ -67,9 +73,10 @@ fun StaffScreen(
     onCompra: (Long, Int) -> Unit = { _, _ -> },
     /** Mette in vendita un proprio membro dello staff. */
     onVendi: (Long, Int) -> Unit = { _, _ -> },
+    /** Toglie da una cella senza cedere: resta tuo, in panchina. */
+    onPanchina: (Long) -> Unit = {},
 ) {
-    val club = state.clubMostrato
-    if (club == null) {
+    if (state.lega.myClub == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Prima serve un club.", style = MFootType.secondary, color = MFootColors.ink3)
         }
@@ -78,8 +85,48 @@ fun StaffScreen(
 
     LaunchedEffect(state.lega.league.id) { onCarica() }
 
-    val miei = staff.di(club.id)
-    val altroClub = if (state.guardoLaPrimavera) state.lega.myClub else state.lega.myYouthClub
+    var negozio by rememberSaveable { mutableStateOf(false) }
+    if (negozio) {
+        NegozioStaff(state, staff, onCompra) { negozio = false }
+        return
+    }
+
+    VetrinaStaff(state, staff, onSposta, onVendi, onPanchina) { negozio = true }
+}
+
+/**
+ * Le nove celle: chi lavora dove.
+ *
+ * ## Il difetto che chiudono
+ *
+ * Prima questa schermata era **una lista sola**: i tuoi tre in cima, e sotto `Liberi · 74`
+ * con quaranta righe di ruoli mescolati. Per sapere chi avevi bisognava scorrere oltre il
+ * rumore, e per cambiare allenatore bisognava assegnarne un altro — il che liberava il
+ * vecchio sul mercato per chiunque, perche' possedere e schierare erano la stessa cosa.
+ *
+ * ## Perche' gli osservatori sono asimmetrici
+ *
+ * Le quattro celle di allenatori e preparatori **assegnano**: prima squadra o Primavera. Le
+ * cinque degli osservatori **raccontano**, perche' non c'e' niente da scegliere — lavorano
+ * tutti in Primavera. Ognuna dice cosa sta facendo quell'uomo, ed e' da li' che si guarda
+ * una missione.
+ */
+@Composable
+private fun VetrinaStaff(
+    state: AppState.Dentro,
+    staff: StaffState,
+    onSposta: (Long, Long) -> Unit,
+    onVendi: (Long, Int) -> Unit,
+    onPanchina: (Long) -> Unit,
+    onNegozio: () -> Unit,
+) {
+    val config = state.lega.league.config
+    val prima = state.lega.myClub?.id
+    val primavera = state.lega.myYouthClub?.id
+    val haPrimavera = primavera != null
+
+    var aperta by remember { mutableStateOf<Cella?>(null) }
+    var scelto by remember { mutableStateOf<StaffMember?>(null) }
 
     Column(
         Modifier.fillMaxSize().background(MFootColors.bg).verticalScroll(rememberScrollState()),
@@ -91,74 +138,365 @@ fun StaffScreen(
             Box(Modifier.padding(MFootSpacing.section)) { Notice(it, MFootColors.elite) }
         }
 
-        Column(Modifier.padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 8.dp)) {
-            Label("${club.shortName} · ${miei.size} in organico")
+        // Il database indietro toglie le celle, non la schermata: e' la ragione per cui la
+        // proprieta' si legge a parte.
+        if (!staff.celleAttive) {
+            Box(Modifier.padding(MFootSpacing.section)) {
+                Notice(
+                    "Le celle arrivano quando il database e' aggiornato. Intanto lo staff " +
+                        "si vede e si compra come prima.",
+                    MFootColors.gamble,
+                )
+            }
         }
 
-        if (miei.isEmpty()) {
-            Vuoto(
-                "Nessuno. Senza allenatore i tuoi crescono al minimo, e senza osservatori " +
-                    "non puoi cercare giovani.",
+        Row(
+            Modifier.fillMaxWidth().padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Label("Staff", Modifier.weight(1f))
+            Azione("Negozio", onNegozio)
+        }
+
+        StaffRole.entries.forEach { role ->
+            val celle = Celle.di(role, config)
+            Column(Modifier.padding(horizontal = MFootSpacing.section)) {
+                Text(
+                    intestazione(role),
+                    style = MFootType.label,
+                    color = MFootColors.ink3,
+                )
+                Spacer(Modifier.height(6.dp))
+
+                celle.chunked(2).forEach { coppia ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        coppia.forEach { cella ->
+                            val clubDellaCella =
+                                if (cella.posto == Posto.PRIMA_SQUADRA) prima else primavera
+                            val occupanti = staff.di(clubDellaCella).filter { it.role == role.name }
+                            val chi = occupanti.getOrNull(cella.indice)
+
+                            CellaStaff(
+                                cella = cella,
+                                chi = chi,
+                                impedimento = Celle.impedimento(cella, haPrimavera),
+                                inPanchina = staff.inPanchina(prima, role.name).size,
+                                missione = chi?.let { staff.missioneDi(it.id) },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                if (chi != null) scelto = chi else aperta = cella
+                            }
+                        }
+                        // Riga dispari: la cella sola non deve occupare tutta la larghezza,
+                        // o sembrerebbe un'altra cosa.
+                        if (coppia.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+        }
+
+        aperta?.let { cella ->
+            ScegliChi(
+                cella = cella,
+                candidati = staff.inPanchina(prima, cella.role.name),
+                onScegli = { membro ->
+                    val dove = if (cella.posto == Posto.PRIMA_SQUADRA) prima else primavera
+                    if (dove != null) onSposta(membro.id, dove)
+                    aperta = null
+                },
+                onNegozio = { aperta = null; onNegozio() },
+                onChiudi = { aperta = null },
             )
         }
 
-        miei.forEach { membro ->
-            Riga(membro) {
-                altroClub?.let { altra ->
-                    Azione("→ ${altra.shortName}") { onSposta(membro.id, altra.id) }
-                }
-
-                // Dal 2026-08-24 lo staff si puo' anche cedere: sta sul listino come i
-                // giocatori, con la stessa regola. Prima l'unica azione era spostarlo fra
-                // le proprie due squadre, e un allenatore preso restava tuo per sempre
-                // anche quando ne trovavi uno migliore.
-                //
-                // Si vende allo stesso prezzo a cui si compra, e non e' pigrizia: e' la
-                // regola [Valuation.staffPrice] applicata in tutte e due le direzioni.
-                // Chiedere un numero a mano su una schermata che si scorre sarebbe un
-                // modulo in piu' per una decisione che quasi nessuno vuole rifinire.
-                val prezzo = Valuation.staffPrice(membro.stars, state.lega.league.config)
-                if (staff.prezzoDi(membro.id) == null) {
-                    Azione("Vendi · $prezzo") { onVendi(membro.id, prezzo.coerceAtLeast(1)) }
-                } else {
-                    Azione("In vendita") { }
-                }
-            }
-        }
-
-        if (staff.liberi.isNotEmpty()) {
-            Spacer(Modifier.height(MFootSpacing.section))
-            Column(Modifier.padding(MFootSpacing.section, 0.dp, MFootSpacing.section, 8.dp)) {
-                Label("Liberi · ${staff.liberi.size}")
-            }
-
-            staff.liberi.take(40).forEach { membro ->
-                // Il prezzo di chi e' libero lo sa gia' l'app: e' una regola di `core`,
-                // [Valuation.staffPrice], la stessa che il server rifa' per addebitarlo.
-                //
-                // Prima qui si chiedeva a `staff.prezzoDi`, cioe' a una riga di listino
-                // che scriveva soltanto il tick. Quando il tick non aveva ancora girato
-                // — cioe' quasi sempre — restava «All'asta» e basta, ed e' la
-                // segnalazione arrivata: «per prendere lo staff si e' ancora obbligati
-                // a farlo tramite asta». Un prezzo che esiste solo dopo che un processo
-                // esterno ha girato, per chi gioca non esiste.
-                val prezzo = staff.prezzoDi(membro.id)
-                    ?: Valuation.staffPrice(membro.stars, state.lega.league.config)
-
-                Riga(membro) {
-                    // Si assume subito, come i giocatori. Senza la finestra di
-                    // contestazione: un preparatore in piu' non ribalta una stagione, e
-                    // dodici ore d'attesa su ogni assunzione renderebbero lo staff piu'
-                    // faticoso dei giocatori.
-                    Azione("Assumi · $prezzo") { onCompra(membro.id, prezzo) }
-                }
-            }
+        scelto?.let { membro ->
+            CosaFarne(
+                membro = membro,
+                prezzo = Valuation.staffPrice(membro.stars, state.lega.league.config),
+                inVendita = staff.prezzoDi(membro.id) != null,
+                onPanchina = { onPanchina(membro.id); scelto = null },
+                onVendi = { prezzo -> onVendi(membro.id, prezzo); scelto = null },
+                onChiudi = { scelto = null },
+            )
         }
 
         Spacer(Modifier.height(30.dp))
     }
 }
 
+private fun intestazione(role: StaffRole): String = when (role) {
+    StaffRole.ALLENATORE -> "Allenatori"
+    StaffRole.PREPARATORE -> "Preparatori atletici"
+    StaffRole.OSSERVATORE -> "Osservatori · lavorano in Primavera"
+}
+
+/**
+ * Una cella.
+ *
+ * Alta abbastanza per tre righe e non una di piu': nome, stelle, e una riga di stato. Il
+ * vincolo viene dalle proporzioni vere di un telefono, non da una preferenza.
+ */
+@Composable
+private fun CellaStaff(
+    cella: Cella,
+    chi: StaffMember?,
+    impedimento: String?,
+    inPanchina: Int,
+    missione: dev.mfoot.android.data.ScoutingMission?,
+    modifier: Modifier = Modifier,
+    onTocco: () -> Unit,
+) {
+    val chiusa = impedimento != null
+    Column(
+        modifier
+            .height(74.dp)
+            .background(if (chi != null) MFootColors.core else MFootColors.bg, MFootShapes.field)
+            .border(1.dp, MFootColors.line, MFootShapes.field)
+            .clickable(enabled = !chiusa, onClick = onTocco)
+            .padding(10.dp),
+    ) {
+        if (cella.role != StaffRole.OSSERVATORE) {
+            Text(
+                cella.posto.etichetta,
+                style = MFootType.chip,
+                color = MFootColors.ink3,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(3.dp))
+        }
+
+        when {
+            // Il divieto sta scritto sulla tessera, non in un errore dopo il tocco.
+            chiusa -> Text(
+                impedimento.orEmpty(),
+                style = MFootType.chip,
+                color = MFootColors.ink3,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            chi != null -> {
+                Text(
+                    chi.shortName,
+                    style = MFootType.rowTitle,
+                    color = MFootColors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "★".repeat(chi.stars),
+                    style = MFootType.chip,
+                    color = if (chi.stars >= 4) MFootColors.elite else MFootColors.ink2,
+                )
+                missione?.let {
+                    Text(
+                        "in ${it.country}",
+                        style = MFootType.chip,
+                        color = MFootColors.gamble,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            else -> {
+                Text("+ Vuota", style = MFootType.secondary, color = MFootColors.ink2)
+                // Dice che toccandola si sceglie fra i tuoi, invece di comprare.
+                if (inPanchina > 0) {
+                    Text(
+                        "ne hai $inPanchina liberi",
+                        style = MFootType.chip,
+                        color = MFootColors.ink3,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Chi mettere in questa cella, fra quelli che possiedi e non stanno lavorando. */
+@Composable
+private fun ScegliChi(
+    cella: Cella,
+    candidati: List<StaffMember>,
+    onScegli: (StaffMember) -> Unit,
+    onNegozio: () -> Unit,
+    onChiudi: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(MFootSpacing.section, 8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Label("Chi ci metti", Modifier.weight(1f))
+            Azione("Chiudi", onChiudi)
+        }
+        Spacer(Modifier.height(6.dp))
+
+        if (candidati.isEmpty()) {
+            Text(
+                "Non hai nessun ${etichettaRuolo(cella.role).lowercase()} libero.",
+                style = MFootType.secondary,
+                color = MFootColors.ink3,
+            )
+            Spacer(Modifier.height(8.dp))
+            Azione("Vai al negozio", onNegozio)
+        } else {
+            candidati.forEach { membro ->
+                Riga(membro) { Azione("Scegli") { onScegli(membro) } }
+            }
+        }
+    }
+}
+
+/** Cosa si fa di chi occupa gia' una cella. */
+@Composable
+private fun CosaFarne(
+    membro: StaffMember,
+    prezzo: Int,
+    inVendita: Boolean,
+    onPanchina: () -> Unit,
+    onVendi: (Int) -> Unit,
+    onChiudi: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(MFootSpacing.section, 8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Label(membro.shortName, Modifier.weight(1f))
+            Azione("Chiudi", onChiudi)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "${membro.roleLabel} · ${membro.effetto}",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Toglierlo dalla cella non lo cede: resta tuo. Prima non si poteva fare
+            // affatto, e l'unico modo di liberare una cella era regalarne il contenuto.
+            Azione("Togli dalla cella", onPanchina)
+            if (inVendita) {
+                Azione("In vendita") { }
+            } else {
+                Azione("Vendi · $prezzo") { onVendi(prezzo.coerceAtLeast(1)) }
+            }
+        }
+    }
+}
+
+/**
+ * Il negozio dello staff.
+ *
+ * ## Perche' una schermata sua
+ *
+ * Perche' prima lo scaffale stava in fondo alla stessa lista in cui c'era la tua squadra:
+ * settantaquattro righe di ruoli mescolati sotto i tuoi tre. Guardare chi hai e cercare chi
+ * comprare sono due domande diverse, e in una lista sola vincono le righe piu' numerose.
+ *
+ * ## Cosa dice prima che tu prema
+ *
+ * Il tetto (`ne hai 2 su 4`), il divieto degli osservatori se manca la Primavera — sul
+ * filtro, non dopo il tocco — e cosa comprano le stelle, che senza il moltiplicatore
+ * sarebbero solo simboli.
+ */
+@Composable
+private fun NegozioStaff(
+    state: AppState.Dentro,
+    staff: StaffState,
+    onCompra: (Long, Int) -> Unit,
+    onIndietro: () -> Unit,
+) {
+    val config = state.lega.league.config
+    val prima = state.lega.myClub?.id
+    val haPrimavera = state.lega.myYouthClub != null
+    var ruolo by rememberSaveable { mutableStateOf(StaffRole.ALLENATORE.name) }
+    val role = StaffRole.entries.firstOrNull { it.name == ruolo } ?: StaffRole.ALLENATORE
+
+    val scaffale = staff.liberi
+        .filter { it.role == role.name }
+        .sortedByDescending { it.stars }
+    val posseduti = staff.quanti(prima, role.name)
+    val divieto = Celle.impedimentoAcquisto(role, posseduti, haPrimavera, config)
+
+    Column(
+        Modifier.fillMaxSize().background(MFootColors.bg).verticalScroll(rememberScrollState()),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Azione("‹ Indietro", onIndietro)
+            Spacer(Modifier.width(10.dp))
+            Label("Negozio", Modifier.weight(1f))
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = MFootSpacing.section),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            StaffRole.entries.forEach { r ->
+                // Il lucchetto sta sul filtro: si vede prima di premere che quella corsia
+                // e' chiusa, e perche'.
+                val chiuso = r == StaffRole.OSSERVATORE && !haPrimavera
+                Chip(
+                    label = if (chiuso) "${etichettaBreve(r)} ⚿" else etichettaBreve(r),
+                    selected = r == role && !chiuso,
+                ) { if (!chiuso) ruolo = r.name }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Column(Modifier.padding(horizontal = MFootSpacing.section)) {
+            Text(
+                divieto ?: "Ne hai $posseduti su ${Celle.tetto(role, config)}",
+                style = MFootType.chip,
+                color = if (divieto != null) MFootColors.gamble else MFootColors.ink3,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+
+        if (scaffale.isEmpty()) {
+            Vuoto("Lo scaffale di questo ruolo e' vuoto. Si rifornisce a ogni giornata.")
+        }
+
+        scaffale.forEach { membro ->
+            val prezzo = staff.prezzoDi(membro.id)
+                ?: Valuation.staffPrice(membro.stars, config)
+            Riga(membro) {
+                if (divieto != null) {
+                    Text("—", style = MFootType.chip, color = MFootColors.ink3)
+                } else {
+                    Azione("Assumi · $prezzo") { onCompra(membro.id, prezzo) }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Column(Modifier.padding(horizontal = MFootSpacing.section)) {
+            Text(
+                "Lo scaffale si rinnova a ogni giornata. I quattro e cinque stelle " +
+                    "compaiono di rado e non tornano: quando qualcuno li prende, spariscono.",
+                style = MFootType.chip,
+                color = MFootColors.ink3,
+            )
+        }
+        Spacer(Modifier.height(30.dp))
+    }
+}
+
+private fun etichettaRuolo(role: StaffRole): String = when (role) {
+    StaffRole.ALLENATORE -> "Allenatore"
+    StaffRole.PREPARATORE -> "Preparatore"
+    StaffRole.OSSERVATORE -> "Osservatore"
+}
+
+private fun etichettaBreve(role: StaffRole): String = when (role) {
+    StaffRole.ALLENATORE -> "Allenatori"
+    StaffRole.PREPARATORE -> "Preparatori"
+    StaffRole.OSSERVATORE -> "Oss."
+}
 @Composable
 private fun Riga(membro: StaffMember, azioni: @Composable () -> Unit) {
     Row(

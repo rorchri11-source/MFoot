@@ -584,6 +584,44 @@ alter table appearances  add column if not exists position       text;
 alter table match_results add column if not exists home_formation text;
 alter table match_results add column if not exists away_formation text;
 
+-- Di chi e' lo staff, distinto da dove lavora.
+--
+-- Fino al 2026-08-30 `staff.club_id` rispondeva a due domande insieme, e per questo non si
+-- poteva possedere qualcuno che non fosse schierato: `assign_staff` liberava il vecchio
+-- quando ne assegnavi uno nuovo, e tornava sul mercato per chiunque.
+--
+--   owner_club_id null, club_id null  -> nel negozio
+--   owner_club_id X,    club_id X/Y   -> tuo, in una cella (prima squadra o Primavera)
+--   owner_club_id X,    club_id null  -> tuo, in panchina
+--
+-- `owner_club_id` e' **sempre la prima squadra**: si possiede come societa', si schiera
+-- come squadra. Altrimenti il tetto si aggirerebbe fondando la Primavera.
+alter table staff add column if not exists owner_club_id bigint
+    references clubs(id) on delete set null;
+
+-- Il travaso: chi gia' lavorava per qualcuno diventa suo, sotto la prima squadra.
+update staff set owner_club_id =
+    coalesce((select c.parent_club_id from clubs c where c.id = staff.club_id), staff.club_id)
+where club_id is not null and owner_club_id is null;
+
+-- Gli osservatori lavorano in Primavera. Chi era in prima squadra ci passa; dove la
+-- Primavera non esiste **resta dov'e'**: si perde il diritto di comprarne altri, non
+-- quello che si e' gia' pagato.
+update staff s set club_id = p.id
+from clubs p
+where s.role = 'OSSERVATORE'
+  and p.parent_club_id = s.club_id
+  and s.club_id is not null;
+
+create index if not exists idx_staff_owner on staff(owner_club_id, role);
+
+-- L'ultima giornata in cui il negozio dello staff e' stato rifornito.
+--
+-- Serve perche' il tick gira ogni cinque minuti e il rifornimento e' un fatto giornaliero:
+-- senza, il tiro di dado sui rari uscirebbe duecento volte al giorno. Sta in `tick_state`
+-- e non altrove perche' e' stato del server, non del gioco.
+alter table tick_state add column if not exists last_shop_match_day integer;
+
 
 -- =====================================================================================
 --  2. I PERMESSI, IN DUE FUNZIONI
@@ -1622,7 +1660,7 @@ begin
         end if;
     else
         if not exists (
-            select 1 from staff where id = p_target_id and league_id = p_league_id and club_id is null
+            select 1 from staff where id = p_target_id and league_id = p_league_id and owner_club_id is null
         ) then
             raise exception 'Membro dello staff non disponibile.' using errcode = '22023';
         end if;
@@ -2834,6 +2872,8 @@ declare
     v_club  clubs%rowtype;
     v_prima bigint;
     v_quanti integer;
+    v_config jsonb;
+    v_max integer;
 begin
     select * into v_staff from staff where id = p_staff_id;
     if not found then
@@ -2845,30 +2885,73 @@ begin
         return jsonb_build_object('ok', false, 'reason', 'Non e'' un tuo club.');
     end if;
 
-    -- Deve gia' essere tuo: si sposta fra le proprie squadre, non si ruba.
+    -- Deve gia' essere tuo: si sposta fra le proprie squadre, non si ruba. Adesso la
+    -- proprieta' la dice `owner_club_id`, non `club_id`: chi e' in panchina resta tuo.
     v_prima := coalesce(v_club.parent_club_id, v_club.id);
-    if v_staff.club_id is null or
-       coalesce((select parent_club_id from clubs where id = v_staff.club_id), v_staff.club_id)
-           <> v_prima then
+    if v_staff.owner_club_id is distinct from v_prima then
         return jsonb_build_object('ok', false, 'reason', 'Non lavora per te.');
     end if;
 
-    -- Fino a cinque osservatori per club. Gli altri ruoli uno per squadra: due allenatori
-    -- non allenano il doppio, e non c'e' nessuna regola sensata per decidere quale dei due
-    -- moltiplicatori applicare.
+    -- Gli osservatori lavorano nella Primavera, non in prima squadra. Deciso dal
+    -- proprietario il 2026-08-30: e' anche il motivo per cui senza Primavera non si
+    -- comprano affatto.
+    if v_staff.role = 'OSSERVATORE' and v_club.parent_club_id is null then
+        return jsonb_build_object('ok', false, 'reason',
+            'Gli osservatori lavorano nella Primavera.');
+    end if;
+
+    select config into v_config from leagues where id = v_staff.league_id;
+
     if v_staff.role = 'OSSERVATORE' then
+        v_max := greatest(
+            coalesce((v_config -> 'staff' ->> 'maxOsservatori')::integer, 5), 1);
         select count(*) into v_quanti from staff
         where club_id = p_club_id and role = 'OSSERVATORE' and id <> p_staff_id;
-        if v_quanti >= 5 then
+        if v_quanti >= v_max then
             return jsonb_build_object('ok', false, 'reason',
-                'Hai gia'' cinque osservatori su questa squadra.');
+                format('Hai gia'' %s osservatori su questa squadra.', v_max));
         end if;
     else
+        -- Una cella per squadra. Chi c'era **va in panchina**, non sul mercato: fino al
+        -- 2026-08-30 qui c'era `set club_id = null` senza `owner_club_id`, e assegnare un
+        -- allenatore nuovo regalava il vecchio a chiunque. E' la ragione per cui possedere
+        -- due preparatori e sceglierne uno era impossibile per costruzione.
         update staff set club_id = null
         where club_id = p_club_id and role = v_staff.role and id <> p_staff_id;
     end if;
 
     update staff set club_id = p_club_id where id = p_staff_id;
+    return jsonb_build_object('ok', true);
+end;
+$$;
+
+/**
+ * Rimanda in panchina: smette di lavorare senza smettere di essere tuo.
+ *
+ * Non esisteva, perche' non esisteva la panchina. Serve a svuotare una cella senza
+ * doverci mettere per forza qualcun altro.
+ */
+create or replace function bench_staff(p_staff_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_staff staff%rowtype;
+begin
+    select * into v_staff from staff where id = p_staff_id;
+    if not found then
+        return jsonb_build_object('ok', false, 'reason', 'Non esiste.');
+    end if;
+    if v_staff.owner_club_id is null or not exists (
+        select 1 from clubs
+        where id = v_staff.owner_club_id and owner_user_id = auth.uid()
+    ) then
+        return jsonb_build_object('ok', false, 'reason', 'Non lavora per te.');
+    end if;
+
+    update staff set club_id = null where id = p_staff_id;
     return jsonb_build_object('ok', true);
 end;
 $$;
@@ -3611,9 +3694,12 @@ begin
         raise exception 'Il prezzo minimo e'' 1 credito.' using errcode = '22023';
     end if;
 
-    select s.club_id, s.league_id into v_club, v_league
+    -- Si vende quello che si possiede, non quello che e' schierato: dal 2026-08-30 un
+    -- membro dello staff puo' essere tuo e stare in panchina, e la panchina e' proprio il
+    -- posto da cui si vende quello che non serve piu'.
+    select s.owner_club_id, s.league_id into v_club, v_league
     from staff s
-    join clubs c on c.id = s.club_id
+    join clubs c on c.id = s.owner_club_id
     where s.id = p_staff_id and c.owner_user_id = v_user;
 
     if v_club is null then
@@ -3712,6 +3798,11 @@ declare
     v_price     integer;
     v_available integer;
     v_da_listino boolean := false;
+    v_primavera bigint;
+    v_config    jsonb;
+    v_max       integer;
+    v_posseduti integer;
+    v_dove      bigint;
 begin
     if v_user is null then
         raise exception 'Serve un accesso valido.' using errcode = '28000';
@@ -3731,8 +3822,9 @@ begin
         v_da_listino := true;
         v_seller := v_listing.seller_club_id;
         v_price  := v_listing.price;
-    elsif v_staff.club_id is not null then
-        -- Lavora per qualcuno e quel qualcuno non lo ha messo in vendita.
+    elsif v_staff.owner_club_id is not null then
+        -- E' di qualcuno e quel qualcuno non lo ha messo in vendita. Si guarda la
+        -- proprieta', non dove lavora: chi sta in panchina non e' libero.
         return jsonb_build_object('ok', false, 'reason', 'Non e'' in vendita.');
     else
         v_seller := null;
@@ -3756,8 +3848,33 @@ begin
     if not found then
         return jsonb_build_object('ok', false, 'reason', 'Devi avere un club in questa lega.');
     end if;
-    if v_seller = v_buyer.id or v_staff.club_id = v_buyer.id then
+    if v_seller = v_buyer.id or v_staff.owner_club_id = v_buyer.id then
         return jsonb_build_object('ok', false, 'reason', 'E'' gia'' tuo.');
+    end if;
+
+    -- Il tetto, e la Primavera. Le stesse due regole che `core/staff/Celle.kt` applica
+    -- nell'app per spegnere il pulsante: qui si rifanno perche' il server non si fida di
+    -- nessun client, ma i numeri vengono dallo stesso posto — la configurazione della lega.
+    select id into v_primavera from clubs where parent_club_id = v_buyer.id;
+    select config into v_config from leagues where id = v_lega;
+
+    if v_staff.role = 'OSSERVATORE' and v_primavera is null then
+        return jsonb_build_object('ok', false, 'reason',
+            'Gli osservatori lavorano nella Primavera: prima va fondata.');
+    end if;
+
+    v_max := case v_staff.role
+        when 'ALLENATORE'  then coalesce((v_config -> 'staff' ->> 'maxAllenatori')::integer, 4)
+        when 'PREPARATORE' then coalesce((v_config -> 'staff' ->> 'maxPreparatori')::integer, 4)
+        else                    coalesce((v_config -> 'staff' ->> 'maxOsservatori')::integer, 5)
+    end;
+    v_max := greatest(v_max, 1);
+
+    select count(*) into v_posseduti from staff
+    where owner_club_id = v_buyer.id and role = v_staff.role;
+    if v_posseduti >= v_max then
+        return jsonb_build_object('ok', false, 'reason',
+            format('Ne hai gia'' %s, il massimo per questo ruolo.', v_max));
     end if;
 
     v_available := v_buyer.credits - v_buyer.committed_credits;
@@ -3772,7 +3889,24 @@ begin
         update clubs set credits = credits + v_price where id = v_seller;
     end if;
 
-    update staff set club_id = v_buyer.id where id = p_staff_id;
+    -- Dove va a finire appena comprato.
+    --
+    -- L'osservatore va **direttamente in Primavera**, che e' l'unico posto in cui lavora.
+    -- Gli altri prendono la cella della prima squadra se e' libera — comprare il primo
+    -- allenatore quando non ne hai deve funzionare e basta — altrimenti restano in
+    -- panchina e la cella la scegli tu.
+    if v_staff.role = 'OSSERVATORE' then
+        v_dove := v_primavera;
+    elsif exists (
+        select 1 from staff
+        where club_id = v_buyer.id and role = v_staff.role and id <> p_staff_id
+    ) then
+        v_dove := null;
+    else
+        v_dove := v_buyer.id;
+    end if;
+
+    update staff set owner_club_id = v_buyer.id, club_id = v_dove where id = p_staff_id;
     if v_da_listino then
         update listings set status = 'VENDUTO' where id = v_listing.id;
     end if;
@@ -4045,6 +4179,7 @@ grant execute on function answer_conversation(bigint, text, integer) to authenti
 grant execute on function assign_divisions(bigint, jsonb) to authenticated;
 grant execute on function assign_objectives(bigint, integer, jsonb) to authenticated;
 grant execute on function assign_staff(bigint, bigint) to authenticated;
+grant execute on function bench_staff(bigint) to authenticated;
 grant execute on function buy_player(bigint) to authenticated, anon;
 grant execute on function buy_staff(bigint) to authenticated, anon;
 grant execute on function contest_purchase(bigint, integer) to authenticated, anon;

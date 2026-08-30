@@ -37,6 +37,65 @@ data class LeagueConfig(
     val ai: AiConfig = AiConfig(),
     val engine: EngineConfig = EngineConfig(),
     val objectives: ObjectivesConfig = ObjectivesConfig(),
+    val staff: StaffConfig = StaffConfig(),
+)
+
+// ------------------------------------------------------------------------------ staff
+
+/**
+ * Quanto staff esiste, quanto se ne puo' tenere, e come si rifornisce il negozio.
+ *
+ * ## Perche' questo blocco e' nato il 2026-08-30
+ *
+ * Perche' due numeri che decidono il gioco stavano scritti dentro `WorldGenerator`:
+ * `STAFF_PER_CLUB = 2.0` e i pesi delle stelle `20/28/30/16/6`. Insieme fanno, in una lega
+ * da sedici squadre, **due allenatori da cinque stelle in tutto il mondo**. Segnalato dal
+ * proprietario come *«oggi troppo poco stuff, finisci subito mercato stelle»*: non era un
+ * mercato che si esauriva, era un mercato che non era mai esistito.
+ *
+ * Finche' quei due numeri stavano nel codice non si potevano correggere senza pubblicare
+ * un APK, che e' esattamente cio' che il principio del progetto vieta.
+ */
+data class StaffConfig(
+    /**
+     * Quanti se ne possono **possedere** per ruolo.
+     *
+     * Le celle in campo sono due per allenatori e preparatori — prima squadra e Primavera —
+     * quindi quattro significa due schierati e due di scorta fra cui scegliere. Gli
+     * osservatori sono cinque perche' cinque sono le celle: si schierano tutti, non serve
+     * riserva.
+     *
+     * E' il tetto a impedire il magazzino, non lo stipendio: lo staff non costa niente da
+     * tenere, quindi senza un limite il club ricco comprerebbe ogni cinque stelle della
+     * lega per lasciarlo fermo.
+     */
+    val maxAllenatori: Int = 4,
+    val maxPreparatori: Int = 4,
+    val maxOsservatori: Int = 5,
+
+    /**
+     * Quanti liberi da una a tre stelle il negozio tiene sempre, per ruolo.
+     *
+     * E' un **pavimento**, non una quota: il server ricompleta fino a qui a ogni giornata.
+     * Serve a chiudere il difetto per cui chi entra tardi in lega non trova piu' niente e
+     * resta bloccato per essere arrivato dopo.
+     */
+    val scaffaleMinimo: Int = 6,
+
+    /**
+     * Probabilita', per giornata e per ruolo, che compaia un quattro o cinque stelle.
+     *
+     * I rari **non** vengono ricompletati: appaiono, e quando qualcuno li prende non ci
+     * sono piu'. E' quello che tiene il cinque stelle un evento invece di una spesa — e
+     * che rende sensato riaprire il negozio domani.
+     */
+    val probabilitaRaro: Double = 0.35,
+
+    /** Quanti membri per ruolo per club genera il mondo all'inizio. */
+    val perClub: Double = 2.0,
+
+    /** Quanto e' probabile ciascun livello di stelle, da una a cinque. */
+    val pesiStelle: List<Double> = listOf(20.0, 28.0, 30.0, 16.0, 6.0),
 )
 
 // ------------------------------------------------------------------------ obiettivi

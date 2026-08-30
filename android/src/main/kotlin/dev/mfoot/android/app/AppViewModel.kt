@@ -2460,6 +2460,9 @@ class AppViewModel : ViewModel() {
         viewModelScope.launch {
             _staff.value = _staff.value.copy(
                 tutti = StaffRepository.all(dentro.lega.league.id),
+                // Chiesta a parte: se il database e' indietro questa torna vuota e si
+                // perdono le celle, invece di perdere tutta la schermata.
+                proprieta = StaffRepository.ownership(dentro.lega.league.id),
                 missioni = StaffRepository.missions(miei),
                 // Lo staff sul listino: stessa tabella dei giocatori, altro `target_type`.
                 inVendita = MarketRepository.listings(dentro.lega.league.id, tipo = "staff")
@@ -2510,6 +2513,19 @@ class AppViewModel : ViewModel() {
                 is ApiResult.Error -> _staff.value = _staff.value.copy(errore = esito.message)
                 is ApiResult.Ok -> {
                     _staff.value = _staff.value.copy(errore = null, avviso = "Spostato.")
+                    caricaStaff()
+                }
+            }
+        }
+    }
+
+    /** Toglie qualcuno da una cella senza cederlo: resta tuo, in panchina. */
+    fun panchinaStaff(staffId: Long) {
+        viewModelScope.launch {
+            when (val esito = StaffRepository.bench(staffId)) {
+                is ApiResult.Error -> _staff.value = _staff.value.copy(errore = esito.message)
+                is ApiResult.Ok -> {
+                    _staff.value = _staff.value.copy(errore = null, avviso = "Tolto dalla cella.")
                     caricaStaff()
                 }
             }

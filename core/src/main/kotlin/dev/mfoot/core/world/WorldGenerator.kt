@@ -51,9 +51,6 @@ object WorldGenerator {
 
     private const val MAX_NAME_RETRIES = 8
 
-    /** Quanti membri dello staff generare per ogni ruolo, rispetto al numero di club. */
-    private const val STAFF_PER_CLUB = 2.0
-
     fun generate(config: LeagueConfig): GeneratedWorld {
         val seed = config.setup.worldSeed
         val root = DeterministicRandom(seed)
@@ -247,38 +244,70 @@ object WorldGenerator {
     // -------------------------------------------------------------------------- staff
 
     /**
-     * Distribuzione delle stelle: i cinque stelle sono rari di proposito.
+     * Lo staff che il mondo ha al primo giorno.
      *
-     * L'allenatore top quasi raddoppia la velocita' di crescita di tutta la rosa: se
-     * fossero facili da trovare, la scelta di spenderci mezzo budget non esisterebbe.
+     * I cinque stelle sono rari di proposito: l'allenatore top quasi raddoppia la velocita'
+     * di crescita di tutta la rosa, e se fossero facili da trovare la scelta di spenderci
+     * mezzo budget non esisterebbe.
+     *
+     * I due numeri che lo decidono stanno adesso in [dev.mfoot.core.config.StaffConfig]:
+     * quanti per club, e con che pesi. Erano scritti qui, e insieme facevano **due**
+     * allenatori da cinque stelle in tutta una lega da sedici squadre — un mercato che non
+     * e' mai esistito, e che non si poteva correggere senza pubblicare un APK.
      */
-    private val starWeights = doubleArrayOf(20.0, 28.0, 30.0, 16.0, 6.0)
-
     private fun generateStaff(config: LeagueConfig, rng: DeterministicRandom): List<Staff> {
-        val perRole = StrictMath.round(config.setup.totalClubs * STAFF_PER_CLUB).toInt()
+        val perRole = StrictMath.round(config.setup.totalClubs * config.staff.perClub).toInt()
             .coerceAtLeast(6)
-        val nationalities = config.world.nationalities
         val used = mutableSetOf<String>()
         var nextId = 1L
 
         return StaffRole.entries.flatMap { role ->
-            List(perRole) {
-                val nationality = rng.pick(nationalities)
-                val (firstName, lastName) = uniqueName(nationality, rng, used)
-                Staff(
-                    id = StaffId(nextId++),
-                    firstName = firstName,
-                    lastName = lastName,
-                    nationality = nationality,
-                    role = role,
-                    stars = rollStars(rng),
-                )
-            }
+            List(perRole) { staffMember(StaffId(nextId++), role, config, rng, used) }
         }
     }
 
-    private fun rollStars(rng: DeterministicRandom): Int {
-        val index = rng.pickWeighted(starWeights.indices.toList()) { starWeights[it] }
-        return index + 1
+    /**
+     * Un membro dello staff solo.
+     *
+     * Estratta da [generateStaff] perche' serve anche **dopo** la creazione del mondo: il
+     * negozio si rifornisce a ogni giornata, e chi entra in lega a stagione iniziata deve
+     * trovare comunque un preparatore.
+     *
+     * [minStars] e [maxStars] restringono il tiro di dado senza cambiarne i pesi: il
+     * rifornimento dei comuni chiede 1-3, quello dei rari 4-5, e la distribuzione dentro
+     * quella fascia resta quella della lega.
+     */
+    fun staffMember(
+        id: StaffId,
+        role: StaffRole,
+        config: LeagueConfig,
+        rng: DeterministicRandom,
+        used: MutableSet<String> = mutableSetOf(),
+        minStars: Int = 1,
+        maxStars: Int = 5,
+    ): Staff {
+        val nationality = rng.pick(config.world.nationalities)
+        val (firstName, lastName) = uniqueName(nationality, rng, used)
+        return Staff(
+            id = id,
+            firstName = firstName,
+            lastName = lastName,
+            nationality = nationality,
+            role = role,
+            stars = rollStars(config, rng, minStars, maxStars),
+        )
+    }
+
+    private fun rollStars(
+        config: LeagueConfig,
+        rng: DeterministicRandom,
+        minStars: Int = 1,
+        maxStars: Int = 5,
+    ): Int {
+        val pesi = config.staff.pesiStelle
+        val basso = minStars.coerceIn(1, 5)
+        val alto = maxStars.coerceIn(basso, 5)
+        val indici = (basso - 1)..(alto - 1)
+        return rng.pickWeighted(indici.toList()) { pesi.getOrElse(it) { 1.0 } } + 1
     }
 }

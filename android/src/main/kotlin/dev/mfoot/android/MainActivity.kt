@@ -325,6 +325,7 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         staff = staff,
                         onLoadStaff = viewModel::caricaStaff,
                         onMoveStaff = viewModel::spostaStaff,
+                        onBenchStaff = viewModel::panchinaStaff,
                         onAssumiStaff = viewModel::assumiStaff,
                         onVendiStaff = viewModel::vendiStaff,
                         onSendScout = viewModel::mandaOsservatore,
