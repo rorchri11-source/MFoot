@@ -741,6 +741,27 @@ data class AiConfig(
     /** Moltiplicatore su valutazioni e budget: la difficolta' della lega. */
     val difficultyMultiplier: Double = 1.0,
     val maxMarketActionsPerDay: Int = 2,
+
+    /**
+     * Quante cose puo' fare in un giorno un'AI che deve ancora completare la rosa.
+     *
+     * ## Perche' e' uscito dal codice il 2026-08-30
+     *
+     * Perche' era `SPRINT_AZIONI_AL_GIORNO = 12` dentro `AiScheduler`, e dodici non basta:
+     * un club che parte da zero deve comprarne sedici o diciotto per avere una rosa legale,
+     * quindi ci metteva **due giorni reali** — e finche' i computer non hanno finito la
+     * spesa il campionato non parte per nessuno.
+     *
+     * Chiesto dal proprietario: *«voglio che in un giorno tutte raggiungano il minimo in
+     * rosa»*. Trenta copre con margine qualunque `minSquadSize` sensato, e resta un tetto:
+     * serve a impedire che un difetto faccia comprare duecento giocatori a un'AI, non a
+     * rallentarla.
+     *
+     * Il tetto normale — due azioni — resta quello che era, ed e' giusto **a campionato in
+     * corso**: esiste per non sommergere di notifiche chi gioca.
+     */
+    val sprintActionsPerDay: Int = 30,
+
     /** Intervallo del ritardo umano prima di rilanciare. */
     val minRebidDelayMinutes: Int = 18,
     val maxRebidDelayMinutes: Int = 180,

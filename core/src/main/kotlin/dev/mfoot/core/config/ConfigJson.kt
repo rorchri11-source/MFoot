@@ -308,6 +308,7 @@ object ConfigJson {
         w.objectField("ai")
         w.field("difficultyMultiplier", c.difficultyMultiplier)
         w.field("maxMarketActionsPerDay", c.maxMarketActionsPerDay)
+        w.field("sprintActionsPerDay", c.sprintActionsPerDay)
         w.field("minRebidDelayMinutes", c.minRebidDelayMinutes)
         w.field("maxRebidDelayMinutes", c.maxRebidDelayMinutes)
         w.field("minWakeupsPerDay", c.minWakeupsPerDay)
@@ -589,6 +590,7 @@ object ConfigJson {
     private fun readAi(n: JsonNode, d: AiConfig) = AiConfig(
         difficultyMultiplier = n["difficultyMultiplier"].double(d.difficultyMultiplier),
         maxMarketActionsPerDay = n["maxMarketActionsPerDay"].int(d.maxMarketActionsPerDay),
+        sprintActionsPerDay = n["sprintActionsPerDay"].int(d.sprintActionsPerDay),
         minRebidDelayMinutes = n["minRebidDelayMinutes"].int(d.minRebidDelayMinutes),
         maxRebidDelayMinutes = n["maxRebidDelayMinutes"].int(d.maxRebidDelayMinutes),
         minWakeupsPerDay = n["minWakeupsPerDay"].int(d.minWakeupsPerDay),

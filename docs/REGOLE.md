@@ -531,7 +531,52 @@ nuovi**: quello in corso lo sistema la generazione su misura.
 
 ---
 
+## Le notifiche
+
+**Toccare una notifica porta dove il fatto è successo.**
+Una di partita apre **quella** partita, una d'asta le aste, una di scambio la trattativa,
+una di osservatori la sua cella. Prima il registro raccontava «asta vinta» e poi bisognava
+andarsela a cercare da soli.
+La riga dice anche dove porta — *«tocca per guardarla»* — perché un tocco che nessuno sa di
+poter fare non esiste. Quello che non porta da nessuna parte, come un riepilogo di giornata,
+non si può premere: una riga cliccabile che non fa niente insegna a non fidarsi delle altre.
+*Detta il 2026-08-30 · `notifications.target_id`*
+
+**La partita finita avvisa chi ha giocato.**
+Non lo faceva. Nel registro c'era una sola notifica di tipo partita, quella dell'intervallo:
+il fischio finale — cioè l'unica cosa che tutti aspettano — non lasciava traccia. E il
+punteggio è scritto dal punto di vista di chi legge: «Sconfitta 3-1» a chi ha perso 1-3 è il
+tipo di riga che fa dubitare del resto.
+*Detta il 2026-08-30 · `TickRunner.salvaEsito`*
+
+---
+
+## Quando una partita non si gioca
+
+**Il motivo si scrive sulla partita, non nelle note del server.**
+Il tick lo sapeva da sempre e lo teneva per sé: dal telefono una partita rinviata era
+indistinguibile da una non ancora arrivata, e chi la aspettava non aveva modo di sapere che
+il problema era la sua rosa.
+Adesso c'è scritto sulla riga, per esteso e col nome del club: *«Il Bar di Marco non ha
+undici giocatori disponibili. La partita si rigioca appena la rosa torna completa.»* Il
+motivo si azzera appena la partita si gioca — un motivo vecchio accanto a un risultato
+sarebbe peggio di nessun motivo — e una partita bloccata **non si apre**, perché non c'è
+niente da guardare.
+*Detta il 2026-08-30 · `fixtures.problema`*
+
+---
+
 ## Le squadre del computer
+
+**In un giorno le AI raggiungono il minimo in rosa.**
+Il tetto della rincorsa era dodici azioni al giorno, scritto dentro `AiScheduler`, e un club
+che parte da zero deve comprarne sedici o diciotto per averne una legale: ci metteva **due
+giorni reali**, e finché i computer non hanno finito la spesa il campionato non parte per
+nessuno. Ora sono trenta, in configurazione. Resta un tetto — serve a impedire che un
+difetto faccia comprare duecento giocatori a un'AI, non a rallentarla.
+Il tetto normale, due azioni al giorno, **non cambia**: esiste per non sommergere di
+notifiche chi gioca, ed è giusto a campionato in corso.
+*Detta il 2026-08-30 · `AiConfig.sprintActionsPerDay`*
 
 **Le AI devono fare quattro cose di loro iniziativa, tutte rivolte a chi gioca.**
 Comprare a listino appena la rosa è corta — è quello che scioglie il riempimento lento

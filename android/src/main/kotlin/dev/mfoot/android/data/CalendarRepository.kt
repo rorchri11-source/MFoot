@@ -72,11 +72,19 @@ object CalendarRepository {
         clubName: (Long) -> String,
         friendlyCompetitions: Set<Long>,
     ): ApiResult<List<CalendarMatch>> {
-        val path = "/rest/v1/fixtures?select=id,competition_id,home_club_id,away_club_id," +
-            "match_day,kickoff,played,match_results(home_goals,away_goals)" +
-            "&league_id=eq.$leagueId&order=kickoff"
+        // `problema` e' arrivata il 2026-08-30. Si chiede in un primo tentativo e, se il
+        // database e' indietro, si riprova senza: PostgREST per una colonna che non esiste
+        // rifiuta l'intera query, e un calendario che sparisce e' molto peggio di un
+        // calendario che non spiega i rinvii.
+        val coda = "&league_id=eq.$leagueId&order=kickoff"
+        val comune = "/rest/v1/fixtures?select=id,competition_id,home_club_id,away_club_id," +
+            "match_day,kickoff,played,match_results(home_goals,away_goals)"
 
-        return SupabaseApi.get(path).then { body ->
+        val esito = SupabaseApi.get("$comune,problema$coda").let {
+            if (it is ApiResult.Error) SupabaseApi.get("$comune$coda") else it
+        }
+
+        return esito.then { body ->
             ApiResult.Ok(
                 JsonNode.parse(body).asList().mapNotNull { row ->
                     val quando = row["kickoff"].strOrNull()?.let(Istanti::parse) ?: return@mapNotNull null
@@ -99,6 +107,7 @@ object CalendarRepository {
                         } else {
                             ""
                         },
+                        problema = row["problema"].strOrNull()?.takeIf { it.isNotBlank() },
                     )
                 },
             )

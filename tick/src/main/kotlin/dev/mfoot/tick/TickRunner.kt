@@ -3441,7 +3441,7 @@ class TickRunner(
             notify(
                 league.id, club,
                 "Intervallo: $parziale. Hai $finestraMinuti minuti per cambiare qualcosa.",
-                kind = "partita", urgency = "immediata",
+                kind = "partita", urgency = "immediata", target = fixture.id,
             )
         }
         log("Partita ${fixture.id} all'intervallo sul $parziale, riprende alle $ripresa.")
@@ -3542,8 +3542,27 @@ class TickRunner(
         notes: MutableList<String>,
     ): Boolean {
         val today = MatchDay(fixture.matchDay.value)
-        val home = buildTeam(league, fixture.home, today, notes) ?: return false
-        val away = buildTeam(league, fixture.away, today, notes) ?: return false
+
+        // IL MOTIVO SI SCRIVE SULLA PARTITA, NON NELLE NOTE DEL TICK
+        //
+        // Il server lo sapeva da sempre e lo teneva per se': dal telefono una partita
+        // rinviata era indistinguibile da una non ancora arrivata, e chi la aspettava non
+        // aveva modo di sapere che il problema era la sua rosa.
+        val home = buildTeam(league, fixture.home, today, notes)
+        val away = buildTeam(league, fixture.away, today, notes)
+        if (home == null || away == null) {
+            val chi = listOfNotNull(
+                if (home == null) clubNameOf(fixture.home) else null,
+                if (away == null) clubNameOf(fixture.away) else null,
+            ).joinToString(" e ")
+            segnaIlProblema(
+                fixture.id,
+                "$chi non ha undici giocatori disponibili. La partita si rigioca appena " +
+                    "la rosa torna completa.",
+            )
+            return false
+        }
+        segnaIlProblema(fixture.id, null)
 
         val seed = league.config.setup.worldSeed * 31L + fixture.id
 
@@ -3621,6 +3640,32 @@ class TickRunner(
             st.setInt(1, fixture.matchDay.value)
             st.setLong(2, league.id)
             st.executeUpdate()
+        }
+
+        // LA PARTITA FINITA NON AVVISAVA NESSUNO
+        //
+        // Nel registro c'era una sola notifica di tipo `partita`, quella dell'intervallo.
+        // Il fischio finale — cioe' l'unica cosa che tutti aspettano — non lasciava traccia,
+        // e per sapere com'era andata bisognava andarsela a cercare in classifica.
+        //
+        // Porta con se' l'identificativo, quindi toccandola si apre **quella** partita.
+        listOf(fixture.home, fixture.away).forEach { club ->
+            val inCasa = club == fixture.home
+            val avversaria = if (inCasa) away.name else home.name
+            // Il punteggio dal punto di vista di chi legge: «Sconfitta 3-1» a chi ha perso
+            // 1-3 e' il tipo di riga che fa dubitare del resto.
+            val miei = if (inCasa) result.homeGoals else result.awayGoals
+            val loro = if (inCasa) result.awayGoals else result.homeGoals
+            val esito = when {
+                result.isDraw -> "Pari"
+                miei > loro -> "Vittoria"
+                else -> "Sconfitta"
+            }
+            notify(
+                league.id, club,
+                "$esito $miei-$loro contro $avversaria.",
+                kind = "partita", urgency = "immediata", target = fixture.id,
+            )
         }
 
         log("Lega ${league.id}: ${home.name} ${result.scoreline} ${away.name}")
@@ -5570,21 +5615,35 @@ class TickRunner(
      *   sul mercato lo vedono tutti, ed e' la colonna `club_id` nulla che lo dice. Prima
      *   il parametro non era annullabile e una notizia di lega non si poteva scrivere.
      */
+    /**
+     * Scrive una riga nel registro.
+     *
+     * [target] e' **di cosa parla**: la partita, l'asta, lo scambio, la missione. Serve a
+     * una cosa sola, ed e' quella che mancava: toccare la notifica e finire dove il fatto
+     * e' successo. Senza, il registro racconta e basta — e chi legge «asta vinta» deve
+     * andare a cercarsela.
+     *
+     * Nullo dove non c'e' niente da aprire: un riepilogo di giornata non porta da nessuna
+     * parte, e un pulsante che non fa niente e' peggio di nessun pulsante.
+     */
     private fun notify(
         leagueId: Long,
         club: ClubId?,
         body: String,
         kind: String = "asta",
         urgency: String = "immediata",
+        target: Long? = null,
     ) {
         connection.prepareStatement(
-            "insert into notifications (league_id, club_id, kind, urgency, body) values (?, ?, ?, ?, ?)",
+            "insert into notifications (league_id, club_id, kind, urgency, body, target_id) " +
+                "values (?, ?, ?, ?, ?, ?)",
         ).use { st ->
             st.setLong(1, leagueId)
             if (club == null) st.setNull(2, java.sql.Types.BIGINT) else st.setLong(2, club.value)
             st.setString(3, kind)
             st.setString(4, urgency)
             st.setString(5, body)
+            if (target == null) st.setNull(6, java.sql.Types.BIGINT) else st.setLong(6, target)
             st.executeUpdate()
         }
     }
@@ -5717,6 +5776,28 @@ class TickRunner(
      * Restituisce null solo se la rosa non basta davvero: la partita resta da giocare e
      * il tick lo segnala, invece di far uscire un risultato inventato.
      */
+    /**
+     * Perche' questa partita non si e' potuta giocare, scritto dove chi gioca lo vede.
+     *
+     * [motivo] nullo la ripulisce: un motivo vecchio accanto a un risultato sarebbe peggio
+     * di nessun motivo.
+     */
+    private fun segnaIlProblema(fixtureId: Long, motivo: String?) {
+        connection.prepareStatement(
+            "update fixtures set problema = ?, problema_at = ? where id = ?",
+        ).use { st ->
+            if (motivo == null) {
+                st.setNull(1, java.sql.Types.VARCHAR)
+                st.setNull(2, java.sql.Types.TIMESTAMP)
+            } else {
+                st.setString(1, motivo)
+                st.setTimestamp(2, java.sql.Timestamp.from(java.time.Instant.now()))
+            }
+            st.setLong(3, fixtureId)
+            st.executeUpdate()
+        }
+    }
+
     private fun buildTeam(
         league: LeagueRow,
         clubId: ClubId,
@@ -5724,7 +5805,13 @@ class TickRunner(
         notes: MutableList<String>,
     ): TeamSetup? {
         val squad = loadSquad(league.id, clubId)
-        if (squad.size < Formation.PLAYERS_ON_PITCH) return null
+        if (squad.size < Formation.PLAYERS_ON_PITCH) {
+            // Il motivo, con il nome e il numero. «Rosa insufficiente» non dice a chi, e
+            // chi legge deve andare a contare i propri giocatori per capire se riguarda lui.
+            notes += "${clubNameOf(clubId)} ha ${squad.size} giocatori disponibili su " +
+                "${Formation.PLAYERS_ON_PITCH}: non puo' scendere in campo."
+            return null
+        }
 
         val name = clubNameOf(clubId)
         val coachStars = coachStarsOf(clubId)

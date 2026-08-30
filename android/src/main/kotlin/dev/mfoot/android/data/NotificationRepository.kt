@@ -17,8 +17,28 @@ data class NotificationRow(
     val urgency: String,
     val body: String,
     val createdAt: Instant?,
+    /**
+     * Di cosa parla: la partita, l'asta, lo scambio, la missione.
+     *
+     * Nullo quando non c'e' niente da aprire — un riepilogo di giornata non porta da
+     * nessuna parte — e nullo su ogni notifica scritta prima del 2026-08-30.
+     */
+    val targetId: Long? = null,
 ) {
     val isImmediate: Boolean get() = urgency == "immediata"
+
+    /**
+     * Dove porta, se porta da qualche parte.
+     *
+     * Il tipo decide la schermata, il bersaglio decide **quale** cosa aprire. Senza
+     * bersaglio si va comunque nella sezione giusta: e' meno preciso ma e' sempre meglio
+     * di una riga che non fa niente.
+     */
+    val apribile: Boolean
+        get() = kind in setOf(
+            "partita", "asta", "scambio", "amichevole", "scouting",
+            "mercato", "contratto", "primavera", "competizione", "prestito",
+        )
 
     /**
      * Quanto tempo e' passato, a parole.
@@ -61,11 +81,33 @@ object NotificationRepository {
      */
     private const val LIMIT = 200
 
+    /**
+     * Le notifiche recenti.
+     *
+     * ## Perche' si prova due volte
+     *
+     * `target_id` — di cosa parla la notifica — e' arrivata il 2026-08-30, ed e' quello
+     * che rende toccabile una riga. PostgREST pero' per una colonna che non esiste rifiuta
+     * **l'intera query**: chiederla e basta vorrebbe dire che una lega col database
+     * indietro non vede piu' nessuna notifica, invece di vederle senza poterle toccare.
+     *
+     * Qui il primo tentativo la chiede; se fallisce si riprova senza. Un giro in piu' solo
+     * sui database vecchi, e chi e' aggiornato paga una query sola. E' la stessa difesa
+     * usata per la proprieta' dello staff, applicata dove una lettura a parte sarebbe
+     * costata piu' di un ritentativo.
+     */
     suspend fun recent(leagueId: Long): ApiResult<List<NotificationRow>> {
-        val path = "/rest/v1/notifications?select=id,club_id,kind,urgency,body,created_at" +
-            "&league_id=eq.$leagueId&order=created_at.desc&limit=$LIMIT"
+        val coda = "&league_id=eq.$leagueId&order=created_at.desc&limit=$LIMIT"
+        val conBersaglio =
+            "/rest/v1/notifications?select=id,club_id,kind,urgency,body,created_at,target_id$coda"
+        val senza =
+            "/rest/v1/notifications?select=id,club_id,kind,urgency,body,created_at$coda"
 
-        return SupabaseApi.get(path).then { body ->
+        val esito = SupabaseApi.get(conBersaglio).let {
+            if (it is ApiResult.Error) SupabaseApi.get(senza) else it
+        }
+
+        return esito.then { body ->
             ApiResult.Ok(JsonNode.parse(body).asList().map { row ->
                 NotificationRow(
                     id = row["id"].long(0),
@@ -74,6 +116,7 @@ object NotificationRepository {
                     urgency = row["urgency"].str("riepilogo"),
                     body = row["body"].str(""),
                     createdAt = row["created_at"].strOrNull()?.let(::parseInstant),
+                    targetId = row["target_id"].long(0).takeIf { it > 0 },
                 )
             })
         }

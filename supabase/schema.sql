@@ -638,6 +638,25 @@ alter table scouting_missions add constraint scouting_missions_status_check
 alter table scouting_missions add column if not exists found_player_ids bigint[]
     not null default '{}';
 
+-- Di cosa parla una notifica: la partita, l'asta, lo scambio, la missione.
+--
+-- Serve a una cosa sola, ed e' quella che mancava: toccare la notifica e finire dove il
+-- fatto e' successo. Senza, il registro racconta e basta, e chi legge «asta vinta» deve
+-- andare a cercarsela. Nullo dove non c'e' niente da aprire.
+alter table notifications add column if not exists target_id bigint;
+
+-- Perche' una partita non si e' potuta giocare.
+--
+-- Il tick lo sapeva e lo scriveva nelle proprie note, che nessuno legge: dal telefono una
+-- partita rinviata era identica a una partita non ancora arrivata. Chiesto dal
+-- proprietario il 2026-08-30: *«quando una partita non si puo' fare per qualche motivo
+-- deve essere chiaro ed apparire scritto»*.
+--
+-- Si azzera appena la partita si gioca: un motivo vecchio accanto a un risultato sarebbe
+-- peggio di nessun motivo.
+alter table fixtures add column if not exists problema    text;
+alter table fixtures add column if not exists problema_at timestamptz;
+
 
 -- =====================================================================================
 --  2. I PERMESSI, IN DUE FUNZIONI

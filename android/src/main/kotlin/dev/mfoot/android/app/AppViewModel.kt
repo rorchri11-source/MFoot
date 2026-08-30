@@ -996,6 +996,31 @@ class AppViewModel : ViewModel() {
      * con pausa e salto alla fine. Quello che si rivede e' *come e' andata*, e novanta
      * minuti per raccontarlo sarebbero novanta minuti.
      */
+    /**
+     * Apre una partita di cui si sa solo l'identificativo.
+     *
+     * E' il percorso che arriva da una notifica: li' i nomi delle squadre non ci sono, e
+     * andarli a chiedere al server sarebbe una richiesta in piu' per due stringhe che il
+     * telefono ha gia'. Se la lega non e' ancora caricata i nomi restano vuoti e la
+     * schermata li riempie da sola quando arriva il tabellone.
+     */
+    fun apriPartitaDaNotifica(fixtureId: Long) {
+        val dentro = statoCorrente()
+        val nomi = dentro?.lega?.clubs.orEmpty().associate { it.id to it.shortName }
+        viewModelScope.launch {
+            when (val esito = MatchRepository.load(fixtureId)) {
+                is ApiResult.Error -> _state.value = AppState.Partita(
+                    MatchState(caricamento = false, errore = esito.message),
+                )
+                is ApiResult.Ok -> apriPartita(
+                    fixtureId,
+                    nomi[esito.value.homeClubId] ?: "Casa",
+                    nomi[esito.value.awayClubId] ?: "Ospite",
+                )
+            }
+        }
+    }
+
     fun apriPartita(fixtureId: Long, homeName: String, awayName: String) {
         viewModelScope.launch {
             _state.value = AppState.Partita(

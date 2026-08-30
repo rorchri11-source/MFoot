@@ -46,6 +46,8 @@ import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.AppViewModel
 import dev.mfoot.android.app.DoorMode
 import dev.mfoot.android.app.Route
+import dev.mfoot.android.app.TabMercato
+import dev.mfoot.android.app.TabSquadra
 import dev.mfoot.android.app.TabLega
 import dev.mfoot.android.app.TableTab
 import dev.mfoot.android.data.Session
@@ -388,6 +390,32 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onLineupSave = viewModel::salvaFormazione,
                         novita = novita,
                         onLoadNovita = viewModel::caricaNovita,
+                        // DOVE PORTA UNA NOTIFICA
+                        //
+                        // Il dispatch sta qui e non nel ViewModel perche' questo e' l'unico
+                        // posto che ha in mano sia la navigazione sia il modello: una
+                        // notifica di partita apre **quella** partita, una di mercato apre
+                        // la sezione giusta.
+                        //
+                        // Le notifiche scritte prima del 2026-08-30 non hanno il bersaglio
+                        // e ricadono sulla sezione, che e' meno preciso ma non e' mai un
+                        // tocco a vuoto.
+                        onApriNovita = { riga ->
+                            when (riga.kind) {
+                                "partita" -> riga.targetId
+                                    ?.let(viewModel::apriPartitaDaNotifica)
+                                    ?: viewModel.vai(Route.Calendario)
+
+                                "asta" -> viewModel.vai(Route.Mercato(TabMercato.ASTE))
+                                "scambio", "prestito" ->
+                                    viewModel.vai(Route.Mercato(TabMercato.TRATTATIVE))
+                                "amichevole", "competizione" -> viewModel.vai(Route.Calendario)
+                                "scouting" -> viewModel.vai(Route.Squadra(TabSquadra.STAFF))
+                                "primavera", "mercato", "contratto" ->
+                                    viewModel.vai(Route.Squadra(TabSquadra.ROSA))
+                                else -> Unit
+                            }
+                        },
                     )
                 }
 

@@ -166,6 +166,53 @@ class AiSchedulerTest {
         )
     }
 
+    /**
+     * *«Voglio che in un giorno tutte raggiungano il minimo in rosa»*, 2026-08-30.
+     *
+     * Il tetto dello sprint era dodici, scritto dentro `AiScheduler`, e un club che parte
+     * da zero deve comprarne sedici o diciotto per averne una legale: ci metteva **due
+     * giorni reali**, e finche' i computer non hanno finito la spesa il campionato non
+     * parte per nessuno.
+     */
+    @Test
+    fun `chi e' sotto il minimo riempie la rosa in un giorno solo`() {
+        var s = state()
+        val minimo = dev.mfoot.core.config.SetupConfig().minSquadSize
+        var azioni = 0
+
+        while (AiScheduler.hasActionsLeft(s, T0, config, sprint = true) && azioni < 500) {
+            s = AiScheduler.recordAction(s, T0)
+            azioni++
+        }
+
+        assertTrue(
+            azioni >= minimo,
+            "in un giorno un'AI in rincorsa fa $azioni mosse, e ne servono $minimo per " +
+                "avere una rosa legale: il campionato resta fermo ad aspettarla",
+        )
+    }
+
+    @Test
+    fun `il tetto dello sprint resta un tetto`() {
+        var s = state()
+        repeat(config.sprintActionsPerDay) { s = AiScheduler.recordAction(s, T0) }
+        assertTrue(
+            !AiScheduler.hasActionsLeft(s, T0, config, sprint = true),
+            "senza un tetto un difetto farebbe comprare duecento giocatori a un'AI",
+        )
+    }
+
+    @Test
+    fun `la rincorsa non allenta il tetto normale`() {
+        var s = state()
+        repeat(config.maxMarketActionsPerDay) { s = AiScheduler.recordAction(s, T0) }
+        assertTrue(
+            !AiScheduler.hasActionsLeft(s, T0, config),
+            "a rosa completa il tetto e' due: esiste per non sommergere di notifiche " +
+                "chi gioca, e quello non e' cambiato",
+        )
+    }
+
     @Test
     fun `il contatore delle azioni si azzera il giorno dopo`() {
         var s = state()

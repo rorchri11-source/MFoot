@@ -352,7 +352,12 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
     // Il calendario a mesi le apriva gia' tutte: erano due schermate che rispondevano in
     // modo diverso allo stesso tocco.
     val cominciata = match.kickoff?.isBefore(java.time.Instant.now()) == true
-    val apribile = match.played || cominciata
+
+    // Una partita bloccata **non** si apre: non c'e' niente da guardare. Il motivo si legge
+    // qui sulla riga, che e' precisamente quello che mancava — il server lo sapeva e lo
+    // teneva nelle proprie note, e dal telefono un rinvio era indistinguibile da una
+    // partita non ancora arrivata.
+    val apribile = (match.played || cominciata) && !match.bloccata
 
     Scheda(
         Modifier.padding(horizontal = MFootSpacing.section, vertical = 4.dp),
@@ -379,6 +384,10 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
             Text(
                 when {
                     match.played -> "tocca per rivederla"
+                    // Il motivo scritto per intero, non «rinviata». Chi legge deve capire
+                    // se riguarda lui e cosa deve fare, senza andare a contare la propria
+                    // rosa per indovinarlo.
+                    match.bloccata -> match.problema.orEmpty()
                     // In corso adesso: e' l'unica riga della schermata che chiede di essere
                     // toccata subito, e deve dirlo con parole diverse da «rivederla» —
                     // rivedere e guardare sono due cose che non si fanno nello stesso momento.
@@ -386,7 +395,11 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
                     else -> state.oraDi(match)?.format(QUANDO) ?: "giornata ${match.matchDay}"
                 },
                 style = MFootType.chip,
-                color = if (apribile) MFootColors.elite else MFootColors.ink3,
+                color = when {
+                    match.bloccata -> MFootColors.gamble
+                    apribile -> MFootColors.elite
+                    else -> MFootColors.ink3
+                },
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )

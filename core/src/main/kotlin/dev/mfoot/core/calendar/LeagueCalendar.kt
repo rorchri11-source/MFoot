@@ -44,7 +44,19 @@ data class CalendarMatch(
     val friendly: Boolean = false,
     val played: Boolean = false,
     val scoreline: String = "",
-)
+    /**
+     * Perche' non si e' potuta giocare, se e' successo.
+     *
+     * Il server lo sapeva da sempre e lo teneva nelle proprie note, che nessuno legge: dal
+     * telefono una partita rinviata era indistinguibile da una non ancora arrivata, e chi
+     * la aspettava non aveva modo di sapere che il problema era la sua rosa.
+     * *Chiesto dal proprietario il 2026-08-30.*
+     */
+    val problema: String? = null,
+) {
+    /** E' passata l'ora e non si e' giocata: c'e' qualcosa da spiegare. */
+    val inRitardo: Boolean get() = !played && problema != null
+}
 
 /** Un'asta che chiude. */
 data class CalendarAuction(val endsAt: LocalDateTime, val playerName: String, val price: String)

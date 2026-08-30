@@ -24,9 +24,19 @@ data class MatchRow(
     val played: Boolean,
     val homeGoals: Int?,
     val awayGoals: Int?,
+    /**
+     * Perche' non si e' potuta giocare.
+     *
+     * Il server lo sapeva e lo teneva nelle proprie note: dal telefono una partita rinviata
+     * era indistinguibile da una non ancora arrivata. *Chiesto il 2026-08-30.*
+     */
+    val problema: String? = null,
 ) {
     val scoreline: String get() =
         if (played && homeGoals != null && awayGoals != null) "$homeGoals - $awayGoals" else "–"
+
+    /** Doveva giocarsi e non si e' giocata, e c'e' un motivo scritto. */
+    val bloccata: Boolean get() = !played && problema != null
 }
 
 /** Classifica e calendario di una competizione, pronti da mostrare. */
@@ -97,13 +107,21 @@ object TableRepository {
         }
 
     private suspend fun matches(leagueId: Long, competitionId: Long): ApiResult<List<MatchRow>> {
-        val path = "/rest/v1/fixtures?select=id,competition_id,round,round_label," +
-            "home_club_id,away_club_id,match_day,kickoff,played," +
-            "match_results(home_goals,away_goals)" +
-            "&league_id=eq.$leagueId&competition_id=eq.$competitionId" +
+        // `problema` si chiede in un primo tentativo e, se il database e' indietro, si
+        // riprova senza: PostgREST per una colonna che non esiste rifiuta l'intera query, e
+        // un calendario che sparisce e' molto peggio di un calendario che non spiega i
+        // rinvii.
+        val coda = "&league_id=eq.$leagueId&competition_id=eq.$competitionId" +
             "&order=match_day,kickoff"
+        val comune = "/rest/v1/fixtures?select=id,competition_id,round,round_label," +
+            "home_club_id,away_club_id,match_day,kickoff,played," +
+            "match_results(home_goals,away_goals)"
 
-        return SupabaseApi.get(path).then { body ->
+        val esito = SupabaseApi.get("$comune,problema$coda").let {
+            if (it is ApiResult.Error) SupabaseApi.get("$comune$coda") else it
+        }
+
+        return esito.then { body ->
             ApiResult.Ok(
                 JsonNode.parse(body).asList().map { row ->
                     // PostgREST annida la relazione uno-a-uno come array di una riga.
@@ -120,6 +138,7 @@ object TableRepository {
                         played = row["played"].bool(false),
                         homeGoals = result["home_goals"].takeIf { it.exists }?.int(0),
                         awayGoals = result["away_goals"].takeIf { it.exists }?.int(0),
+                        problema = row["problema"].strOrNull()?.takeIf { it.isNotBlank() },
                     )
                 },
             )

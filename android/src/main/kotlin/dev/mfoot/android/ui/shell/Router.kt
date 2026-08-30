@@ -111,6 +111,8 @@ fun Router(
     onMoveStaff: (Long, Long) -> Unit,
     onBenchStaff: (Long) -> Unit = {},
     onAcceptScouting: (Long, List<Long>) -> Unit = { _, _ -> },
+    /** Toccare una notifica porta dove il fatto e' successo. */
+    onApriNovita: (dev.mfoot.android.data.NotificationRow) -> Unit = {},
     onRejectScouting: (Long) -> Unit = {},
     onReScout: (Long, Long, String, String) -> Unit = { _, _, _, _ -> },
     onAssumiStaff: (Long, Int) -> Unit = { _, _ -> },
@@ -377,7 +379,7 @@ fun Router(
 
         // Rara e da admin: resta a schermo pieno, aperta dal menu.
         is Route.Competizioni -> DaFare("Competizioni", "Si apre da qui a schermo pieno.")
-        is Route.Novita -> NovitaScreen(state, novita, onLoadNovita)
+        is Route.Novita -> NovitaScreen(state, novita, onLoadNovita, onApriNovita)
 
         is Route.RegistroAdmin -> {
             LaunchedEffect(state.lega.league.id) { onLoadTick() }

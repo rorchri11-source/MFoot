@@ -1,6 +1,7 @@
 package dev.mfoot.android.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,6 +66,15 @@ fun NovitaScreen(
     state: AppState.Dentro,
     novita: NovitaState,
     onCarica: () -> Unit,
+    /**
+     * Toccare una riga porta dove il fatto è successo.
+     *
+     * Era la cosa che mancava: il registro raccontava «asta vinta» e poi bisognava andarla
+     * a cercare da soli. Il tipo decide la schermata, `target_id` decide **quale** cosa
+     * aprire — e dove il bersaglio non c'è si va comunque nella sezione giusta, che è meno
+     * preciso ma sempre meglio di una riga che non fa niente.
+     */
+    onApri: (NotificationRow) -> Unit = {},
 ) {
     LaunchedEffect(state.lega.league.id) { onCarica() }
 
@@ -102,7 +112,7 @@ fun NovitaScreen(
                 }
             }
             items(mie, key = { it.id }) { riga ->
-                Riga(riga, adesso, novita.nuovaDopo, tua = true)
+                Riga(riga, adesso, novita.nuovaDopo, tua = true, onApri = onApri)
             }
             item { Spacer(Modifier.height(MFootSpacing.section)) }
         }
@@ -114,7 +124,7 @@ fun NovitaScreen(
                 }
             }
             items(resto, key = { it.id }) { riga ->
-                Riga(riga, adesso, novita.nuovaDopo, tua = false)
+                Riga(riga, adesso, novita.nuovaDopo, tua = false, onApri = onApri)
             }
         }
 
@@ -130,12 +140,25 @@ fun NovitaScreen(
  * arrivati, che è precisamente il lavoro che un registro dovrebbe togliere.
  */
 @Composable
-private fun Riga(riga: NotificationRow, adesso: Instant, nuovaDopo: Instant?, tua: Boolean) {
+private fun Riga(
+    riga: NotificationRow,
+    adesso: Instant,
+    nuovaDopo: Instant?,
+    tua: Boolean,
+    onApri: (NotificationRow) -> Unit,
+) {
     val nuova = nuovaDopo == null || (riga.createdAt?.isAfter(nuovaDopo) == true)
+
+    val apribile = riga.apribile
 
     Scheda(Modifier.padding(horizontal = MFootSpacing.section, vertical = 3.dp)) {
         Row(
-            Modifier.fillMaxWidth().padding(14.dp, 11.dp),
+            Modifier
+                .fillMaxWidth()
+                // Solo quello che porta davvero da qualche parte si può premere: una riga
+                // cliccabile che non fa niente insegna a non fidarsi delle altre.
+                .then(if (apribile) Modifier.clickable { onApri(riga) } else Modifier)
+                .padding(14.dp, 11.dp),
             verticalAlignment = Alignment.Top,
         ) {
             Box(Modifier.size(8.dp).padding(top = 5.dp)) {
@@ -158,9 +181,16 @@ private fun Riga(riga: NotificationRow, adesso: Instant, nuovaDopo: Instant?, tu
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "${etichetta(riga.kind)} · ${riga.quando(adesso)}",
+                    buildString {
+                        append(etichetta(riga.kind))
+                        append(" · ")
+                        append(riga.quando(adesso))
+                        // Dire che si può toccare, e dove porta: senza, il tocco è una
+                        // scoperta che quasi nessuno fa.
+                        if (apribile) append(" · tocca per ${destinazione(riga.kind)}")
+                    },
                     style = MFootType.chip,
-                    color = MFootColors.ink3,
+                    color = if (apribile) MFootColors.ink2 else MFootColors.ink3,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -186,4 +216,15 @@ private fun etichetta(kind: String): String = when (kind) {
     "primavera" -> "Primavera"
     "scouting" -> "Osservatori"
     else -> kind.replaceFirstChar { it.uppercase() }
+}
+
+/** Dove porta il tocco, scritto per chi legge e non per chi ha scritto il codice. */
+private fun destinazione(kind: String): String = when (kind) {
+    "partita" -> "guardarla"
+    "asta" -> "vedere l'asta"
+    "scambio", "prestito" -> "aprire la trattativa"
+    "amichevole", "competizione" -> "il calendario"
+    "scouting" -> "vedere l'osservatore"
+    "primavera" -> "la Primavera"
+    else -> "la rosa"
 }

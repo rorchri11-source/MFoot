@@ -70,6 +70,7 @@ object AiScheduler {
      * arrivare a diciotto giocatori richiede settimane reali, e la lega resta ferma
      * aspettando che i computer finiscano di fare la spesa.
      */
+    @Deprecated("Sta in AiConfig.sprintActionsPerDay dal 2026-08-30.")
     const val SPRINT_AZIONI_AL_GIORNO = 12
 
     /**
@@ -156,7 +157,11 @@ object AiScheduler {
         val today = now.atZone(ZoneOffset.UTC).toLocalDate()
         val used = if (state.actionDay == today) state.actionsToday else 0
         val tetto = if (sprint) {
-            maxOf(SPRINT_AZIONI_AL_GIORNO, config.maxMarketActionsPerDay)
+            // Il tetto dello sprint sta in configurazione dal 2026-08-30. Era dodici,
+            // scritto qui, e non bastava: un club che parte da zero deve comprarne sedici
+            // o diciotto, quindi ci metteva due giorni reali — e finche' i computer non
+            // hanno finito la spesa il campionato non parte per nessuno.
+            maxOf(config.sprintActionsPerDay, config.maxMarketActionsPerDay)
         } else {
             config.maxMarketActionsPerDay
         }

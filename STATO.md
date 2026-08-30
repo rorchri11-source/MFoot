@@ -1,7 +1,7 @@
 # MFoot — stato del progetto
 
 **Aggiornato:** 2026-08-29
-**Test:** 864 verdi, 0 falliti (`core` e `tick`)
+**Test:** 867 verdi, 0 falliti (`core` e `tick`)
 **Verificato:** `core:test`, `tick:build`, `android:assembleDebug`, e l'APK installato e
 avviato sull'emulatore senza errori.
 
