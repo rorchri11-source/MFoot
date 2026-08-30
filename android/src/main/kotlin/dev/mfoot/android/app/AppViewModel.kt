@@ -61,6 +61,10 @@ import dev.mfoot.core.objectives.Objective
 import dev.mfoot.core.objectives.ObjectiveBoard
 import dev.mfoot.core.objectives.ObjectiveEngine
 import dev.mfoot.core.objectives.ObjectiveStatus
+import dev.mfoot.core.match.Formation
+import dev.mfoot.core.match.Lineup
+import dev.mfoot.core.match.Pronostico
+import dev.mfoot.core.match.TeamSetup
 import dev.mfoot.core.match.AutoLineup
 import dev.mfoot.core.match.Tactics
 import dev.mfoot.core.model.Attr
@@ -996,6 +1000,125 @@ class AppViewModel : ViewModel() {
      * con pausa e salto alla fine. Quello che si rivede e' *come e' andata*, e novanta
      * minuti per raccontarlo sarebbero novanta minuti.
      */
+    private val _prePartita = MutableStateFlow(PrePartitaState())
+    val prePartita: StateFlow<PrePartitaState> = _prePartita
+
+    /**
+     * La partita prima che si giochi: i due schieramenti e come potrebbe finire.
+     *
+     * ## Perche' il pronostico si calcola qui e non sul server
+     *
+     * Perche' dipende dalle formazioni **di adesso**, e quelle cambiano fino al fischio
+     * d'inizio. Un numero calcolato dal tick sarebbe vecchio nel momento in cui qualcuno
+     * tocca la propria formazione.
+     *
+     * Si fa girare `MatchEngine` trecento volte sui due undici veri: il pronostico **e'**
+     * il motore, non una sua imitazione, quindi non puo' divergere da quello che poi
+     * succede. Costa qualche secondo su un telefono, e per questo arriva dopo i campi
+     * invece di farli aspettare.
+     */
+    fun apriPrePartita(fixtureId: Long, casaId: Long, ospiteId: Long, quando: String) {
+        val dentro = statoCorrente() ?: return
+        val nomi = dentro.lega.clubs.associate { it.id to it.shortName }
+
+        viewModelScope.launch {
+            _state.value = AppState.PrePartita
+            _prePartita.value = PrePartitaState(
+                fixtureId = fixtureId,
+                nomeCasa = nomi[casaId] ?: "Casa",
+                nomeOspite = nomi[ospiteId] ?: "Ospite",
+                quando = quando,
+                caricamento = true,
+            )
+
+            val casa = schieramentoDi(dentro, casaId)
+            val ospite = schieramentoDi(dentro, ospiteId)
+            _prePartita.value = _prePartita.value.copy(
+                casa = casa,
+                ospite = ospite,
+                caricamento = false,
+                errore = if (casa == null || ospite == null) {
+                    "Una delle due squadre non ha ancora undici giocatori."
+                } else {
+                    null
+                },
+            )
+
+            val setupCasa = casa?.let { setupDi(dentro, it) }
+            val setupOspite = ospite?.let { setupDi(dentro, it) }
+            if (setupCasa == null || setupOspite == null) return@launch
+
+            // Fuori dal thread principale: trecento partite non si simulano mentre
+            // qualcuno sta scorrendo.
+            val esito = withContext(Dispatchers.Default) {
+                Pronostico.calcola(
+                    home = setupCasa,
+                    away = setupOspite,
+                    config = dentro.lega.league.config,
+                    fixtureId = fixtureId,
+                )
+            }
+            _prePartita.value = _prePartita.value.copy(pronostico = esito)
+        }
+    }
+
+    /**
+     * Come scenderebbe in campo un club, adesso.
+     *
+     * Se ha schierato si legge la sua formazione; se non l'ha fatto si mostra quella che il
+     * server manderebbe in campo al posto suo, **dicendolo**.
+     */
+    private suspend fun schieramentoDi(
+        dentro: AppState.Dentro,
+        clubId: Long,
+    ): SchieramentoDiUnClub? {
+        val squad = dentro.lega.squadOf(clubId)
+        if (squad.size < Formation.PLAYERS_ON_PITCH) return null
+
+        val today = MatchDay(dentro.lega.league.currentMatchDay)
+        val salvata = when (val esito = LineupRepository.read(clubId)) {
+            is ApiResult.Error -> null
+            is ApiResult.Ok -> esito.value
+        }?.takeIf { it.eleven.any { id -> id != null } }
+
+        if (salvata != null) {
+            val byId = squad.associateBy { it.id.value }
+            return SchieramentoDiUnClub(
+                clubId = clubId,
+                formation = salvata.formation,
+                eleven = salvata.eleven.map { id -> id?.let { byId[it] } },
+                bench = salvata.bench.mapNotNull { byId[it] },
+                tactics = salvata.tactics,
+                suPrevisione = false,
+            )
+        }
+
+        val modulo = AutoLineup.bestFormation(squad, today)
+        val auto = AutoLineup.build(squad, modulo, today) ?: return null
+        return SchieramentoDiUnClub(
+            clubId = clubId,
+            formation = modulo,
+            eleven = auto.slots.map { it.player },
+            bench = auto.bench,
+            tactics = Tactics.DEFAULT,
+            suPrevisione = true,
+        )
+    }
+
+    /** Lo schieramento nella forma che il motore sa far giocare. */
+    private fun setupDi(dentro: AppState.Dentro, s: SchieramentoDiUnClub): TeamSetup? {
+        val undici = s.eleven.filterNotNull()
+        if (undici.size != Formation.PLAYERS_ON_PITCH) return null
+        return TeamSetup(
+            clubId = ClubId(s.clubId),
+            name = dentro.lega.clubs.firstOrNull { it.id == s.clubId }?.shortName.orEmpty(),
+            lineup = Lineup.of(s.formation, undici, s.bench),
+            tactics = s.tactics ?: Tactics.DEFAULT,
+            coachStars = _staff.value.di(s.clubId)
+                .firstOrNull { it.role == "ALLENATORE" }?.stars ?: 3,
+        )
+    }
+
     /**
      * Apre una partita di cui si sa solo l'identificativo.
      *

@@ -62,6 +62,7 @@ import dev.mfoot.android.ui.PlayerDetailScreen
 import dev.mfoot.android.ui.TableScreen
 import dev.mfoot.android.ui.screens.CalendarioScreen
 import dev.mfoot.android.ui.screens.PartitaScreen
+import dev.mfoot.android.ui.screens.PrePartitaScreen
 import dev.mfoot.android.ui.theme.MFootColors
 import dev.mfoot.android.ui.theme.MFootMotion
 import dev.mfoot.android.ui.theme.MFootTheme
@@ -224,6 +225,11 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
 
             is AppState.Guasto -> Guasto(current.motivo, viewModel::avvia)
 
+            is AppState.PrePartita -> {
+                val pre by viewModel.prePartita.collectAsStateWithLifecycle()
+                PrePartitaScreen(pre = pre, onChiudi = viewModel::chiudiPartita)
+            }
+
             is AppState.Partita -> PartitaScreen(
                 state = current.partita,
                 onScheda = viewModel::cambiaSchedaPartita,
@@ -372,12 +378,26 @@ private fun MFootApp(viewModel: AppViewModel = viewModel()) {
                         onLoadTable = { viewModel.apriClassifica() },
                         onPickCompetition = viewModel::scegliCompetizione,
                         onPickTableTab = viewModel::cambiaSchedaTabella,
+                        // Una partita giocata o in corso si guarda; una che deve ancora
+                        // giocarsi si **prepara**, ed e' una schermata diversa: i due
+                        // schieramenti e come potrebbe finire.
                         onOpenMatch = { m ->
-                            viewModel.apriPartita(
-                                m.id,
-                                tabella.clubName(m.homeClubId),
-                                tabella.clubName(m.awayClubId),
-                            )
+                            val cominciata = m.kickoff?.isBefore(java.time.Instant.now()) == true
+                            if (m.played || cominciata) {
+                                viewModel.apriPartita(
+                                    m.id,
+                                    tabella.clubName(m.homeClubId),
+                                    tabella.clubName(m.awayClubId),
+                                )
+                            } else {
+                                viewModel.apriPrePartita(
+                                    fixtureId = m.id,
+                                    casaId = m.homeClubId,
+                                    ospiteId = m.awayClubId,
+                                    quando = tabella.oraDi(m)?.format(ORA_PARTITA)
+                                        ?: "giornata ${m.matchDay}",
+                                )
+                            }
                         },
                         spogliatoio = spogliatoio,
                         onLoadTalks = viewModel::caricaSpogliatoio,
@@ -628,3 +648,7 @@ private fun Guasto(motivo: String, onRetry: () -> Unit) {
         GhostButton("Riprova", onRetry)
     }
 }
+
+/** L'ora di una partita futura, per la testata del confronto. */
+private val ORA_PARTITA: java.time.format.DateTimeFormatter =
+    java.time.format.DateTimeFormatter.ofPattern("d MMM · HH:mm")

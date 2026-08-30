@@ -357,7 +357,15 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
     // qui sulla riga, che e' precisamente quello che mancava — il server lo sapeva e lo
     // teneva nelle proprie note, e dal telefono un rinvio era indistinguibile da una
     // partita non ancora arrivata.
-    val apribile = (match.played || cominciata) && !match.bloccata
+    // E ADESSO SI APRE ANCHE QUELLA CHE DEVE ANCORA GIOCARSI
+    //
+    // Toccandola si vedono i due schieramenti e come potrebbe finire. Prima una partita
+    // futura era l'unica riga della schermata che non faceva niente, e preparare una
+    // partita era compilare un modulo e sperare.
+    //
+    // Resta ferma solo quella bloccata: li' non c'e' niente da guardare, e il motivo si
+    // legge sulla riga stessa.
+    val apribile = !match.bloccata
 
     Scheda(
         Modifier.padding(horizontal = MFootSpacing.section, vertical = 4.dp),
@@ -392,7 +400,11 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
                     // toccata subito, e deve dirlo con parole diverse da «rivederla» —
                     // rivedere e guardare sono due cose che non si fanno nello stesso momento.
                     cominciata -> "si sta giocando · tocca per guardarla"
-                    else -> state.oraDi(match)?.format(QUANDO) ?: "giornata ${match.matchDay}"
+                    else -> {
+                        val quando = state.oraDi(match)?.format(QUANDO)
+                            ?: "giornata ${match.matchDay}"
+                        "$quando · tocca per il confronto"
+                    }
                 },
                 style = MFootType.chip,
                 color = when {

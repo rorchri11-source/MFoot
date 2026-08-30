@@ -466,6 +466,14 @@ sealed interface AppState {
     /** Una partita gia' giocata, che si rivede minuto per minuto. */
     data class Partita(val partita: MatchState) : AppState
 
+    /**
+     * La partita prima che si giochi: i due schieramenti e come potrebbe finire.
+     *
+     * Uno stato a se' come [Partita], e per la stessa ragione: e' una schermata piena che
+     * si apre da un elenco e si chiude tornando da dove si veniva.
+     */
+    data object PrePartita : AppState
+
     /** Qualcosa e' andato storto in modo da cui non si esce da soli. */
     data class Guasto(val motivo: String) : AppState
 }

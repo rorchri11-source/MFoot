@@ -551,7 +551,23 @@ tipo di riga che fa dubitare del resto.
 
 ---
 
-## Quando una partita non si gioca
+## Le partite, prima e quando non si giocano
+
+**La partita si apre anche prima che si giochi.**
+Toccando una partita in calendario si vedono **i due campi** — il tuo e il suo, uno sotto
+l'altro con la panchina di ciascuno — e **come potrebbe finire**, con una barra a tre fasce
+come nelle partite vere. Prima una partita futura era l'unica riga della schermata che non
+faceva niente, e preparare una partita era compilare un modulo e sperare.
+Le due formazioni si vedevano gia', una squadra alla volta da un'altra schermata: quello che
+mancava era un posto in cui **stessero insieme**.
+Se l'avversario non ha ancora schierato, c'e' scritto che quello e' l'undici che scenderebbe
+in campo da solo: una previsione e una scelta si leggono identiche, e prepararsi contro un
+modulo mai scelto e' peggio che non guardarlo.
+**Il pronostico e' il motore vero**, fatto girare trecento volte sui due undici, non una
+formula a parte che divergerebbe al primo ritocco del bilanciamento. I semi vengono
+dall'identificativo della partita, quindi due telefoni leggono lo stesso numero: uno che
+cambia a ogni apertura non e' un pronostico.
+*Detta il 2026-08-30 · `core/match/Pronostico.kt`, `ui/screens/PrePartita.kt`*
 
 **Il motivo si scrive sulla partita, non nelle note del server.**
 Il tick lo sapeva da sempre e lo teneva per sé: dal telefono una partita rinviata era

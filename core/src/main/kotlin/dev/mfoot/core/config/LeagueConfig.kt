@@ -908,6 +908,19 @@ data class EngineConfig(
     val smorzamentoAssetto: Double = 0.40,
 
     /**
+     * Quante volte si simula una partita per dire come potrebbe finire.
+     *
+     * Il pronostico non e' una formula a parte: e' **il motore vero**, fatto girare qualche
+     * centinaio di volte sui due undici. Una formula separata sarebbe un secondo motore, e
+     * due motori divergono al primo ritocco.
+     *
+     * Trecento danno circa tre punti percentuali di margine, che su un numero mostrato a
+     * percentuale intera e' quello che serve. Sotto, il numero balla; sopra, si paga
+     * attesa per una precisione che nessuno legge.
+     */
+    val simulazioniPronostico: Int = 300,
+
+    /**
      * Quanto oscilla la **giornata** di un giocatore, in punti di attributo.
      *
      * Un tiro di dado a inizio partita, uguale per tutti i novanta minuti, moltiplicato
