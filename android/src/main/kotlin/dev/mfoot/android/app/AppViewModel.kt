@@ -2463,7 +2463,13 @@ class AppViewModel : ViewModel() {
                 // Chiesta a parte: se il database e' indietro questa torna vuota e si
                 // perdono le celle, invece di perdere tutta la schermata.
                 proprieta = StaffRepository.ownership(dentro.lega.league.id),
-                missioni = StaffRepository.missions(miei),
+                // I trovati arrivano da una lettura a parte e si uniscono qui: se il
+                // database e' indietro si vede un ragazzo per missione invece di nessuna
+                // missione.
+                missioni = StaffRepository.missions(miei).let { lista ->
+                    val trovati = StaffRepository.finds(miei)
+                    lista.map { it.copy(foundPlayerIds = trovati[it.id].orEmpty()) }
+                },
                 // Lo staff sul listino: stessa tabella dei giocatori, altro `target_type`.
                 inVendita = MarketRepository.listings(dentro.lega.league.id, tipo = "staff")
                     .associate { it.playerId to it.price },
@@ -2513,6 +2519,67 @@ class AppViewModel : ViewModel() {
                 is ApiResult.Error -> _staff.value = _staff.value.copy(errore = esito.message)
                 is ApiResult.Ok -> {
                     _staff.value = _staff.value.copy(errore = null, avviso = "Spostato.")
+                    caricaStaff()
+                }
+            }
+        }
+    }
+
+    /**
+     * Accetta i ragazzi che l'osservatore ha portato: entrano in Primavera.
+     *
+     * Prima non c'era niente da accettare — il server li infilava d'ufficio e chi giocava
+     * si trovava un giocatore in piu' senza averlo scelto.
+     */
+    fun accettaScouting(missionId: Long, playerIds: List<Long>) {
+        viewModelScope.launch {
+            when (val esito = StaffRepository.accept(missionId, playerIds)) {
+                is ApiResult.Error -> _staff.value = _staff.value.copy(errore = esito.message)
+                is ApiResult.Ok -> {
+                    _staff.value = _staff.value.copy(
+                        errore = null,
+                        avviso = if (playerIds.size == 1) "In Primavera." else "In Primavera.",
+                    )
+                    caricaStaff()
+                    aggiornaLeggero()
+                }
+            }
+        }
+    }
+
+    /** Rifiuta: restano liberi per chiunque. */
+    fun rifiutaScouting(missionId: Long) {
+        viewModelScope.launch {
+            when (val esito = StaffRepository.reject(missionId)) {
+                is ApiResult.Error -> _staff.value = _staff.value.copy(errore = esito.message)
+                is ApiResult.Ok -> {
+                    _staff.value = _staff.value.copy(errore = null, avviso = "Rifiutati.")
+                    caricaStaff()
+                }
+            }
+        }
+    }
+
+    /**
+     * Rifiuta e rimanda a cercare con lo stesso incarico.
+     *
+     * Non e' un pulsante di comodo: e' la risposta a «questo non mi serve, riprova» senza
+     * dover ricompilare il modulo con paese e ruoli che si erano gia' scelti.
+     */
+    fun riScouta(missionId: Long, staffId: Long, paese: String, ruoli: String) {
+        viewModelScope.launch {
+            when (val esito = StaffRepository.reject(missionId)) {
+                is ApiResult.Error -> _staff.value = _staff.value.copy(errore = esito.message)
+                is ApiResult.Ok -> {
+                    when (val riparte = StaffRepository.send(staffId, paese, ruoli)) {
+                        is ApiResult.Error ->
+                            _staff.value = _staff.value.copy(errore = riparte.message)
+                        is ApiResult.Ok ->
+                            _staff.value = _staff.value.copy(
+                                errore = null,
+                                avviso = "Riparte per il $paese.",
+                            )
+                    }
                     caricaStaff()
                 }
             }

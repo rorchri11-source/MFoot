@@ -84,6 +84,7 @@ import dev.mfoot.core.rng.DeterministicRandom
 import dev.mfoot.core.rng.MathX
 import dev.mfoot.core.world.PotentialEstimator
 import dev.mfoot.core.world.Scouting
+import dev.mfoot.core.world.Talenti
 import dev.mfoot.core.world.WorldGenerator
 import dev.mfoot.core.model.Trait
 import dev.mfoot.core.tick.PausedFixture
@@ -1289,39 +1290,126 @@ class TickRunner(
 
         val note = mutableListOf<String>()
         for (m in scadute) {
-            val candidati = giovaniLiberi(league.id, m.country, m.position)
-            if (candidati.isEmpty()) {
+            val rng = DeterministicRandom(league.config.setup.worldSeed * 61L + m.id)
+
+            // Il ruolo e' una lista separata da virgole dal 2026-08-30: chiedere tre ruoli
+            // in un viaggio solo era la richiesta, e la colonna e' rimasta `text` proprio
+            // per non aggiungerne una nuova a una lettura condivisa.
+            val ruoli = m.position.split(',')
+                .mapNotNull { pezzo -> Position.entries.firstOrNull { it.name == pezzo.trim() } }
+                .ifEmpty { listOf(Position.CC) }
+
+            val quanti = Talenti.quantiNeTrova(ruoli.size, m.stars, rng)
+            val trovati = mutableListOf<Player>()
+
+            for (ruolo in ruoli.take(quanti)) {
+                val candidati = giovaniLiberi(league.id, m.country, ruolo.name)
+
+                val scelto = if (candidati.isEmpty()) {
+                    // NON C'ERA NESSUNO, E ADESSO C'E'
+                    //
+                    // Misurato il 2026-08-30: quarantuno combinazioni nazione per ruolo su
+                    // centodieci erano vuote appena creato il mondo, prima che qualcuno
+                    // avesse firmato qualcuno. Un terzo delle ricerche non poteva riuscire,
+                    // e l'osservatore tornava a mani vuote per costruzione.
+                    //
+                    // Deciso dal proprietario: si genera su misura. Il ragazzo nasce dalla
+                    // stessa curva di tutti gli altri, quindi non e' un premio.
+                    val nato = Talenti.giovane(m.country, ruolo, league.config, rng)
+                    val id = inserisciGiocatore(league.id, nato) ?: continue
+                    nato.copy(id = id)
+                } else {
+                    // Quanto in alto pesca, sul potenziale. A cinque stelle il migliore che
+                    // c'e'; a una, uno a caso fra i peggiori.
+                    val ordinati = candidati.sortedByDescending { it.potentialMax }
+                    val ampiezza = MathX.lerp(1.0, 0.12, (m.stars - 1) / 4.0)
+                    val finestra = StrictMath.round(ordinati.size * ampiezza).toInt()
+                        .coerceAtLeast(1)
+                    ordinati[rng.nextInt(finestra)]
+                }
+                trovati += scelto
+            }
+
+            if (trovati.isEmpty()) {
                 chiudiMissione(m.id, "A_VUOTO", null)
                 notify(
                     league.id, padreDi(m.clubId),
-                    "L'osservatore torna dal ${m.country} a mani vuote: non c'è rimasto " +
-                        "nessun ${m.position} sotto i vent'anni.",
+                    "L'osservatore torna dal ${m.country} senza nessuno.",
                     kind = "scouting", urgency = "riepilogo",
                 )
                 note += "missione a vuoto in ${m.country}."
                 continue
             }
 
-            // Quanto in alto pesca, sul potenziale. A cinque stelle il migliore che c'e';
-            // a una, uno a caso fra i peggiori.
-            val ordinati = candidati.sortedByDescending { it.potentialMax }
-            val ampiezza = MathX.lerp(1.0, 0.12, (m.stars - 1) / 4.0)
-            val finestra = StrictMath.round(ordinati.size * ampiezza).toInt().coerceAtLeast(1)
-            val rng = DeterministicRandom(league.config.setup.worldSeed * 61L + m.id)
-            val scelto = ordinati[rng.nextInt(finestra)]
-
-            assignPlayer(league, scelto.id, primaveraDi(m.clubId), price = 0)
-            chiudiMissione(m.id, "CONCLUSA", scelto.id.value)
+            // NON SI ASSEGNA PIU' D'UFFICIO
+            //
+            // Il tick infilava il ragazzo in Primavera e mandava una notifica: chi giocava
+            // si trovava un giocatore in piu' senza averlo scelto. Adesso la missione
+            // aspetta in `DA_VALUTARE`, e accetta, rifiuta o rimanda a cercare chi gioca.
+            daValutare(m.id, trovati.map { it.id.value })
 
             notify(
                 league.id, padreDi(m.clubId),
-                "Dal ${m.country}: ${scelto.shortName}, ${scelto.age} anni, " +
-                    "${scelto.primaryPosition.short}. è in Primavera.",
+                "L'osservatore e' tornato dal ${m.country} con " +
+                    (if (trovati.size == 1) "un ragazzo" else "${trovati.size} ragazzi") +
+                    ": ${trovati.joinToString(", ") { it.shortName }}. Decidi tu.",
                 kind = "scouting", urgency = "immediata",
             )
-            note += "${scelto.shortName} trovato in ${m.country}."
+            note += "${trovati.size} trovati in ${m.country}, in attesa di risposta."
         }
         return note
+    }
+
+    /** La missione torna, e aspetta una risposta. */
+    private fun daValutare(missionId: Long, playerIds: List<Long>) {
+        connection.prepareStatement(
+            "update scouting_missions set status = 'DA_VALUTARE', found_player_id = ?, " +
+                "found_player_ids = ? where id = ?",
+        ).use { st ->
+            st.setLong(1, playerIds.first())
+            st.setArray(2, connection.createArrayOf("bigint", playerIds.toTypedArray()))
+            st.setLong(3, missionId)
+            st.executeUpdate()
+        }
+    }
+
+    /** Scrive nel mondo un giocatore che prima non esisteva, e ne restituisce l'id. */
+    private fun inserisciGiocatore(leagueId: Long, player: Player): PlayerId? {
+        connection.prepareStatement(
+            """
+            insert into players (
+                league_id, first_name, last_name, nationality, age,
+                primary_position, secondary_positions, attributes,
+                weak_foot, skill_stars, potential_min, potential_max, traits, overall
+            ) values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)
+            returning id
+            """.trimIndent(),
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.setString(2, player.firstName)
+            st.setString(3, player.lastName)
+            st.setString(4, player.nationality)
+            st.setInt(5, player.age)
+            st.setString(6, player.primaryPosition.name)
+            st.setArray(
+                7,
+                connection.createArrayOf(
+                    "text", player.secondaryPositions.map { it.name }.toTypedArray(),
+                ),
+            )
+            st.setString(8, MatchJson.attributes(player))
+            st.setInt(9, player.weakFoot)
+            st.setInt(10, player.skillStars)
+            st.setInt(11, player.potentialMin)
+            st.setInt(12, player.potentialMax)
+            st.setArray(
+                13,
+                connection.createArrayOf("text", player.traits.map { it.name }.toTypedArray()),
+            )
+            st.setInt(14, player.overall)
+            st.executeQuery().use { rs -> if (rs.next()) return PlayerId(rs.getLong(1)) }
+        }
+        return null
     }
 
     /**

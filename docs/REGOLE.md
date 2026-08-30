@@ -447,6 +447,90 @@ altro paese.
 
 ---
 
+## Lo staff
+
+> Le voci che seguono sono state decise **e implementate** il 2026-08-30.
+
+**Lo staff si possiede e si schiera, e sono due cose diverse.**
+Nove celle: due allenatori — prima squadra e Primavera — due preparatori, e cinque
+osservatori. La cella dice **dove si lavora**, non chi è più forte, e mettere il cinque
+stelle in Primavera è una scelta legittima. Se ne possono possedere più di quanti se ne
+schierano: quattro allenatori per due celle, quattro preparatori, cinque osservatori.
+Prima era impossibile per costruzione: `assign_staff` faceva `set club_id = null` sul
+vecchio, quindi assegnarne uno nuovo **regalava il precedente al mercato**. Da qui la
+panchina, che non esisteva: si toglie qualcuno da una cella senza cederlo.
+Il freno al magazzino è **il tetto, non lo stipendio**: lo staff non costa niente da
+tenere, e senza limite il club ricco comprerebbe ogni cinque stelle per lasciarlo fermo.
+Scartati gli stipendi e le specialità per membro.
+*Decisa il 2026-08-30 · `core/staff/Celle.kt`, `staff.owner_club_id`, `bench_staff`*
+
+**Gli osservatori li possono prendere solo le Primavere.**
+Senza seconda squadra il pulsante è spento — con il lucchetto sul filtro del negozio, non
+un errore dopo il tocco — e comprato, l'osservatore va direttamente in Primavera. Le sue
+cinque celle non scelgono niente: **raccontano** cosa sta facendo quell'uomo.
+Chi ne aveva già in prima squadra li vede passare alla Primavera dove esiste; dove non
+esiste restano dove sono. Si perde il diritto di comprarne altri, non quello che si è già
+pagato.
+*Decisa il 2026-08-30*
+
+**Il negozio dello staff è una schermata a parte, a prezzo fisso.**
+Prima era in fondo alla stessa lista in cui c'era la tua squadra: i tuoi tre in cima e
+settantaquattro righe di ruoli mescolati sotto. Guardare chi hai e cercare chi comprare
+sono due domande diverse.
+Da una a tre stelle **non finiscono mai**: il server tiene un minimo disponibile per ruolo
+e lo ricompleta a ogni giornata, così chi entra tardi in lega non resta bloccato. Quattro e
+cinque stelle **compaiono di rado e non tornano**: appena qualcuno li prende, spariscono.
+La causa del «troppo poco stuff» era misurabile: `STAFF_PER_CLUB = 2.0` e i pesi
+`20/28/30/16/6` scritti in `WorldGenerator` facevano **due allenatori da cinque stelle in
+tutta una lega da sedici squadre**. Non un mercato che si esaurisce: un mercato mai
+esistito.
+*Decisa il 2026-08-30 · `StaffConfig`, `TickRunner.rifornisciIlNegozio`*
+
+---
+
+## Gli osservatori
+
+**L'osservatore torna, ma non decide lui.**
+Prima la missione scadeva e il server infilava il ragazzo in Primavera: ci si trovava un
+giocatore in più senza averlo scelto. Adesso la cella dice *tornato · guarda*, e toccandola
+si vede chi ha portato — nome, età, ruolo, **overall di adesso e forbice di potenziale
+stimata** — con tre risposte: accetta, rifiuta, ri-scouta. Il ri-scouta riparte con lo
+stesso incarico senza ricompilare il modulo.
+Non c'è nessuna scadenza: un ragazzo trovato aspetta finché non si decide. Una missione che
+scade da sola punirebbe chi apre l'app la sera.
+*Decisa il 2026-08-30 · `accept_scouting`, `reject_scouting`, stato `DA_VALUTARE`*
+
+**Si chiedono più ruoli in un viaggio, e non si torna mai a vuoto.**
+Non sempre li porta tutti — quanti dipende dalle stelle — ma **almeno uno sempre**. Quando
+quello che hai chiesto non esiste, il mondo **ne genera uno su misura**: quella nazione,
+quel ruolo, under 20. Nasce dalla stessa curva di tutti gli altri, quindi non è un premio.
+Scartato l'allargare la ricerca a paesi o ruoli vicini.
+Il difetto era strutturale e misurato: 1128 giocatori e **98 under 20**, su 110
+combinazioni nazione × ruolo. **Quarantuno combinazioni vuote il primo giorno**, prima che
+qualcuno avesse firmato qualcuno, e altre 46 con esattamente un giocatore.
+*Decisa il 2026-08-30 · `core/world/Talenti.kt`*
+
+**Un osservatore sta via al massimo un quarto d'ora.**
+Da quarantotto ore in SQL, a due ore il 2026-08-25, a quindici minuti oggi. Le stelle
+continuano a comprare tempo: cinque minuti contro quindici.
+*Attenzione: i due numeri viaggiano con la lega, quindi una lega già creata conserva i
+suoi. Il valore nuovo vale per le leghe nuove; per quella in corso va cambiato dal
+regolamento.*
+*Decisa il 2026-08-30 · `rules.scoutMinutesWorst/Best`*
+
+**Un cinque stelle porta il talento più forte, non il giocatore più pronto.**
+Confermato: il criterio di scelta resta il **potenziale**. Il difetto segnalato — *«anche
+se è un 5 ti porta un 32»* — non era il criterio, era il silenzio: il miglior ragazzo del
+mondo generato vale 43 oggi e arriverà a 88, e nessuno lo diceva. Adesso il pop-up scrive
+tutte e due le cose.
+Il mondo nasce anche con più giovani: `ageMean` e `ageStdDev` sono uscite da
+`WorldGenerator` ed entrate in configurazione, e la media è scesa da 25,4 a 24,2. Gli under
+passano da 98 a 178 e le combinazioni coperte da 69 a 86 su 110. **Vale solo per i mondi
+nuovi**: quello in corso lo sistema la generazione su misura.
+*Confermata il 2026-08-30 · `WorldConfig.ageMean`*
+
+---
+
 ## Le squadre del computer
 
 **Le AI devono fare quattro cose di loro iniziativa, tutte rivolte a chi gioca.**

@@ -52,8 +52,27 @@ data class ScoutingMission(
     val readyAt: Instant?,
     val status: String,
     val foundPlayerId: Long?,
+    /**
+     * Chi ha portato, quando ne ha portati piu' di uno.
+     *
+     * Arriva da una lettura a parte: `found_player_ids` e' nata il 2026-08-30, e chiederla
+     * dentro la lettura delle missioni spegnerebbe tutte le missioni su ogni database
+     * indietro invece di spegnere solo la lista.
+     */
+    val foundPlayerIds: List<Long> = emptyList(),
 ) {
     val inCorso: Boolean get() = status == "IN_CORSO"
+
+    /** E' tornato e aspetta una risposta: accetta, rifiuta, o rimandalo a cercare. */
+    val daValutare: Boolean get() = status == "DA_VALUTARE"
+
+    /** Chi ha portato, comprese le missioni vecchie che ne avevano uno solo. */
+    val trovati: List<Long>
+        get() = foundPlayerIds.ifEmpty { listOfNotNull(foundPlayerId) }
+
+    /** I ruoli chiesti: dal 2026-08-30 possono essere piu' di uno, separati da virgola. */
+    val ruoli: List<String>
+        get() = position.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
     fun quando(now: Instant): String {
         val quando = readyAt ?: return "—"
@@ -142,7 +161,7 @@ object StaffRepository {
         if (clubIds.isEmpty()) return emptyList()
         val lista = clubIds.joinToString(",")
         val path = "/rest/v1/scouting_missions?select=id,staff_id,country,position,ready_at," +
-            "status,found_player_id&club_id=in.($lista)&order=ready_at&limit=100"
+            "status,found_player_id&club_id=in.($lista)&order=ready_at&limit=200"
 
         return when (val esito = SupabaseApi.get(path)) {
             // Migrazione non ancora applicata: nessuna missione, che e' la verita'.
@@ -169,6 +188,49 @@ object StaffRepository {
         w.field("p_club_id", clubId)
         w.endObject()
         return SupabaseApi.rpc("assign_staff", w.toString()).then(::esito).mapMissing()
+    }
+
+    /**
+     * Chi ha portato ciascuna missione, quando sono piu' di uno.
+     *
+     * Lettura a parte, stessa ragione della proprieta' dello staff: al peggio torna vuota
+     * e si vede un ragazzo solo per missione, invece di non vedere piu' nessuna missione.
+     */
+    suspend fun finds(clubIds: List<Long>): Map<Long, List<Long>> {
+        if (clubIds.isEmpty()) return emptyMap()
+        val lista = clubIds.joinToString(",")
+        val path = "/rest/v1/scouting_missions?select=id,found_player_ids" +
+            "&club_id=in.($lista)&limit=200"
+
+        return when (val esito = SupabaseApi.get(path)) {
+            is ApiResult.Error -> emptyMap()
+            is ApiResult.Ok -> JsonNode.parse(esito.value).asList().mapNotNull { row ->
+                val id = row["id"].long(0)
+                val trovati = row["found_player_ids"].asList().map { it.long(0) }.filter { it > 0 }
+                if (id > 0 && trovati.isNotEmpty()) id to trovati else null
+            }.toMap()
+        }
+    }
+
+    /** Accetta uno o piu' dei ragazzi trovati: entrano in Primavera. */
+    suspend fun accept(missionId: Long, playerIds: List<Long>): ApiResult<Unit> {
+        val w = JsonWriter(256)
+        w.beginObject()
+        w.field("p_mission_id", missionId)
+        w.arrayField("p_player_ids")
+        playerIds.forEach { w.value(it) }
+        w.endArray()
+        w.endObject()
+        return SupabaseApi.rpc("accept_scouting", w.toString()).then(::esito).mapMissing()
+    }
+
+    /** Rifiuta: restano liberi per chiunque. E' anche il primo passo del «ri-scouta». */
+    suspend fun reject(missionId: Long): ApiResult<Unit> {
+        val w = JsonWriter(64)
+        w.beginObject()
+        w.field("p_mission_id", missionId)
+        w.endObject()
+        return SupabaseApi.rpc("reject_scouting", w.toString()).then(::esito).mapMissing()
     }
 
     /**

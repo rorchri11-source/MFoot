@@ -622,6 +622,22 @@ create index if not exists idx_staff_owner on staff(owner_club_id, role);
 -- e non altrove perche' e' stato del server, non del gioco.
 alter table tick_state add column if not exists last_shop_match_day integer;
 
+-- L'osservatore torna, ma non decide lui.
+--
+-- Fino al 2026-08-30 la missione scadeva e il tick infilava il ragazzo in Primavera senza
+-- chiedere niente. Adesso torna in `DA_VALUTARE` con i trovati **non assegnati**, e chi
+-- gioca sceglie: accetta, rifiuta, o lo rimanda a cercare.
+alter table scouting_missions drop constraint if exists scouting_missions_status_check;
+alter table scouting_missions add constraint scouting_missions_status_check
+    check (status in ('IN_CORSO', 'DA_VALUTARE', 'CONCLUSA', 'A_VUOTO', 'RIFIUTATA'));
+
+-- I trovati sono piu' di uno: uno per ruolo chiesto, e almeno uno sempre.
+--
+-- `found_player_id` resta e contiene il primo, cosi' le missioni gia' chiuse continuano a
+-- voler dire quello che volevano dire.
+alter table scouting_missions add column if not exists found_player_ids bigint[]
+    not null default '{}';
+
 
 -- =====================================================================================
 --  2. I PERMESSI, IN DUE FUNZIONI
@@ -3031,6 +3047,110 @@ begin
 end;
 $$;
 
+/**
+ * Accetta uno o piu' dei ragazzi che l'osservatore ha portato.
+ *
+ * Prima non esisteva: il tick assegnava d'ufficio, e chi giocava scopriva un giocatore in
+ * piu' in Primavera senza averlo scelto. Adesso la missione aspetta, e non scade — un
+ * ragazzo trovato resta li' finche' non si decide, perche' una scadenza punirebbe chi apre
+ * l'app la sera.
+ *
+ * Si accetta chi si vuole: chiedere tre ruoli e tenerne uno e' una scelta legittima.
+ */
+create or replace function accept_scouting(
+    p_mission_id bigint,
+    p_player_ids bigint[]
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_mission  scouting_missions%rowtype;
+    v_club     clubs%rowtype;
+    v_giorno   integer;
+    v_durata   integer;
+    v_config   jsonb;
+    v_id       bigint;
+    v_presi    integer := 0;
+begin
+    select * into v_mission from scouting_missions where id = p_mission_id for update;
+    if not found then
+        return jsonb_build_object('ok', false, 'reason', 'Missione inesistente.');
+    end if;
+    if v_mission.status <> 'DA_VALUTARE' then
+        return jsonb_build_object('ok', false, 'reason', 'Questa missione e'' gia'' chiusa.');
+    end if;
+
+    select * into v_club from clubs where id = v_mission.club_id;
+    if v_club.owner_user_id is distinct from auth.uid() then
+        return jsonb_build_object('ok', false, 'reason', 'Non e'' il tuo osservatore.');
+    end if;
+
+    select config, current_match_day into v_config, v_giorno
+    from leagues where id = v_mission.league_id;
+    v_durata := greatest(
+        coalesce((v_config -> 'market' ->> 'defaultContractMatchDays')::integer, 30), 1);
+
+    foreach v_id in array coalesce(p_player_ids, '{}') loop
+        -- Solo quelli che quella missione ha davvero trovato, e solo se sono ancora liberi.
+        if v_id = any(v_mission.found_player_ids)
+           and not exists (select 1 from contracts where player_id = v_id) then
+            insert into contracts (league_id, player_id, club_id, signed_on, expires_on,
+                                   wage_per_match_day)
+            values (v_mission.league_id, v_id, v_mission.club_id, v_giorno,
+                    v_giorno + v_durata, 0);
+            v_presi := v_presi + 1;
+        end if;
+    end loop;
+
+    update scouting_missions
+    set status = 'CONCLUSA', closed_at = now()
+    where id = p_mission_id;
+
+    return jsonb_build_object('ok', true, 'presi', v_presi);
+end;
+$$;
+
+/**
+ * Rifiuta quello che l'osservatore ha portato.
+ *
+ * I ragazzi restano liberi per chiunque: non si distrugge niente, si rinuncia. E'
+ * anche il primo passo del «ri-scouta», che rifiuta e riparte con lo stesso incarico.
+ */
+create or replace function reject_scouting(p_mission_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_mission scouting_missions%rowtype;
+    v_club    clubs%rowtype;
+begin
+    select * into v_mission from scouting_missions where id = p_mission_id for update;
+    if not found then
+        return jsonb_build_object('ok', false, 'reason', 'Missione inesistente.');
+    end if;
+    if v_mission.status <> 'DA_VALUTARE' then
+        return jsonb_build_object('ok', false, 'reason', 'Questa missione e'' gia'' chiusa.');
+    end if;
+
+    select * into v_club from clubs where id = v_mission.club_id;
+    if v_club.owner_user_id is distinct from auth.uid() then
+        return jsonb_build_object('ok', false, 'reason', 'Non e'' il tuo osservatore.');
+    end if;
+
+    update scouting_missions
+    set status = 'RIFIUTATA', closed_at = now()
+    where id = p_mission_id;
+
+    return jsonb_build_object('ok', true, 'country', v_mission.country,
+                              'position', v_mission.position);
+end;
+$$;
+
 create or replace function counter_trade(
     p_trade_id bigint,
     p_cash     integer,
@@ -4208,6 +4328,8 @@ grant execute on function release_player(bigint) to authenticated, anon;
 grant execute on function respond_deal(bigint, boolean, text) to authenticated;
 grant execute on function respond_trade(bigint, boolean, text) to authenticated;
 grant execute on function send_scout(bigint, text, text) to authenticated;
+grant execute on function accept_scouting(bigint, bigint[]) to authenticated;
+grant execute on function reject_scouting(bigint) to authenticated;
 grant execute on function set_access_code(bigint, text) to authenticated;
 grant execute on function set_player_morale(bigint, integer) to authenticated;
 grant execute on function set_squad(bigint, text) to authenticated;

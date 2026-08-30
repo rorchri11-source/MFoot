@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mfoot.android.app.AppState
 import dev.mfoot.android.app.StaffState
+import dev.mfoot.android.data.ScoutingMission
 import dev.mfoot.android.data.StaffMember
 import dev.mfoot.core.model.StaffRole
 import dev.mfoot.core.staff.Cella
@@ -75,6 +76,9 @@ fun StaffScreen(
     onVendi: (Long, Int) -> Unit = { _, _ -> },
     /** Toglie da una cella senza cedere: resta tuo, in panchina. */
     onPanchina: (Long) -> Unit = {},
+    onAccetta: (Long, List<Long>) -> Unit = { _, _ -> },
+    onRifiuta: (Long) -> Unit = {},
+    onRiScouta: (Long, Long, String, String) -> Unit = { _, _, _, _ -> },
 ) {
     if (state.lega.myClub == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -91,7 +95,10 @@ fun StaffScreen(
         return
     }
 
-    VetrinaStaff(state, staff, onSposta, onVendi, onPanchina) { negozio = true }
+    VetrinaStaff(
+        state, staff, onSposta, onVendi, onPanchina,
+        onAccetta, onRifiuta, onRiScouta,
+    ) { negozio = true }
 }
 
 /**
@@ -118,6 +125,9 @@ private fun VetrinaStaff(
     onSposta: (Long, Long) -> Unit,
     onVendi: (Long, Int) -> Unit,
     onPanchina: (Long) -> Unit,
+    onAccetta: (Long, List<Long>) -> Unit,
+    onRifiuta: (Long) -> Unit,
+    onRiScouta: (Long, Long, String, String) -> Unit,
     onNegozio: () -> Unit,
 ) {
     val config = state.lega.league.config
@@ -127,6 +137,7 @@ private fun VetrinaStaff(
 
     var aperta by remember { mutableStateOf<Cella?>(null) }
     var scelto by remember { mutableStateOf<StaffMember?>(null) }
+    var rientrato by remember { mutableStateOf<ScoutingMission?>(null) }
 
     Column(
         Modifier.fillMaxSize().background(MFootColors.bg).verticalScroll(rememberScrollState()),
@@ -179,15 +190,27 @@ private fun VetrinaStaff(
                             val occupanti = staff.di(clubDellaCella).filter { it.role == role.name }
                             val chi = occupanti.getOrNull(cella.indice)
 
+                            val suaMissione = chi?.let { c ->
+                                staff.missioni.firstOrNull {
+                                    it.staffId == c.id && (it.inCorso || it.daValutare)
+                                }
+                            }
+
                             CellaStaff(
                                 cella = cella,
                                 chi = chi,
                                 impedimento = Celle.impedimento(cella, haPrimavera),
                                 inPanchina = staff.inPanchina(prima, role.name).size,
-                                missione = chi?.let { staff.missioneDi(it.id) },
+                                missione = suaMissione,
                                 modifier = Modifier.weight(1f),
                             ) {
-                                if (chi != null) scelto = chi else aperta = cella
+                                when {
+                                    // Un osservatore tornato apre quello che ha portato:
+                                    // e' la domanda che ci si fa toccandolo.
+                                    suaMissione?.daValutare == true -> rientrato = suaMissione
+                                    chi != null -> scelto = chi
+                                    else -> aperta = cella
+                                }
                             }
                         }
                         // Riga dispari: la cella sola non deve occupare tutta la larghezza,
@@ -210,6 +233,20 @@ private fun VetrinaStaff(
                 },
                 onNegozio = { aperta = null; onNegozio() },
                 onChiudi = { aperta = null },
+            )
+        }
+
+        rientrato?.let { missione ->
+            IlRientro(
+                missione = missione,
+                righe = state.rows.filter { it.player.id.value in missione.trovati },
+                onAccetta = { ids -> onAccetta(missione.id, ids); rientrato = null },
+                onRifiuta = { onRifiuta(missione.id); rientrato = null },
+                onRiScouta = {
+                    onRiScouta(missione.id, missione.staffId, missione.country, missione.position)
+                    rientrato = null
+                },
+                onChiudi = { rientrato = null },
             )
         }
 
@@ -294,9 +331,9 @@ private fun CellaStaff(
                 )
                 missione?.let {
                     Text(
-                        "in ${it.country}",
+                        if (it.daValutare) "tornato · guarda" else "in ${it.country}",
                         style = MFootType.chip,
-                        color = MFootColors.gamble,
+                        color = if (it.daValutare) MFootColors.elite else MFootColors.gamble,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -315,6 +352,82 @@ private fun CellaStaff(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Cosa ha portato l'osservatore, e cosa se ne fa.
+ *
+ * ## Perche' esiste
+ *
+ * Perche' prima il server assegnava d'ufficio: la missione scadeva, il ragazzo finiva in
+ * Primavera, e chi giocava scopriva un giocatore in piu' senza averlo scelto.
+ *
+ * ## Perche' c'e' scritto il potenziale
+ *
+ * Perche' senza, «accetta o rifiuta» e' una scelta alla cieca — e soprattutto perche' il
+ * numero che si vede da solo mente. L'osservatore pesca sul **potenziale**, quindi un
+ * cinque stelle riporta il talento piu' forte che esiste, che e' il piu' giovane e quindi
+ * il piu' debole di adesso: misurato il 2026-08-30, il miglior ragazzo del mondo generato
+ * vale 43 e arrivera' a 88. Segnalato cosi': *«anche se e' un 5 ti porta un 32»*. Non era
+ * rotto: era muto.
+ *
+ * La forbice mostrata e' quella **stimata**, non quella vera: il potenziale vero non lascia
+ * mai il server, e un osservatore bravo la stringe. E' la stessa che si vede sul mercato.
+ */
+@Composable
+private fun IlRientro(
+    missione: ScoutingMission,
+    righe: List<dev.mfoot.android.app.PlayerRow>,
+    onAccetta: (List<Long>) -> Unit,
+    onRifiuta: () -> Unit,
+    onRiScouta: () -> Unit,
+    onChiudi: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(MFootSpacing.section, 8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Label("Torna dal ${missione.country}", Modifier.weight(1f))
+            Azione("Chiudi", onChiudi)
+        }
+        Spacer(Modifier.height(8.dp))
+
+        if (righe.isEmpty()) {
+            Text(
+                "I ragazzi trovati non sono ancora arrivati sul telefono. Riapri fra poco.",
+                style = MFootType.secondary,
+                color = MFootColors.ink3,
+            )
+        }
+
+        righe.forEach { riga ->
+            val p = riga.player
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Text(
+                    "${p.shortName} · ${p.age} anni · ${p.primaryPosition.short}",
+                    style = MFootType.rowTitle,
+                    color = MFootColors.ink,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "${p.overall} oggi · ${riga.estimate.first}-${riga.estimate.last} domani",
+                    style = MFootType.chip,
+                    color = MFootColors.ink3,
+                )
+            }
+            Hairline()
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (righe.isNotEmpty()) {
+                Azione(
+                    if (righe.size == 1) "Accetta" else "Accetta tutti",
+                ) { onAccetta(righe.map { it.player.id.value }) }
+            }
+            Azione("Rifiuta", onRifiuta)
+            // Rifiuta e riparte con lo stesso incarico: non si ricompila il modulo.
+            Azione("Ri-scouta", onRiScouta)
         }
     }
 }
@@ -692,6 +805,7 @@ private fun Missione(
     onManda: (String, String) -> Unit,
 ) {
     var paese by remember { mutableStateOf<String?>(null) }
+    var presi by remember { mutableStateOf(emptySet<String>()) }
     val scelto = paese
 
     if (scelto == null) {
@@ -712,27 +826,62 @@ private fun Missione(
         )
     }
     Spacer(Modifier.height(6.dp))
-    Text("Che ruolo cerca", style = MFootType.label, color = MFootColors.ink3)
+    Text("Che ruoli cerca", style = MFootType.label, color = MFootColors.ink3)
     Spacer(Modifier.height(6.dp))
-    Pulsanti(ruoli) { onManda(scelto, it) }
+
+    // PIU' DI UN RUOLO PER VIAGGIO
+    //
+    // Chiesto dal proprietario il 2026-08-30. La colonna `position` e' rimasta `text` e
+    // contiene una lista separata da virgole: aggiungerne una nuova a una lettura condivisa
+    // avrebbe spento tutte le missioni su ogni database indietro.
+    //
+    // Non torna sempre con tutti — quanti dipende dalle stelle — ma almeno uno sempre.
+    Pulsanti(ruoli, presi) { valore ->
+        presi = if (valore in presi) presi - valore else presi + valore
+    }
+
+    Spacer(Modifier.height(8.dp))
+    if (presi.isEmpty()) {
+        Text(
+            "Scegli almeno un ruolo.",
+            style = MFootType.chip,
+            color = MFootColors.ink3,
+        )
+    } else {
+        Azione(
+            "Mandalo · ${presi.size} ${if (presi.size == 1) "ruolo" else "ruoli"}",
+        ) {
+            // L'ordine dei ruoli e' quello in cui li ha scelti chi gioca: se ne torna
+            // meno di quanti ne ha chiesti, arrivano i primi.
+            onManda(scelto, ruoli.map { it.second }.filter { it in presi }.joinToString(","))
+        }
+    }
 }
 
 /** Una griglia di pulsanti a tre per riga: etichetta da mostrare, valore da restituire. */
 @Composable
-private fun Pulsanti(voci: List<Pair<String, String>>, onScegli: (String) -> Unit) {
+private fun Pulsanti(
+    voci: List<Pair<String, String>>,
+    accesi: Set<String> = emptySet(),
+    onScegli: (String) -> Unit,
+) {
     Column {
         voci.chunked(3).forEach { riga ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 riga.forEach { (etichetta, valore) ->
+                    val acceso = valore in accesi
                     Text(
                         etichetta,
                         style = MFootType.chip,
-                        color = MFootColors.ink2,
+                        color = if (acceso) MFootColors.bg else MFootColors.ink2,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
                         modifier = Modifier
                             .weight(1f)
-                            .background(MFootColors.core, MFootShapes.field)
+                            .background(
+                                if (acceso) MFootColors.elite else MFootColors.core,
+                                MFootShapes.field,
+                            )
                             .clickable { onScegli(valore) }
                             .padding(vertical = 9.dp),
                     )

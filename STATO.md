@@ -1,7 +1,7 @@
 # MFoot — stato del progetto
 
 **Aggiornato:** 2026-08-29
-**Test:** 839 verdi, 0 falliti (`core` e `tick`)
+**Test:** 864 verdi, 0 falliti (`core` e `tick`)
 **Verificato:** `core:test`, `tick:build`, `android:assembleDebug`, e l'APK installato e
 avviato sull'emulatore senza errori.
 
@@ -557,11 +557,16 @@ Misurati su migliaia di partite simulate, non stimati. Col **motore a duelli**, 
 2026-08-29; fra parentesi il motore vecchio, che resta in piedi dietro `duelliAttivi` e
 sul quale ogni prova gira comunque.
 
+> **Rimisurati il 2026-08-30.** Il banco di prova costruiva le due squadre una dopo
+> l'altra, e chi pesca per primo pesca meglio: fra squadre "pari" la casa vinceva il 53,7%
+> per un vantaggio del banco, non del gioco. `TestSquads.coppia` le costruisce insieme
+> alternando chi sceglie, e i numeri sono migliorati — prima misuravamo anche noi stessi.
+
 | Metrica | Duelli | Motore vecchio | Riferimento |
 |---|---|---|---|
-| Squadre pari — casa / pari / trasferta | 46,0 / 28,4 / 25,6 | 46,0 / 27,4 / 26,6 | calcio vero: 45 / 27 / 28 |
-| Gol a partita | 2,89 | 2,70 | 2,5-3,0 |
-| Tiri a partita | 27,7 | 24,5 | 24-28 |
+| Squadre pari — casa / pari / trasferta | 44,0 / 27,6 / 28,4 | 46,0 / 27,4 / 26,6 | calcio vero: 45 / 27 / 28 |
+| Gol a partita | 2,90 | 2,70 | 2,5-3,0 |
+| Tiri a partita | 26,8 | 24,5 | 24-28 |
 | Conversione | 10,4% | 11,0% | 10-12% |
 | Chi segna: attacco / centrocampo / difesa | 64,6 / 21,4 / **13,9** | 67,3 / 20,9 / 11,7 | non solo gli attaccanti |
 | Marcatori diversi su 36 | 20 | 20 | non sempre gli stessi cinque |

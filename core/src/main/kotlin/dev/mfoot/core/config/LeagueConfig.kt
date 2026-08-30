@@ -558,9 +558,9 @@ data class RulesConfig(
      *
      * Il conto lo fa [dev.mfoot.core.world.Scouting.missionMinutes].
      */
-    val scoutMinutesBest: Int = 30,
+    val scoutMinutesBest: Int = 5,
     /** Quanto sta via un osservatore da una stella. Il tetto, deciso dal proprietario. */
-    val scoutMinutesWorst: Int = 120,
+    val scoutMinutesWorst: Int = 15,
 
     val youthTeamEnabled: Boolean = true,
     val youthMaxAge: Int = 21,
