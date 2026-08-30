@@ -197,15 +197,16 @@ fun PlayerDetailScreen(
 
         if (contesta) {
             val prezzo = row.acquisto?.price ?: 0
+            val minimo = prezzo + rilancioMinimo
             FoglioPrezzo(
                 titolo = "Contesta l'acquisto",
-                spiegazione = "Dichiari il tuo massimo, e resta segreto: il prezzo sale solo " +
-                    "quanto serve. I crediti si impegnano adesso — contestare è già " +
-                    "un'offerta, e se vinci paghi.",
-                iniziale = prezzo + rilancioMinimo,
+                spiegazione = "Offri una cifra per contestare l'acquisto di ${row.player.shortName}. " +
+                    "I crediti si impegnano subito e parte l'asta: se nessuno rilancia entro la scadenza, " +
+                    "il giocatore passa alla tua squadra.",
+                iniziale = minimo,
                 passo = rilancioMinimo,
-                minimo = prezzo + rilancioMinimo,
-                massimo = creditiDisponibili.coerceAtLeast(prezzo + rilancioMinimo),
+                minimo = minimo,
+                massimo = creditiDisponibili.coerceAtLeast(minimo),
                 conferma = { "Contesta a $it" },
                 onConferma = { contesta = false; onContesta(it) },
                 onClose = { contesta = false },
@@ -1152,6 +1153,14 @@ private fun Footer(
         // L'azione grossa, quella per cui si e' aperta la scheda. Ce n'e' **una sola**:
         // due pulsanti pieni fianco a fianco costringono a leggerli entrambi ogni volta.
         when {
+            // Contestare vale sugli acquisti altrui durante la finestra delle 12 ore:
+            acquisto != null && !mio -> Azione(
+                testo = "Contesta · restano ${acquisto.tempoRimasto()}",
+                fondo = MFootColors.gamble,
+                inchiostro = MFootColors.bg,
+                onClick = onContesta,
+            )
+
             inVendita != null && !mio -> Azione(
                 testo = "Compra · ${inVendita.price}",
                 fondo = MFootColors.elite,
@@ -1167,14 +1176,6 @@ private fun Footer(
                 fondo = MFootColors.elite,
                 inchiostro = MFootColors.onAccent,
                 onClick = onCompra,
-            )
-
-            // Contestare vale solo sugli acquisti altrui: sul proprio si e' gia' in testa.
-            acquisto != null && acquisto.buyer != (row.club?.id ?: -1L) && !mio -> Azione(
-                testo = "Contesta · restano ${acquisto.tempoRimasto()}",
-                fondo = MFootColors.gamble,
-                inchiostro = MFootColors.bg,
-                onClick = onContesta,
             )
 
             mio && inVendita != null -> Azione(

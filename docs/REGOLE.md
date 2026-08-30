@@ -107,13 +107,9 @@ così chi compra conosce dal primo istante l'ora in cui il giocatore è suo per 
 
 **Contestare è già un'offerta.**
 Si dichiara subito il proprio massimo, che deve superare il prezzo pagato, e i crediti si
-impegnano in quel momento. Non esiste contestare per dispetto: se vinci, paghi.
-*Detta il 2026-08-24 · `ContestRules.rejection`, `contest_purchase`*
-
-**Nelle dodici ore il giocatore gioca.**
-È già in rosa a tutti gli effetti. Se poi lo si perde in asta, le partite giocate restano
-dove sono.
-*Detta il 2026-08-24 · `buy_player` sposta il contratto subito*
+**La contestazione si apre dalla scheda del giocatore acquistato nelle dodici ore.**
+Su ogni giocatore acquistato a listino da un altro club, la scheda mostra il pulsante «Contesta · restano X ore». L'offerta è fissa, parte dal prezzo d'acquisto più il rilancio minimo e impegna subito i crediti aprendo l'asta. Durante le dodici ore il giocatore gioca ed è in rosa per il compratore; alla chiusura dell'asta, se vince lo sfidante il giocatore passa a lui e il compratore originario riceve il rimborso dei crediti; se vince il compratore originario, mantiene il giocatore versando la differenza dell'asta.
+*Confermata e sbloccata il 2026-08-30 · `PlayerDetail.Footer`, `AppViewModel.contesta`, `contest_purchase`*
 
 **Sul listino ci vanno gli svincolati e chi il proprietario mette in vendita, al prezzo
 che vuole lui.**

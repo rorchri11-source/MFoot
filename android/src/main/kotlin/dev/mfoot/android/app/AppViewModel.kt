@@ -1768,10 +1768,12 @@ class AppViewModel : ViewModel() {
 
                 is ApiResult.Ok -> {
                     val corrente = statoCorrente() ?: return@launch
-                    _state.value = corrente.copy(contestando = null)
+                    _state.value = corrente.copy(
+                        contestando = null,
+                        browse = corrente.browse.copy(selected = null),
+                    )
                     ricaricaMercato(
-                        "Acquisto contestato: si decide all'asta, che scade quando finisce " +
-                            "la finestra.",
+                        "Acquisto contestato: si decide all'asta.",
                     )
                 }
             }
