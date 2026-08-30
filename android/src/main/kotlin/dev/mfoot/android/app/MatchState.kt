@@ -32,8 +32,8 @@ data class MatchState(
     /** Il minuto a cui e' arrivata la riproduzione. */
     val minuto: Int = 0,
     val inCorso: Boolean = false,
-    /** Minuti di gioco al secondo reale. Vale solo in differita. */
-    val velocita: Int = 6,
+    /** Minuti di gioco per minuto reale: 1 (X1), 2 (X2), 3 (X3), 10 (X10). Vale in differita/replay. */
+    val velocita: Int = 10,
     /**
      * La partita si sta giocando **adesso**.
      *
@@ -83,7 +83,7 @@ data class MatchState(
     val finita: Boolean get() = partita != null && minuto >= MatchClock.FINE
 
     /** In diretta l'intervallo e' un'attesa vera, e va detto invece di mostrare un campo fermo. */
-    val inIntervallo: Boolean get() = fase == MatchClock.Fase.INTERVALLO
+    val inIntervallo: Boolean get() = diretta && fase == MatchClock.Fase.INTERVALLO
 
     /**
      * Cosa sta succedendo, in una riga.
@@ -125,17 +125,16 @@ data class MatchState(
                 )
             }
 
-            // In diretta finche' l'orologio non dice che e' finita. Una partita senza
-            // orario — non dovrebbe esistere — si guarda in differita, che e' il
-            // comportamento sicuro: mostra tutto quello che c'e'.
+            // In diretta finche' l'orologio non dice che e' finita (90 minuti veri + pausa intervallo).
+            // Una partita senza orario — non dovrebbe esistere — si guarda in differita a fine gara.
             val inDiretta = stato != null && stato.fase != MatchClock.Fase.FINITA
 
             return MatchState(
                 partita = partita,
                 homeName = homeName,
                 awayName = awayName,
-                minuto = if (inDiretta) stato!!.minuto else 0,
-                inCorso = true,
+                minuto = if (inDiretta) stato.minuto else MatchClock.FINE,
+                inCorso = inDiretta,
                 diretta = inDiretta,
                 fase = stato?.fase ?: MatchClock.Fase.FINITA,
                 attesaRipresa = stato?.attesaRipresa ?: false,

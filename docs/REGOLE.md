@@ -230,6 +230,10 @@ quello che si rivede e' *come e' andata*, e novanta minuti per raccontarlo sareb
 minuti. In diretta invece non ci sono comandi — non si mette in pausa una partita.
 *Detta il 2026-08-29 · `core/match/MatchClock.kt`, `MatchState`, `AppViewModel.segui`*
 
+**La partita finita si rivede a velocità controllata, dal 1° minuto e senza pause.**
+A partita completata l'app apre il tabellino definitivo al 90'. Premendo «Rivedila», la partita riparte dal 1° minuto e scorre senza la sosta dell'intervallo con quattro velocità selezionabili: X1 (1 min partita = 1 min reale), X2 (2 min partita = 1 min reale), X3 (3 min partita = 1 min reale) e X10 (10 min partita = 1 min reale). Restano i comandi Pausa, Riprendi e Salta alla fine.
+*Detta il 2026-08-30 · `MatchState`, `AppViewModel.rivedila`, `AppViewModel.cambiaVelocita`, `ui/screens/Partita.kt`*
+
 **Due tick per partita, con venti minuti di pausa.**
 Il primo simula tutto fino al 45'; il secondo parte alla fine dell'intervallo, che dura
 **venti minuti e non di piu'**. La ripresa si conta dal fischio d'inizio — `kickoff + 45 +

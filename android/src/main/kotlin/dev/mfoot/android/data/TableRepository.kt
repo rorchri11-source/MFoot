@@ -32,8 +32,12 @@ data class MatchRow(
      */
     val problema: String? = null,
 ) {
+    /** La partita e' conclusa davvero quando il server l'ha giocata E sono trascorsi i 110 minuti reali (45+20+45). */
+    fun conclusa(now: Instant = Instant.now(), pausaMinuti: Int = 20): Boolean =
+        played && (kickoff == null || now.isAfter(dev.mfoot.core.match.MatchClock.fineDi(kickoff, pausaMinuti)))
+
     val scoreline: String get() =
-        if (played && homeGoals != null && awayGoals != null) "$homeGoals - $awayGoals" else "–"
+        if (conclusa() && homeGoals != null && awayGoals != null) "$homeGoals - $awayGoals" else "–"
 
     /** Doveva giocarsi e non si e' giocata, e c'e' un motivo scritto. */
     val bloccata: Boolean get() = !played && problema != null
@@ -45,8 +49,8 @@ data class TableView(
     val rows: List<StandingRow>,
     val matches: List<MatchRow>,
 ) {
-    val played: List<MatchRow> get() = matches.filter { it.played }
-    val upcoming: List<MatchRow> get() = matches.filterNot { it.played }
+    val played: List<MatchRow> get() = matches.filter { it.conclusa() }
+    val upcoming: List<MatchRow> get() = matches.filterNot { it.conclusa() }
 
     /** Il prossimo turno da giocare: e' quello che si vuole vedere aprendo la schermata. */
     val nextRound: Int? get() = upcoming.minByOrNull { it.round }?.round
@@ -78,7 +82,7 @@ object TableRepository {
             )
 
             val results = matches
-                .filter { it.played && it.homeGoals != null && it.awayGoals != null }
+                .filter { it.conclusa() && it.homeGoals != null && it.awayGoals != null }
                 .map {
                     FixtureResult(
                         fixtureId = it.id,

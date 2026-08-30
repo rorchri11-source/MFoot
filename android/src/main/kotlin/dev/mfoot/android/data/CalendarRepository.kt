@@ -5,6 +5,7 @@ import dev.mfoot.core.calendar.CalendarDeadline
 import dev.mfoot.core.calendar.CalendarMatch
 import dev.mfoot.core.json.JsonNode
 import dev.mfoot.core.model.Money
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -92,6 +93,7 @@ object CalendarRepository {
                     val casa = row["home_club_id"].long(0)
                     val fuori = row["away_club_id"].long(0)
                     val giocata = row["played"].bool(false)
+                    val conclusa = giocata && Instant.now().isAfter(dev.mfoot.core.match.MatchClock.fineDi(quando, 20))
 
                     CalendarMatch(
                         fixtureId = row["id"].long(0),
@@ -101,8 +103,8 @@ object CalendarRepository {
                         awayName = clubName(fuori),
                         mine = myClubId != null && (casa == myClubId || fuori == myClubId),
                         friendly = row["competition_id"].long(0) in friendlyCompetitions,
-                        played = giocata,
-                        scoreline = if (giocata && result["home_goals"].exists) {
+                        played = conclusa,
+                        scoreline = if (conclusa && result["home_goals"].exists) {
                             "${result["home_goals"].int(0)} - ${result["away_goals"].int(0)}"
                         } else {
                             ""

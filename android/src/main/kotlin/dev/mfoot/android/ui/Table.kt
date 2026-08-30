@@ -342,29 +342,12 @@ private fun TableFooter() {
 private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> Unit) {
     val mine = match.homeClubId == state.myClubId || match.awayClubId == state.myClubId
 
-    // SI APRE ANCHE QUELLA IN CORSO
-    //
-    // Era `if (match.played)`, e andava bene finche' una partita durava un istante: o non
-    // era cominciata, o era finita. Dal 2026-08-29 dura **centodieci minuti veri**, e per
-    // tutto quel tempo `played` e' falso — quindi la partita in diretta era l'unica cosa
-    // dell'app che non si poteva aprire proprio mentre stava succedendo.
-    //
-    // Il calendario a mesi le apriva gia' tutte: erano due schermate che rispondevano in
-    // modo diverso allo stesso tocco.
-    val cominciata = match.kickoff?.isBefore(java.time.Instant.now()) == true
+    val now = java.time.Instant.now()
+    val cominciata = match.kickoff?.isBefore(now) == true
+    val conclusa = match.conclusa(now)
+    val inCorso = cominciata && !conclusa
 
-    // Una partita bloccata **non** si apre: non c'e' niente da guardare. Il motivo si legge
-    // qui sulla riga, che e' precisamente quello che mancava — il server lo sapeva e lo
-    // teneva nelle proprie note, e dal telefono un rinvio era indistinguibile da una
-    // partita non ancora arrivata.
-    // E ADESSO SI APRE ANCHE QUELLA CHE DEVE ANCORA GIOCARSI
-    //
-    // Toccandola si vedono i due schieramenti e come potrebbe finire. Prima una partita
-    // futura era l'unica riga della schermata che non faceva niente, e preparare una
-    // partita era compilare un modulo e sperare.
-    //
-    // Resta ferma solo quella bloccata: li' non c'e' niente da guardare, e il motivo si
-    // legge sulla riga stessa.
+    // Una partita bloccata **non** si apre: non c'e' niente da guardare.
     val apribile = !match.bloccata
 
     Scheda(
@@ -376,9 +359,9 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Squadra(state, match.homeClubId, mine, Modifier.weight(1f))
                 Text(
-                    match.scoreline,
-                    style = if (match.played) MFootType.price else MFootType.chip,
-                    color = if (match.played) MFootColors.elite else MFootColors.ink3,
+                    if (conclusa) match.scoreline else "–",
+                    style = if (conclusa) MFootType.price else MFootType.chip,
+                    color = if (conclusa) MFootColors.elite else MFootColors.ink3,
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .padding(horizontal = 8.dp)
@@ -391,15 +374,11 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
             Spacer(Modifier.height(6.dp))
             Text(
                 when {
-                    match.played -> "tocca per rivederla"
-                    // Il motivo scritto per intero, non «rinviata». Chi legge deve capire
-                    // se riguarda lui e cosa deve fare, senza andare a contare la propria
-                    // rosa per indovinarlo.
+                    conclusa -> "tocca per rivederla"
+                    // Il motivo scritto per intero, non «rinviata».
                     match.bloccata -> match.problema.orEmpty()
-                    // In corso adesso: e' l'unica riga della schermata che chiede di essere
-                    // toccata subito, e deve dirlo con parole diverse da «rivederla» —
-                    // rivedere e guardare sono due cose che non si fanno nello stesso momento.
-                    cominciata -> "si sta giocando · tocca per guardarla"
+                    // In corso adesso: la partita e' in diretta e si guarda in tempo reale.
+                    inCorso -> "si sta giocando · tocca per guardarla"
                     else -> {
                         val quando = state.oraDi(match)?.format(QUANDO)
                             ?: "giornata ${match.matchDay}"
@@ -409,6 +388,8 @@ private fun MatchLine(match: MatchRow, state: TableState, onOpen: (MatchRow) -> 
                 style = MFootType.chip,
                 color = when {
                     match.bloccata -> MFootColors.gamble
+                    inCorso -> MFootColors.elite
+                    conclusa -> MFootColors.ink3
                     apribile -> MFootColors.elite
                     else -> MFootColors.ink3
                 },

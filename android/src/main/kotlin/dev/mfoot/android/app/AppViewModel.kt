@@ -1144,7 +1144,12 @@ class AppViewModel : ViewModel() {
         }
     }
 
+    private var seguiJob: kotlinx.coroutines.Job? = null
+    private var riproduciJob: kotlinx.coroutines.Job? = null
+
     fun apriPartita(fixtureId: Long, homeName: String, awayName: String) {
+        seguiJob?.cancel()
+        riproduciJob?.cancel()
         viewModelScope.launch {
             _state.value = AppState.Partita(
                 MatchState(homeName = homeName, awayName = awayName, caricamento = true),
@@ -1178,7 +1183,11 @@ class AppViewModel : ViewModel() {
                         pausaMinuti = pausaIntervallo(),
                     )
                     _state.value = AppState.Partita(stato)
-                    if (stato.diretta) segui(fixtureId) else riproduci()
+                    if (stato.diretta) {
+                        segui(fixtureId)
+                    } else if (stato.inCorso) {
+                        riproduci()
+                    }
                 }
             }
         }
@@ -1210,7 +1219,8 @@ class AppViewModel : ViewModel() {
      * mostrare un campo fermo.
      */
     private fun segui(fixtureId: Long) {
-        viewModelScope.launch {
+        seguiJob?.cancel()
+        seguiJob = viewModelScope.launch {
             var ultimoTentativo = 0L
 
             while (true) {
@@ -1258,7 +1268,7 @@ class AppViewModel : ViewModel() {
     }
 
     /**
-     * La differita: sei minuti di gioco al secondo.
+     * La differita / replay: velocita' controllata (X1 = 60s/min, X2 = 30s/min, X3 = 20s/min, X10 = 6s/min).
      *
      * Un ciclo solo, che si ferma da solo quando la partita finisce o quando si esce dalla
      * schermata. Il controllo su `AppState.Partita` a ogni giro non e' pignoleria: senza,
@@ -1266,16 +1276,52 @@ class AppViewModel : ViewModel() {
      * stato di una schermata che non esiste piu'.
      */
     private fun riproduci() {
-        viewModelScope.launch {
+        riproduciJob?.cancel()
+        riproduciJob = viewModelScope.launch {
             while (true) {
-                kotlinx.coroutines.delay(1000)
                 val corrente = (_state.value as? AppState.Partita)?.partita ?: return@launch
                 if (!corrente.inCorso || corrente.finita) return@launch
 
+                val intervalMs = (60_000L / corrente.velocita.coerceAtLeast(1)).coerceAtLeast(100L)
+                kotlinx.coroutines.delay(intervalMs)
+
+                val attiva = (_state.value as? AppState.Partita)?.partita ?: return@launch
+                if (!attiva.inCorso || attiva.finita) return@launch
+
+                val nuovoMinuto = (attiva.minuto + 1).coerceAtMost(90)
                 _state.value = AppState.Partita(
-                    corrente.copy(minuto = (corrente.minuto + corrente.velocita).coerceAtMost(90)),
+                    attiva.copy(
+                        minuto = nuovoMinuto,
+                        inCorso = nuovoMinuto < 90,
+                    ),
                 )
             }
+        }
+    }
+
+    /**
+     * Rivede la partita dal 1° minuto, a velocita' controllata senza sosta all'intervallo.
+     */
+    fun rivedila() {
+        val corrente = (_state.value as? AppState.Partita)?.partita ?: return
+        if (corrente.diretta) return
+        seguiJob?.cancel()
+        riproduciJob?.cancel()
+        _state.value = AppState.Partita(
+            corrente.copy(minuto = 1, inCorso = true),
+        )
+        riproduci()
+    }
+
+    /**
+     * Cambia la velocita' di riproduzione della differita (1 per X1, 2 per X2, 3 per X3, 10 per X10).
+     */
+    fun cambiaVelocita(velocita: Int) {
+        val corrente = (_state.value as? AppState.Partita)?.partita ?: return
+        if (corrente.diretta) return
+        _state.value = AppState.Partita(corrente.copy(velocita = velocita))
+        if (corrente.inCorso) {
+            riproduci()
         }
     }
 
@@ -1296,17 +1342,27 @@ class AppViewModel : ViewModel() {
         val corrente = (_state.value as? AppState.Partita)?.partita ?: return
         if (corrente.diretta) return
         val ripresa = !corrente.inCorso
-        _state.value = AppState.Partita(corrente.copy(inCorso = ripresa))
-        if (ripresa) riproduci()
+        if (ripresa && corrente.finita) {
+            _state.value = AppState.Partita(corrente.copy(minuto = 1, inCorso = true))
+            riproduci()
+        } else {
+            _state.value = AppState.Partita(corrente.copy(inCorso = ripresa))
+            if (ripresa) riproduci() else riproduciJob?.cancel()
+        }
     }
 
     fun saltaAllaFine() {
         val corrente = (_state.value as? AppState.Partita)?.partita ?: return
         if (corrente.diretta) return
+        riproduciJob?.cancel()
         _state.value = AppState.Partita(corrente.copy(minuto = 90, inCorso = false))
     }
 
-    fun chiudiPartita() = ricarica()
+    fun chiudiPartita() {
+        seguiJob?.cancel()
+        riproduciJob?.cancel()
+        ricarica()
+    }
 
     /**
      * Il nome di un giocatore, per le pagelle.

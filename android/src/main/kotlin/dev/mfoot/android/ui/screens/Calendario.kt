@@ -344,10 +344,15 @@ private fun RigaEvento(evento: CalendarEvent, onPartita: (Long, String, String) 
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
+            val inCorso = apribile && !evento.done && evento.at?.let { java.time.LocalDateTime.now().isAfter(it) } == true
             Text(
-                if (apribile) "${evento.detail} · tocca per rivederla" else evento.detail,
+                when {
+                    evento.done -> "${evento.detail} · tocca per rivederla"
+                    inCorso -> "si sta giocando · tocca per guardarla"
+                    else -> evento.detail
+                },
                 style = MFootType.chip,
-                color = if (apribile) MFootColors.elite else MFootColors.ink3,
+                color = if (evento.done || inCorso) MFootColors.elite else MFootColors.ink3,
             )
         }
 

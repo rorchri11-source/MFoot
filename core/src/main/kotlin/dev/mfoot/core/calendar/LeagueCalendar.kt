@@ -130,9 +130,8 @@ object LeagueCalendar {
                     title = "${m.homeName} — ${m.awayName}",
                     detail = if (m.played) m.scoreline else "giornata ${m.matchDay}",
                     done = m.played,
-                    // Solo le giocate: aprire il replay di una partita che non si e'
-                    // ancora giocata mostrerebbe una schermata vuota con dentro un errore.
-                    fixtureId = m.fixtureId.takeIf { m.played && it > 0 },
+                    // Si aprono sia quelle in corso sia quelle giocate.
+                    fixtureId = m.fixtureId.takeIf { it > 0 },
                 ),
             )
         }

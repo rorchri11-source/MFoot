@@ -85,8 +85,10 @@ import dev.mfoot.android.ui.theme.MFootType
 fun PartitaScreen(
     state: MatchState,
     onScheda: (MatchTab) -> Unit,
+    onRivedi: () -> Unit,
     onPausa: () -> Unit,
     onFine: () -> Unit,
+    onVelocita: (Int) -> Unit,
     onChiudi: () -> Unit,
     nomeGiocatore: (Long) -> String,
 ) {
@@ -110,7 +112,7 @@ fun PartitaScreen(
             return
         }
 
-        Comandi(state, onPausa, onFine, onChiudi)
+        Comandi(state, onRivedi, onPausa, onFine, onVelocita, onChiudi)
         Schede(state, onScheda)
         Hairline()
 
@@ -630,35 +632,57 @@ private fun Inerzia(state: MatchState) {
 @Composable
 private fun Comandi(
     state: MatchState,
+    onRivedi: () -> Unit,
     onPausa: () -> Unit,
     onFine: () -> Unit,
+    onVelocita: (Int) -> Unit,
     onChiudi: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(MFootSpacing.section, 12.dp),
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(MFootSpacing.section, 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // In diretta non ci sono comandi: non si mette in pausa una partita, e «salta alla
         // fine» vorrebbe dire saltare a un finale che non e' ancora successo. Al loro posto
-        // c'e' quello che sta succedendo — e uno spazio vuoto dove prima c'erano due
-        // pulsanti si legge peggio di una riga che dice dove siamo.
+        // c'e' quello che sta succedendo.
         if (state.diretta) {
             Text(
                 state.avviso ?: "In diretta",
                 style = MFootType.chip,
                 color = if (state.avviso == null) MFootColors.elite else MFootColors.ink2,
             )
-        } else if (!state.finita) {
-            Bottone(if (state.inCorso) "Pausa" else "Riprendi", onPausa)
-            Bottone("Salta alla fine", onFine)
+        } else {
+            Bottone("Rivedila", onRivedi)
+            if (!state.finita) {
+                Bottone(if (state.inCorso) "Pausa" else "Riprendi", onPausa)
+                Bottone("Salta alla fine", onFine)
+            }
+            val velocitaDisponibili = listOf(1 to "X1", 2 to "X2", 3 to "X3", 10 to "X10")
+            velocitaDisponibili.forEach { (vel, label) ->
+                val attiva = state.velocita == vel
+                Text(
+                    label,
+                    style = MFootType.chip,
+                    color = if (attiva) MFootColors.bg else MFootColors.ink2,
+                    modifier = Modifier
+                        .background(
+                            if (attiva) MFootColors.ink else MFootColors.core,
+                            MFootShapes.pill,
+                        )
+                        .clickable { onVelocita(vel) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
         }
-        Spacer(Modifier.weight(1f))
         Text(
             "Chiudi",
             style = MFootType.chip,
             color = MFootColors.ink3,
-            modifier = Modifier.clickable(onClick = onChiudi).padding(8.dp),
+            modifier = Modifier.clickable(onClick = onChiudi).padding(horizontal = 8.dp, vertical = 8.dp),
         )
     }
 }
