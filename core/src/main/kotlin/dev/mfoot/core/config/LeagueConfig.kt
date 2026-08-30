@@ -677,6 +677,25 @@ data class WorldConfig(
     ),
     val minAge: Int = 16,
     val maxAge: Int = 37,
+
+    /**
+     * Come sono distribuite le eta' alla generazione del mondo.
+     *
+     * ## Perche' sono usciti dal codice il 2026-08-30
+     *
+     * Perche' con `mean = 25.4` e `stdDev = 4.6` — scritti dentro `WorldGenerator` — solo
+     * l'**8%** dei giocatori aveva meno di vent'anni. Su 110 combinazioni nazione per
+     * ruolo fanno 0,89 giovani a testa, e **quarantuno combinazioni erano vuote il primo
+     * giorno**, prima che qualcuno avesse firmato qualcuno: un terzo delle ricerche di un
+     * osservatore non poteva riuscire mai.
+     *
+     * Abbassare la media e allargare la coda non regala giocatori pronti — un
+     * diciassettenne resta un diciassettenne — ma riempie il vivaio da cui gli osservatori
+     * pescano, che e' l'unica porta da cui i giovani entrano nel gioco.
+     */
+    val ageMean: Double = 24.2,
+    val ageStdDev: Double = 5.2,
+
     /** Probabilita' che un giocatore abbia almeno un tratto. */
     val traitChance: Double = 0.45,
     val maxTraitsPerPlayer: Int = 2,

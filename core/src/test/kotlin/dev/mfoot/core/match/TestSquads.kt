@@ -54,6 +54,88 @@ object TestSquads {
         )
     }
 
+    /**
+     * Le due squadre di una partita, costruite **insieme**.
+     *
+     * ## Perche' non bastava costruirle una dopo l'altra
+     *
+     * Perche' chi pesca per primo pesca meglio. `build` prende, per ogni ruolo, il
+     * giocatore piu' vicino all'overall voluto; la seconda squadra riceve quello che
+     * avanza, che e' sistematicamente un po' piu' lontano dal bersaglio.
+     *
+     * Con un mondo ricco di giocatori vicini al bersaglio la differenza spariva nel rumore.
+     * Il 2026-08-30, abbassando l'eta' media del mondo per riempire il vivaio degli
+     * osservatori, i giocatori vicini a 75 sono passati da 127 a 107 — e il vantaggio
+     * nascosto e' emerso: **53,7% di vittorie in casa fra due squadre "pari"**, fuori dalla
+     * banda sana. Non era il gioco che si era rotto, era il banco di prova che misurava
+     * anche se stesso.
+     *
+     * Qui i due candidati piu' vicini a ogni ruolo si dividono uno per parte, alternando
+     * chi prende il migliore: nessuna delle due squadre ha il vantaggio di aver scelto
+     * prima.
+     */
+    fun coppia(
+        world: GeneratedWorld,
+        homeOverall: Int,
+        awayOverall: Int,
+        formation: Formation = Formation.F_4_3_3,
+        homeTactics: Tactics = Tactics.DEFAULT,
+        awayTactics: Tactics = Tactics.DEFAULT,
+        homeCoachStars: Int = 3,
+        awayCoachStars: Int = 3,
+        benchSize: Int = 7,
+    ): Pair<TeamSetup, TeamSetup> {
+        val used = mutableSetOf<Player>()
+        val casa = mutableListOf<Player>()
+        val ospite = mutableListOf<Player>()
+
+        fun coppiaPer(position: Position, targetCasa: Int, targetOspite: Int, alterna: Boolean) {
+            // Chi prende per primo cambia a ogni ruolo: sull'undici il vantaggio si annulla.
+            if (alterna) {
+                casa += pickClosest(world, position, targetCasa, used).also { used += it }
+                ospite += pickClosest(world, position, targetOspite, used).also { used += it }
+            } else {
+                ospite += pickClosest(world, position, targetOspite, used).also { used += it }
+                casa += pickClosest(world, position, targetCasa, used).also { used += it }
+            }
+        }
+
+        formation.positions.forEachIndexed { index, position ->
+            coppiaPer(position, homeOverall, awayOverall, index % 2 == 0)
+        }
+
+        val panchina = listOf(
+            Position.POR, Position.DC, Position.TS, Position.CC,
+            Position.MED, Position.AD, Position.ATT,
+        )
+        val casaPanchina = mutableListOf<Player>()
+        val ospitePanchina = mutableListOf<Player>()
+        (0 until benchSize).forEach { index ->
+            val position = panchina[index % panchina.size]
+            if (index % 2 == 0) {
+                casaPanchina += pickClosest(world, position, homeOverall - 6, used).also { used += it }
+                ospitePanchina += pickClosest(world, position, awayOverall - 6, used).also { used += it }
+            } else {
+                ospitePanchina += pickClosest(world, position, awayOverall - 6, used).also { used += it }
+                casaPanchina += pickClosest(world, position, homeOverall - 6, used).also { used += it }
+            }
+        }
+
+        return TeamSetup(
+            clubId = ClubId(1L),
+            name = "Casa",
+            lineup = Lineup.of(formation, casa, casaPanchina),
+            tactics = homeTactics,
+            coachStars = homeCoachStars,
+        ) to TeamSetup(
+            clubId = ClubId(2L),
+            name = "Ospite",
+            lineup = Lineup.of(formation, ospite, ospitePanchina),
+            tactics = awayTactics,
+            coachStars = awayCoachStars,
+        )
+    }
+
     /** Tutti i giocatori impegnati da questa squadra, titolari e panchina. */
     fun playersOf(setup: TeamSetup): Set<Player> =
         (setup.lineup.slots.map { it.player } + setup.lineup.bench).toSet()

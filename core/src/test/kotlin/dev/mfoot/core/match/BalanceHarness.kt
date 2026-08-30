@@ -149,14 +149,17 @@ object BalanceHarness {
         awayCoachStars: Int = 3,
         importance: MatchImportance = MatchImportance.CAMPIONATO,
     ): Report {
-        val home = TestSquads.build(
-            world, 1, "Casa", homeOverall,
-            tactics = homeTactics, coachStars = homeCoachStars,
-        )
-        val away = TestSquads.build(
-            world, 2, "Ospite", awayOverall,
-            tactics = awayTactics, coachStars = awayCoachStars,
-            exclude = TestSquads.playersOf(home),
+        // Costruite insieme, alternando chi sceglie per primo: costruirle una dopo l'altra
+        // dava alla prima i giocatori piu' vicini al bersaglio, e quel vantaggio nascosto
+        // e' venuto fuori il 2026-08-30 come 53,7% di vittorie in casa fra squadre "pari".
+        val (home, away) = TestSquads.coppia(
+            world = world,
+            homeOverall = homeOverall,
+            awayOverall = awayOverall,
+            homeTactics = homeTactics,
+            awayTactics = awayTactics,
+            homeCoachStars = homeCoachStars,
+            awayCoachStars = awayCoachStars,
         )
 
         // Il ruolo in cui ciascuno e' schierato: serve a sapere **chi** segna, che e' la

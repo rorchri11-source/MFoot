@@ -87,7 +87,7 @@ object WorldGenerator {
      * La coda alta deve restare sottile: se i fuoriclasse fossero tanti, prenderne uno
      * smetterebbe di essere una scelta e l'asta perderebbe tensione.
      */
-    private fun buildPotentialPool(tiers: OverallTiers, rng: DeterministicRandom): List<Int> =
+    internal fun buildPotentialPool(tiers: OverallTiers, rng: DeterministicRandom): List<Int> =
         buildList {
             repeat(tiers.fuoriclasse) { add(rng.nextIntInclusive(87, 93)) }
             repeat(tiers.top) { add(rng.nextIntInclusive(81, 86)) }
@@ -120,19 +120,33 @@ object WorldGenerator {
         return pool
     }
 
-    private fun buildPlayer(
+    /**
+     * Un giocatore.
+     *
+     * [forcedAge] e [forcedNationality] servono a [Talenti]: un osservatore mandato in
+     * Brasile a cercare un terzino deve poterne trovare **uno brasiliano e terzino**,
+     * anche quando il mondo non ne ha piu' nessuno libero. Lasciandoli a null si torna
+     * alla generazione di sempre.
+     */
+    internal fun buildPlayer(
         id: PlayerId,
         potential: Int,
         position: Position,
         config: LeagueConfig,
         rng: DeterministicRandom,
         usedNames: MutableSet<String>,
+        forcedAge: Int? = null,
+        forcedNationality: String? = null,
     ): Player {
         val world = config.world
 
-        val age = rng.nextGaussian(
-            mean = 25.4,
-            stdDev = 4.6,
+        // Media e ampiezza stanno in configurazione dal 2026-08-30. Erano scritte qui, e
+        // con 25,4 di media producevano l'8% di under 20: su 110 combinazioni nazione per
+        // ruolo, quarantuno restavano vuote **il primo giorno**, cioe' un terzo delle
+        // ricerche di un osservatore non poteva riuscire mai.
+        val age = forcedAge ?: rng.nextGaussian(
+            mean = world.ageMean,
+            stdDev = world.ageStdDev,
             min = world.minAge.toDouble(),
             max = world.maxAge.toDouble(),
         ).let { StrictMath.round(it).toInt() }
@@ -150,7 +164,7 @@ object WorldGenerator {
         val potentialMin = (potential - spread / 2).coerceIn(currentOverall, 99)
         val potentialMax = (potential + spread - spread / 2).coerceIn(potentialMin, 99)
 
-        val nationality = rng.pick(world.nationalities)
+        val nationality = forcedNationality ?: rng.pick(world.nationalities)
         val (firstName, lastName) = uniqueName(nationality, rng, usedNames)
         val attributes = AttributeGenerator.generate(position, currentOverall, rng)
         val (weakFoot, skillStars) = AttributeGenerator.generateStars(currentOverall, rng)
