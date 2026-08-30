@@ -1283,7 +1283,7 @@ begin
             returning id
         )
         insert into ai_states (club_id, league_id, personality, next_wake_at)
-        select nuovo.id, v_league, v_club -> 'personality', now() + (random() * interval '6 hours')
+        select nuovo.id, v_league, v_club -> 'personality', now() + (random() * interval '10 minutes')
         from nuovo;
     end loop;
 

@@ -5321,7 +5321,7 @@ class TickRunner(
         }
     }
 
-    private fun loadAiStates(leagueId: Long): List<AiState> {
+    private fun loadAiStates(leagueId: Long, minSquadSize: Int = 18): List<AiState> {
         val out = mutableListOf<AiState>()
         connection.prepareStatement(
             "select club_id, personality, next_wake_at, actions_today, action_day, " +
@@ -5330,7 +5330,32 @@ class TickRunner(
             st.setLong(1, leagueId)
             st.executeQuery().use { rs -> while (rs.next()) out += readAiState(rs) }
         }
-        return out
+        if (out.isEmpty()) return emptyList()
+
+        val squadSizes = mutableMapOf<Long, Int>()
+        connection.prepareStatement(
+            "select club_id, count(*) from contracts where league_id = ? group by club_id",
+        ).use { st ->
+            st.setLong(1, leagueId)
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    squadSizes[rs.getLong(1)] = rs.getInt(2)
+                }
+            }
+        }
+
+        val now = Instant.now()
+        return out.map { state ->
+            val size = squadSizes[state.clubId.value] ?: 0
+            if (size < minSquadSize && state.nextWakeAt.isAfter(now.plusSeconds(300))) {
+                val jitter = (state.clubId.value * 37L) % 180L
+                val corrected = state.copy(nextWakeAt = now.plusSeconds(jitter))
+                saveAiState(state.clubId, corrected)
+                corrected
+            } else {
+                state
+            }
+        }
     }
 
     private fun loadAiState(clubId: ClubId): AiState? =

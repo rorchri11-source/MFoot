@@ -160,7 +160,7 @@ object AiTurn {
     fun movesPerWake(squadSize: Int, config: LeagueConfig): Int =
         if (squadSize < config.setup.minSquadSize) MOSSE_IN_ALLESTIMENTO else 1
 
-    const val MOSSE_IN_ALLESTIMENTO = 8
+    const val MOSSE_IN_ALLESTIMENTO = 10
 
     /**
      * Quante aste puo' aprire con i soldi che ha.

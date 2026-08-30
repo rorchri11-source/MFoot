@@ -611,15 +611,9 @@ niente da guardare.
 
 ## Le squadre del computer
 
-**In un giorno le AI raggiungono il minimo in rosa.**
-Il tetto della rincorsa era dodici azioni al giorno, scritto dentro `AiScheduler`, e un club
-che parte da zero deve comprarne sedici o diciotto per averne una legale: ci metteva **due
-giorni reali**, e finché i computer non hanno finito la spesa il campionato non parte per
-nessuno. Ora sono trenta, in configurazione. Resta un tetto — serve a impedire che un
-difetto faccia comprare duecento giocatori a un'AI, non a rallentarla.
-Il tetto normale, due azioni al giorno, **non cambia**: esiste per non sommergere di
-notifiche chi gioca, ed è giusto a campionato in corso.
-*Detta il 2026-08-30 · `AiConfig.sprintActionsPerDay`*
+**Le AI completano la rosa entro la prima ora di lega.**
+All'avvio della lega il primo risveglio delle AI avviene nei primi 1-10 minuti (e non fino a 6 ore dopo). Con la rosa incompleta (sotto i 18) l'AI si risveglia a ogni tick (1-5 minuti) e compie fino a 10 acquisti per risveglio dal listino, completando i 18 uomini in 2 soli risvegli. Il tetto giornaliero in sprint è di 30 azioni. A rosa completa il ritmo torna normale (1 azione per risveglio, cadenza lenta) per non generare rumore.
+*Aggiornata il 2026-08-30 · `AiScheduler.SPRINT_MINUTI_MIN`, `AiTurn.MOSSE_IN_ALLESTIMENTO`, `TickRunner.loadAiStates`*
 
 **Le AI devono fare quattro cose di loro iniziativa, tutte rivolte a chi gioca.**
 Comprare a listino appena la rosa è corta — è quello che scioglie il riempimento lento

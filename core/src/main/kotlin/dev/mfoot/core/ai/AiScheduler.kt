@@ -57,9 +57,9 @@ data class AiState(
  */
 object AiScheduler {
 
-    /** Ogni quanto si sveglia un'AI che deve ancora completare la rosa. */
-    const val SPRINT_MINUTI_MIN = 15
-    const val SPRINT_MINUTI_MAX = 40
+    /** Ogni quanto si sveglia un'AI che deve ancora completare la rosa (1-5 minuti). */
+    const val SPRINT_MINUTI_MIN = 1
+    const val SPRINT_MINUTI_MAX = 5
 
     /**
      * Quante cose puo' fare in un giorno un'AI in sprint.
