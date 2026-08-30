@@ -99,8 +99,8 @@ android {
         //
         // La versione compare in fondo al menu laterale, non in una schermata "info" che
         // nessuno apre.
-        versionCode = 31
-        versionName = "0.29.0"
+        versionCode = 32
+        versionName = "0.30.0"
 
         buildConfigField("String", "SUPABASE_URL", "\"${secret("supabase.url")}\"")
         buildConfigField("String", "SUPABASE_KEY", "\"${secret("supabase.key")}\"")

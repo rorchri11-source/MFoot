@@ -13,6 +13,7 @@ data class StaffMember(
     val role: String,
     val stars: Int,
     val clubId: Long?,
+    val ownerClubId: Long? = null,
 ) {
     val shortName: String get() = "${firstName.firstOrNull() ?: ' '}. $lastName"
 
@@ -51,22 +52,24 @@ data class ScoutingMission(
     val position: String,
     val readyAt: Instant?,
     val status: String,
-    val foundPlayerId: Long?,
+    val foundPlayerId: Long? = null,
     /**
-     * Chi ha portato, quando ne ha portati piu' di uno.
+     * I ragazzi portati da questa missione: fino a tre.
      *
-     * Arriva da una lettura a parte: `found_player_ids` e' nata il 2026-08-30, e chiederla
-     * dentro la lettura delle missioni spegnerebbe tutte le missioni su ogni database
-     * indietro invece di spegnere solo la lista.
+     * In arrivo con la migrazione `0031`: fino ad allora questa lista resta vuota e si
+     * legge `found_player_id`, che ne teneva uno solo.
      */
     val foundPlayerIds: List<Long> = emptyList(),
 ) {
-    val inCorso: Boolean get() = status == "IN_CORSO"
+    val inCorso: Boolean get() = status == "IN_CORSO" && !scaduta()
+    val daValutare: Boolean get() = status == "IN_CORSO" && scaduta()
+    val accettata: Boolean get() = status == "ACCETTATA"
+    val rifiutata: Boolean get() = status == "RIFIUTATA"
 
-    /** E' tornato e aspetta una risposta: accetta, rifiuta, o rimandalo a cercare. */
-    val daValutare: Boolean get() = status == "DA_VALUTARE"
+    fun scaduta(now: Instant = Instant.now()): Boolean =
+        readyAt != null && !now.isBefore(readyAt)
 
-    /** Chi ha portato, comprese le missioni vecchie che ne avevano uno solo. */
+    /** Tutti i ragazzi trovati: quelli nuovi se ci sono, altrimenti il singolo di prima. */
     val trovati: List<Long>
         get() = foundPlayerIds.ifEmpty { listOfNotNull(foundPlayerId) }
 
@@ -87,17 +90,14 @@ data class ScoutingMission(
 }
 
 /**
- * Lo staff: chi lavora per te, chi e' libero, e dove sono i tuoi osservatori.
+ * Chi lavora per te, e chi e' libero.
  *
- * ## Perche' lo staff si assume a prezzo fisso, e non si batte all'asta
+ * ## Perche' non si compra piu' all'asta, dal 2026-08-30
  *
- * Il ragionamento originale era il contrario: un allenatore da cinque stelle vale il
- * triplo di uno da una sulla crescita, quindi a prezzo fisso se lo prenderebbe chi apre
- * l'app per primo, e un'asta trasforma quella differenza in una decisione.
- *
- * Regge in teoria e non ha retto alla prova. L'asta costa un giro di server per aprirsi e
- * un altro per chiudersi, e il server gira quando gli pare: dal telefono lo staff non si
- * prendeva mai, e il proprietario ha dovuto segnalarlo due volte. La differenza fra uno e
+ * Perche' all'asta non li prendeva nessuno. Prima ogni membro dello staff nasceva senza
+ * contratto e chi lo voleva doveva aprire un'asta e aspettare dodici ore: per un allenatore
+ * che ti serve **adesso** per allenare la partita di stasera, dodici ore volevano dire non
+ * prenderlo mai, e il proprietario ha dovuto segnalarlo due volte. La differenza fra uno e
  * cinque stelle la esprime adesso il **prezzo** — venticinque volte, con
  * [dev.mfoot.core.market.Valuation.staffPrice] — che e' una decisione altrettanto vera e
  * non ha bisogno che giri niente.
@@ -108,10 +108,16 @@ data class ScoutingMission(
 object StaffRepository {
 
     suspend fun all(leagueId: Long): List<StaffMember> {
-        val path = "/rest/v1/staff?select=id,first_name,last_name,nationality,role,stars," +
+        val pathCompleto = "/rest/v1/staff?select=id,first_name,last_name,nationality,role,stars," +
+            "club_id,owner_club_id&league_id=eq.$leagueId&order=stars.desc&limit=1000"
+        val pathSenza = "/rest/v1/staff?select=id,first_name,last_name,nationality,role,stars," +
             "club_id&league_id=eq.$leagueId&order=stars.desc&limit=1000"
 
-        return when (val esito = SupabaseApi.get(path)) {
+        val esito = SupabaseApi.get(pathCompleto).let {
+            if (it is ApiResult.Error) SupabaseApi.get(pathSenza) else it
+        }
+
+        return when (esito) {
             is ApiResult.Error -> emptyList()
             is ApiResult.Ok -> JsonNode.parse(esito.value).asList().map { row ->
                 StaffMember(
@@ -122,6 +128,7 @@ object StaffRepository {
                     role = row["role"].str("OSSERVATORE"),
                     stars = row["stars"].int(1).coerceIn(1, 5),
                     clubId = row["club_id"].long(0).takeIf { it > 0 },
+                    ownerClubId = row["owner_club_id"].long(0).takeIf { it > 0 },
                 )
             }
         }

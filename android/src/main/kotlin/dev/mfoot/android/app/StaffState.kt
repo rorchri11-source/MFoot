@@ -42,8 +42,8 @@ data class StaffState(
     fun di(clubId: Long?): List<StaffMember> =
         if (clubId == null) emptyList() else tutti.filter { it.clubId == clubId }
 
-    /** Se la proprieta' e' leggibile: senza, le celle non si possono disegnare. */
-    val celleAttive: Boolean get() = proprieta.isNotEmpty() || tutti.isEmpty()
+    /** Se la proprieta' e' leggibile. */
+    val celleAttive: Boolean get() = true
 
     /**
      * Tutti quelli che possiedi, schierati o in panchina.
@@ -53,7 +53,9 @@ data class StaffState(
      */
     fun posseduti(primaSquadra: Long?): List<StaffMember> =
         if (primaSquadra == null) emptyList()
-        else tutti.filter { proprieta[it.id] == primaSquadra }
+        else tutti.filter {
+            it.ownerClubId == primaSquadra || proprieta[it.id] == primaSquadra || it.clubId == primaSquadra
+        }
 
     /** I tuoi di questo ruolo che non occupano nessuna cella. */
     fun inPanchina(primaSquadra: Long?, role: String): List<StaffMember> =
@@ -64,16 +66,13 @@ data class StaffState(
         posseduti(primaSquadra).count { it.role == role }
 
     /**
-     * Chi c'e' nel negozio.
-     *
-     * Non «chi non lavora per nessuno» ma «chi non e' di nessuno»: dal 2026-08-30 un membro
-     * puo' essere tuo e stare in panchina, e quello non e' in vendita.
+     * Chi c'e' nel negozio: chi non e' di nessuno e non lavora per nessuno.
      */
     val liberi: List<StaffMember>
-        get() = if (proprieta.isEmpty()) {
-            tutti.filter { it.clubId == null }
-        } else {
-            tutti.filter { proprieta[it.id] == null }
+        get() = tutti.filter {
+            (it.ownerClubId == null || it.ownerClubId == 0L) &&
+                proprieta[it.id] == null &&
+                (it.clubId == null || it.clubId == 0L)
         }
 
     /** Il prezzo di listino, se qualcuno lo ha messo in vendita. */

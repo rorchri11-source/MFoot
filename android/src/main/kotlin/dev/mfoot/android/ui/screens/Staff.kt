@@ -149,17 +149,7 @@ private fun VetrinaStaff(
             Box(Modifier.padding(MFootSpacing.section)) { Notice(it, MFootColors.elite) }
         }
 
-        // Il database indietro toglie le celle, non la schermata: e' la ragione per cui la
-        // proprieta' si legge a parte.
-        if (!staff.celleAttive) {
-            Box(Modifier.padding(MFootSpacing.section)) {
-                Notice(
-                    "Le celle arrivano quando il database e' aggiornato. Intanto lo staff " +
-                        "si vede e si compra come prima.",
-                    MFootColors.gamble,
-                )
-            }
-        }
+
 
         Row(
             Modifier.fillMaxWidth().padding(MFootSpacing.section, MFootSpacing.section, MFootSpacing.section, 10.dp),
@@ -223,11 +213,13 @@ private fun VetrinaStaff(
         }
 
         aperta?.let { cella ->
+            val dove = if (cella.posto == Posto.PRIMA_SQUADRA) prima else primavera
             ScegliChi(
                 cella = cella,
-                candidati = staff.inPanchina(prima, cella.role.name),
+                candidati = staff.posseduti(prima).filter {
+                    it.role == cella.role.name && it.clubId != dove
+                },
                 onScegli = { membro ->
-                    val dove = if (cella.posto == Posto.PRIMA_SQUADRA) prima else primavera
                     if (dove != null) onSposta(membro.id, dove)
                     aperta = null
                 },
