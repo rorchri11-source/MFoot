@@ -62,9 +62,9 @@ data class ScoutingMission(
     val foundPlayerIds: List<Long> = emptyList(),
 ) {
     val inCorso: Boolean get() = status == "IN_CORSO" && !scaduta()
-    val daValutare: Boolean get() = status == "IN_CORSO" && scaduta()
-    val accettata: Boolean get() = status == "ACCETTATA"
-    val rifiutata: Boolean get() = status == "RIFIUTATA"
+    val daValutare: Boolean get() = status == "DA_VALUTARE" || (status == "IN_CORSO" && scaduta())
+    val accettata: Boolean get() = status == "ACCETTATA" || status == "CONCLUSA"
+    val rifiutata: Boolean get() = status == "RIFIUTATA" || status == "A_VUOTO"
 
     fun scaduta(now: Instant = Instant.now()): Boolean =
         readyAt != null && !now.isBefore(readyAt)
