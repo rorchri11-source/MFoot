@@ -789,12 +789,12 @@ fun OsservatoriScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (righe.isNotEmpty()) {
                             Azione(if (righe.size == 1) "Accetta" else "Accetta tutti") {
-                                onAccetta(scout.id, righe.map { it.player.id.value })
+                                onAccetta(missione.id, righe.map { it.player.id.value })
                             }
                         }
                         Azione("Rifiuta") { onRifiuta(missione.id) }
                         Azione("Ri-scouta") {
-                            onRiScouta(scout.id, missione.id, missione.country, missione.position)
+                            onRiScouta(missione.id, scout.id, missione.country, missione.position)
                         }
                     }
                 } else if (missione != null) {

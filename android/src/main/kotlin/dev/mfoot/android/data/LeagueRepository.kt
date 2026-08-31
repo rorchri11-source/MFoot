@@ -521,6 +521,28 @@ object LeagueRepository {
     }
 
     /**
+     * Legge una lista puntuale di giocatori per id (es. talenti appena scoperti dallo scouting).
+     */
+    suspend fun readSpecificPlayers(playerIds: List<Long>): List<Player> {
+        if (playerIds.isEmpty()) return emptyList()
+        val ids = playerIds.joinToString(",")
+        val path = "/rest/v1/players_public?select=$PLAYER_COLUMNS&id=in.($ids)"
+        val esito = SupabaseApi.stream(path) { reader ->
+            val list = mutableListOf<Player>()
+            reader.beginArray()
+            while (reader.hasNext()) {
+                readPlayer(reader)?.let(list::add)
+            }
+            reader.endArray()
+            list
+        }
+        return when (esito) {
+            is ApiResult.Ok -> esito.value
+            is ApiResult.Error -> emptyList()
+        }
+    }
+
+    /**
      * Una riga della vista pubblica.
      *
      * Restituisce null invece di lanciare se la riga e' incoerente: un giocatore rotto su

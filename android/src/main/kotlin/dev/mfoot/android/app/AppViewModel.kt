@@ -2669,19 +2669,40 @@ class AppViewModel : ViewModel() {
         val miei = listOfNotNull(dentro.lega.myClub?.id, dentro.lega.myYouthClub?.id)
 
         viewModelScope.launch {
+            val missioniLette = StaffRepository.missions(miei).let { lista ->
+                val trovati = StaffRepository.finds(miei)
+                lista.map { it.copy(foundPlayerIds = trovati[it.id].orEmpty()) }
+            }
+
+            val stato = _state.value
+            if (stato is AppState.Dentro) {
+                val missingIds = missioniLette.flatMap { it.trovati }.filter { id ->
+                    stato.rows.none { it.player.id.value == id }
+                }
+                if (missingIds.isNotEmpty()) {
+                    val newPlayers = LeagueRepository.readSpecificPlayers(missingIds)
+                    if (newPlayers.isNotEmpty()) {
+                        val observerId = stato.lega.myClub?.id ?: 0L
+                        val config = stato.lega.league.config
+                        val nuoveRighe = newPlayers.map { p ->
+                            val estimate = PotentialEstimator.publicEstimate(p, observerId)
+                            PlayerRow(
+                                player = p,
+                                estimate = estimate,
+                                hasUpside = PotentialEstimator.hasUpside(p),
+                                value = Valuation.estimatedValue(p, estimate, config),
+                                club = null,
+                            )
+                        }
+                        _state.value = stato.copy(rows = stato.rows + nuoveRighe)
+                    }
+                }
+            }
+
             _staff.value = _staff.value.copy(
                 tutti = StaffRepository.all(dentro.lega.league.id),
-                // Chiesta a parte: se il database e' indietro questa torna vuota e si
-                // perdono le celle, invece di perdere tutta la schermata.
                 proprieta = StaffRepository.ownership(dentro.lega.league.id),
-                // I trovati arrivano da una lettura a parte e si uniscono qui: se il
-                // database e' indietro si vede un ragazzo per missione invece di nessuna
-                // missione.
-                missioni = StaffRepository.missions(miei).let { lista ->
-                    val trovati = StaffRepository.finds(miei)
-                    lista.map { it.copy(foundPlayerIds = trovati[it.id].orEmpty()) }
-                },
-                // Lo staff sul listino: stessa tabella dei giocatori, altro `target_type`.
+                missioni = missioniLette,
                 inVendita = MarketRepository.listings(dentro.lega.league.id, tipo = "staff")
                     .associate { it.playerId to it.price },
                 letto = true,
