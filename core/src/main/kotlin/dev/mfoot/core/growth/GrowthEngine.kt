@@ -53,15 +53,15 @@ data class GrowthContext(
 object GrowthEngine {
 
     /** Esperienza base di una prestazione neutra sui novanta minuti. */
-    private const val BASE_XP_PER_FULL_MATCH = 9.0
+    private const val BASE_XP_PER_FULL_MATCH = 16.0
 
     /** Quanto pesa il voto rispetto ai soli minuti giocati. */
-    private const val RATING_WEIGHT = 3.4
+    private const val RATING_WEIGHT = 4.8
 
-    private const val XP_PER_GOAL = 4.0
-    private const val XP_PER_ASSIST = 2.6
-    private const val XP_PER_SAVE = 1.3
-    private const val XP_PER_KEY_ACTION = 0.25
+    private const val XP_PER_GOAL = 6.0
+    private const val XP_PER_ASSIST = 4.0
+    private const val XP_PER_SAVE = 2.5
+    private const val XP_PER_KEY_ACTION = 0.4
 
     /**
      * Entro quanti punti dal proprio tetto la crescita comincia a rallentare.
