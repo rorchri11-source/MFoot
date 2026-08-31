@@ -299,13 +299,27 @@ private fun AuctionCard(
         Spacer(Modifier.width(MFootSpacing.related))
 
         Column(Modifier.weight(1f)) {
-            Text(
-                row.label,
-                style = MFootType.rowTitle,
-                color = MFootColors.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    row.label,
+                    style = MFootType.rowTitle,
+                    color = MFootColors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (row.contestata) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Contestazione",
+                        style = MFootType.chip,
+                        color = MFootColors.gamble,
+                        modifier = Modifier
+                            .background(MFootColors.gamble.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
             Text(
                 buildString {
                     // Funziona per i giocatori e per lo staff: prima mostrava il ruolo e

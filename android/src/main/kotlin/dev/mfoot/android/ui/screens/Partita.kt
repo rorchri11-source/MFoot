@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
@@ -197,7 +198,7 @@ private fun ColumnScope.SchedaCampo(state: MatchState) {
                 }
             }
         }
-        items(accaduto, key = { "${it.minute}-${it.text.hashCode()}" }) { momento ->
+        itemsIndexed(accaduto, key = { index, it -> "$index-${it.minute}-${it.type}" }) { _, momento ->
             Momento(momento, state)
         }
         item { Spacer(Modifier.height(30.dp)) }
@@ -232,7 +233,7 @@ private fun ColumnScope.SchedaRiassunto(state: MatchState, nomeGiocatore: (Long)
     }
 
     LazyColumn(Modifier.weight(1f)) {
-        items(pesanti, key = { "${it.minute}-${it.type}-${it.text.hashCode()}" }) { m ->
+        itemsIndexed(pesanti, key = { index, m -> "$index-${m.minute}-${m.type}" }) { _, m ->
             RigaRiassunto(m, nomeGiocatore)
         }
         item { Spacer(Modifier.height(30.dp)) }

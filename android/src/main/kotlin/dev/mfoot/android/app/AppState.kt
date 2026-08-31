@@ -110,6 +110,9 @@ data class AuctionRow(
             ?: staff?.let { "${it.shortName} · ${it.roleLabel}" }
             ?: "Obiettivo #${auction.targetId}"
 
+    val contestata: Boolean
+        get() = player?.acquisto?.contestato == true || player?.acquisto?.auctionId == auction.id
+
     /** La riga sotto al nome: chi e, in una riga. */
     val dettaglio: String?
         get() = player?.let { "${it.player.primaryPosition.short} · ${it.player.overall}" }

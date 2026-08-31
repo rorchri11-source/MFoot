@@ -680,6 +680,9 @@ fun OsservatoriScreen(
     staff: StaffState,
     onCarica: () -> Unit,
     onManda: (Long, String, String) -> Unit,
+    onAccetta: (Long, List<Long>) -> Unit = { _, _ -> },
+    onRifiuta: (Long) -> Unit = {},
+    onRiScouta: (Long, Long, String, String) -> Unit = { _, _, _, _ -> },
 ) {
     val club = state.lega.myClub
     if (club == null) {
@@ -744,7 +747,57 @@ fun OsservatoriScreen(
                     )
                 }
 
-                if (missione != null) {
+                if (missione != null && missione.daValutare) {
+                    val righe: List<dev.mfoot.android.app.PlayerRow> = missione.trovati.mapNotNull { id ->
+                        state.rows.firstOrNull { it.player.id.value == id }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Tornato dal ${missione.country} · Valuta i talenti trovati:",
+                        style = MFootType.chip,
+                        color = MFootColors.elite,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (righe.isEmpty()) {
+                        Text(
+                            "I ragazzi trovati non sono ancora arrivati sul telefono. Riapri fra poco.",
+                            style = MFootType.secondary,
+                            color = MFootColors.ink3,
+                        )
+                    }
+                    righe.forEach { riga ->
+                        val p = riga.player
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "${p.shortName} · ${p.age} anni · ${p.primaryPosition.short}",
+                                    style = MFootType.rowTitle,
+                                    color = MFootColors.ink,
+                                )
+                                Text(
+                                    "${p.overall} oggi · potenziale ${riga.estimate.first}-${riga.estimate.last}",
+                                    style = MFootType.chip,
+                                    color = MFootColors.ink3,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (righe.isNotEmpty()) {
+                            Azione(if (righe.size == 1) "Accetta" else "Accetta tutti") {
+                                onAccetta(scout.id, righe.map { it.player.id.value })
+                            }
+                        }
+                        Azione("Rifiuta") { onRifiuta(missione.id) }
+                        Azione("Ri-scouta") {
+                            onRiScouta(scout.id, missione.id, missione.country, missione.position)
+                        }
+                    }
+                } else if (missione != null) {
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "In ${missione.country}, cerca un ${missione.position} · " +
@@ -754,10 +807,6 @@ fun OsservatoriScreen(
                     )
                 } else {
                     // Quanto starebbe via, prima di mandarlo.
-                    //
-                    // Il numero cambia con le stelle, e senza vederlo la scelta fra due
-                    // osservatori e' meta' informata. Il conto e' [Scouting.missionMinutes],
-                    // in `core`, lo stesso che il server usa per fissare il rientro.
                     val minuti = Scouting.missionMinutes(scout.stars, state.lega.league.config.rules)
                     Spacer(Modifier.height(4.dp))
                     Text(

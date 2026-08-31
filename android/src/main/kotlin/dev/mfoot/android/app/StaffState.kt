@@ -81,9 +81,9 @@ data class StaffState(
     fun osservatoriDi(clubId: Long?): List<StaffMember> =
         di(clubId).filter { it.role == "OSSERVATORE" }
 
-    /** La missione in corso di questo osservatore, se e' via. */
+    /** La missione in corso o da valutare di questo osservatore. */
     fun missioneDi(staffId: Long): ScoutingMission? =
-        missioni.firstOrNull { it.staffId == staffId && it.inCorso }
+        missioni.firstOrNull { it.staffId == staffId && (it.inCorso || it.daValutare) }
 }
 
 /** Il modulo della missione che si sta preparando. */

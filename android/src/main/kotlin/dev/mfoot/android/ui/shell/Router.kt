@@ -273,6 +273,9 @@ fun Router(
                     staff = staff,
                     onCarica = onLoadStaff,
                     onManda = onSendScout,
+                    onAccetta = onAcceptScouting,
+                    onRifiuta = onRejectScouting,
+                    onRiScouta = onReScout,
                 )
             } }
         }
