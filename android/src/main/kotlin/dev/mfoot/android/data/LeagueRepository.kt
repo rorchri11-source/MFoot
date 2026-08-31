@@ -527,18 +527,46 @@ object LeagueRepository {
         if (playerIds.isEmpty()) return emptyList()
         val ids = playerIds.joinToString(",")
         val path = "/rest/v1/players_public?select=$PLAYER_COLUMNS&id=in.($ids)"
-        val esito = SupabaseApi.stream(path) { reader ->
-            val list = mutableListOf<Player>()
-            reader.beginArray()
-            while (reader.hasNext()) {
-                readPlayer(reader)?.let(list::add)
-            }
-            reader.endArray()
-            list
-        }
-        return when (esito) {
-            is ApiResult.Ok -> esito.value
+        return when (val esito = SupabaseApi.get(path)) {
             is ApiResult.Error -> emptyList()
+            is ApiResult.Ok -> runCatching {
+                JsonNode.parse(esito.value).asList().mapNotNull { row ->
+                    val id = row["id"].long(0)
+                    if (id == 0L) return@mapNotNull null
+                    val pos = Position.entries.firstOrNull { it.name == row["primary_position"].str("") } ?: Position.CC
+                    val attrsMap = mutableMapOf<Attr, Int>()
+                    val attrNode = row["attributes"]
+                    attrNode.keys().forEach { k ->
+                        Attr.entries.firstOrNull { it.name == k }?.let { attr ->
+                            attrsMap[attr] = attrNode[k].int(50)
+                        }
+                    }
+                    val attrs = Attributes.fromMap(attrsMap)
+                    Player(
+                        id = PlayerId(id),
+                        firstName = row["first_name"].str(""),
+                        lastName = row["last_name"].str(""),
+                        nationality = row["nationality"].str(""),
+                        age = row["age"].int(18),
+                        primaryPosition = pos,
+                        secondaryPositions = row["secondary_positions"].asList().mapNotNull { s ->
+                            Position.entries.firstOrNull { it.name == s.str("") }
+                        },
+                        attributes = attrs,
+                        weakFoot = row["weak_foot"].int(3),
+                        skillStars = row["skill_stars"].int(3),
+                        potentialMin = pos.overallOf(attrs),
+                        potentialMax = pos.overallOf(attrs),
+                        traits = row["traits"].asList().mapNotNull { s ->
+                            Trait.entries.firstOrNull { it.name == s.str("") }
+                        }.toSet(),
+                        stamina = row["stamina"].int(100),
+                        morale = row["morale"].int(50),
+                        form = row["form"].int(0),
+                        isCustom = row["is_custom"].bool(false),
+                    )
+                }
+            }.getOrDefault(emptyList())
         }
     }
 

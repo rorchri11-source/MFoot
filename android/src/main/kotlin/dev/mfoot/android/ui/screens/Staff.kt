@@ -231,7 +231,9 @@ private fun VetrinaStaff(
         rientrato?.let { missione ->
             IlRientro(
                 missione = missione,
-                righe = state.rows.filter { it.player.id.value in missione.trovati },
+                righe = missione.trovati.mapNotNull { id ->
+                    staff.talenti[id] ?: state.rows.firstOrNull { it.player.id.value == id }
+                },
                 onAccetta = { ids -> onAccetta(missione.id, ids); rientrato = null },
                 onRifiuta = { onRifiuta(missione.id); rientrato = null },
                 onRiScouta = {
@@ -749,7 +751,7 @@ fun OsservatoriScreen(
 
                 if (missione != null && missione.daValutare) {
                     val righe: List<dev.mfoot.android.app.PlayerRow> = missione.trovati.mapNotNull { id ->
-                        state.rows.firstOrNull { it.player.id.value == id }
+                        staff.talenti[id] ?: state.rows.firstOrNull { it.player.id.value == id }
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(

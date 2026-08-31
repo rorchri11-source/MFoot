@@ -34,6 +34,7 @@ data class StaffState(
      * possedere e schierare erano la stessa cosa.
      */
     val proprieta: Map<Long, Long> = emptyMap(),
+    val talenti: Map<Long, PlayerRow> = emptyMap(),
     val busy: String? = null,
     val avviso: String? = null,
     val errore: String? = null,

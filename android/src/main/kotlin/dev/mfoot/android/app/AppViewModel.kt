@@ -2675,10 +2675,16 @@ class AppViewModel : ViewModel() {
             }
 
             val stato = _state.value
+            val trovatiIds = missioniLette.flatMap { it.trovati }
+            val talentiMappa = mutableMapOf<Long, PlayerRow>()
+
             if (stato is AppState.Dentro) {
-                val missingIds = missioniLette.flatMap { it.trovati }.filter { id ->
-                    stato.rows.none { it.player.id.value == id }
+                // Prendi quelli che abbiamo gia' in memoria
+                stato.rows.filter { it.player.id.value in trovatiIds }.forEach {
+                    talentiMappa[it.player.id.value] = it
                 }
+
+                val missingIds = trovatiIds.filter { !talentiMappa.containsKey(it) }
                 if (missingIds.isNotEmpty()) {
                     val newPlayers = LeagueRepository.readSpecificPlayers(missingIds)
                     if (newPlayers.isNotEmpty()) {
@@ -2694,6 +2700,7 @@ class AppViewModel : ViewModel() {
                                 club = null,
                             )
                         }
+                        nuoveRighe.forEach { talentiMappa[it.player.id.value] = it }
                         _state.value = stato.copy(rows = stato.rows + nuoveRighe)
                     }
                 }
@@ -2703,6 +2710,7 @@ class AppViewModel : ViewModel() {
                 tutti = StaffRepository.all(dentro.lega.league.id),
                 proprieta = StaffRepository.ownership(dentro.lega.league.id),
                 missioni = missioniLette,
+                talenti = _staff.value.talenti + talentiMappa,
                 inVendita = MarketRepository.listings(dentro.lega.league.id, tipo = "staff")
                     .associate { it.playerId to it.price },
                 letto = true,
